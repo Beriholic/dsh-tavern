@@ -69,6 +69,10 @@
 
 支持人物卡正则美化与 HTML 展示；支持 MVU，变量由后台 Agent 更新，状态栏常驻右侧面板。
 
+#### 小手机支持
+
+支持已适配的小手机前端，在右侧“酒馆状态”的人物卡应用中打开，与正文并排展示聊天界面。具体第三方脚本的支持范围取决于已适配的接口。
+
 #### 多平台支持
 
 dsh-tavern 正式支持 Windows、macOS 和 Linux。Windows 与 macOS 可使用 DSH Desktop 客户端，也可以通过命令行运行；Linux 使用命令行运行。Android 可尝试通过 [DSHA](https://github.com/qiannianhuanxiang/DSHA) 安装，但属于实验性支持，不保证一定可用。
@@ -138,6 +142,12 @@ dsh-tavern 使用尽可能少而精的提示词，把流程和状态交给程序
 把状态文本渲染为正文内的酒馆面板。
 
 ![阿芙拉人物卡正则美化效果](docs/images/readme/regex-html-rendering.png)
+
+#### 小手机：与正文并排展示
+
+在右侧人物卡应用中打开小手机，一边阅读剧情，一边查看手机中的聊天内容。
+
+![正文与右侧小手机聊天界面](docs/images/readme/phone-panel.png)
 
 ## 首次安装与重新安装
 
