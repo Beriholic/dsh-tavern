@@ -63,7 +63,7 @@ test('正式编排为兼容对话选择 SillyTavern 编译策略', async () => {
   ])
 })
 
-test('前台固定背景来自标准 Session 消息，不进入当轮 system、Frame 或预设投影', async () => {
+test('游玩请求把 Tavern 固定背景与本轮编排固化为 system，Session 仍保持追加式 user 消息', async () => {
   const session = Session.create('native')
   const savedPrefixes = new Map()
   const storage = { async read(id) { return savedPrefixes.get(id) }, async write(id, value) { savedPrefixes.set(id, value) } }
@@ -92,6 +92,7 @@ test('前台固定背景来自标准 Session 消息，不进入当轮 system、F
     assert.equal(modelMessages[0].source.form, 'snapshot')
     assert.equal(modelMessages[0].role, 'user', 'Session 权威历史保持原样')
     const request = run.value.projectRequest({ sessionId: 'native', system, messages: modelMessages })
+    assert.deepEqual(request.messages.map(message => message.role), ['system', 'user', 'system'])
     assert.equal(request.messages[0].role, 'system', '仅在游玩请求边界把人物卡前缀投影为 system')
     assert.equal(request.messages.at(-1).role, 'system', '仅在游玩请求边界把本轮正文编排投影为 system')
     assert.notEqual(request.messages[0], modelMessages[0])

@@ -98,7 +98,7 @@ function isNativeForegroundFrame(message) {
     && source.plugin === 'dsh-tavern' && source.form === 'foreground-frame'
 }
 
-/** Experimental request-only alignment of Tavern-owned context with system roles. */
+/** Keep Tavern-owned model context authoritative without rewriting append-only Session events. */
 export function projectNativeContextAsSystem(messages) {
   let changed = false
   const projected = (Array.isArray(messages) ? messages : []).map(function (message) {
