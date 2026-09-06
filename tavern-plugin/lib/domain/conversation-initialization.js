@@ -6,6 +6,7 @@ import { OFFICIAL_MVU_VERSION } from './official-mvu-assets.js'
 import { createScriptContinuity } from './script-continuity.js'
 import { bindSceneWorldbook } from './scene-worldbook.js'
 import { snapshotBackgroundModel } from './background-model-selection.js'
+import { ensureSessionSeedTrajectory } from './session-seed-trajectory.js'
 
 function str(value) { return value === undefined || value === null ? '' : String(value) }
 function groupOfMode(mode) { return !mode || mode === 'story' || mode === 'script' ? 'play' : 'card' }
@@ -262,6 +263,7 @@ export function createConversationInitialization(options) {
     const target = readyTarget || await native.wait(sessionId)
     if (groupOfMode(chat.mode) === 'play' && chat.requestMode !== 'sillytavern') {
       await native.ensurePrefix(target.session, await snapshots.ensure(chat, card))
+      await ensureSessionSeedTrajectory(target.session)
       await native.flush(target.session)
     }
     if (text !== '') {

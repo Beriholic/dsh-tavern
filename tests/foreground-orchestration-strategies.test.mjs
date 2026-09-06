@@ -5,6 +5,7 @@ import { Session } from './fixtures/dsh-session-host.mjs'
 import { sessionEvents } from '../tavern-plugin/lib/domain/session-events.js'
 import { createForegroundOrchestrationStrategies, createNativePlayOrchestrationStrategy, createCompatibilityOrchestrationStrategy, projectRegenerationRequestMessages } from '../tavern-plugin/lib/domain/foreground-orchestration-strategies.js'
 import { ensureSessionStablePrefix } from '../tavern-plugin/lib/domain/session-stable-prefix.js'
+import { ensureSessionSeedTrajectory } from '../tavern-plugin/lib/domain/session-seed-trajectory.js'
 
 function userMessage(text) {
   return { role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } }
@@ -69,6 +70,7 @@ test('游玩请求把 Tavern 固定背景与本轮编排固化为 system，Sessi
   const storage = { async read(id) { return savedPrefixes.get(id) }, async write(id, value) { savedPrefixes.set(id, value) } }
   let cardText = '人物卡固定基本信息\n常驻世界书'
   await ensureSessionStablePrefix(session, cardText, storage)
+  await ensureSessionSeedTrajectory(session)
   const run = strategies({ nativePlay: {
     async modeFor() { return 'story' },
     filterMessages(messages) { return messages },
@@ -92,8 +94,11 @@ test('游玩请求把 Tavern 固定背景与本轮编排固化为 system，Sessi
     assert.equal(modelMessages[0].source.form, 'snapshot')
     assert.equal(modelMessages[0].role, 'user', 'Session 权威历史保持原样')
     const request = run.value.projectRequest({ sessionId: 'native', system, messages: modelMessages })
-    assert.deepEqual(request.messages.map(message => message.role), ['system', 'user', 'system'])
+    assert.deepEqual(request.messages.map(message => message.role), ['system', 'user', 'assistant', 'user', 'user', 'system'])
     assert.equal(request.messages[0].role, 'system', '仅在游玩请求边界把人物卡前缀投影为 system')
+    assert.deepEqual(request.messages.slice(1, 4).map(message => message.source.form || message.source.model), [
+      'synthetic-trajectory', 'synthetic-trajectory', 'synthetic-trajectory'
+    ])
     assert.equal(request.messages.at(-1).role, 'system', '仅在游玩请求边界把本轮正文编排投影为 system')
     assert.notEqual(request.messages[0], modelMessages[0])
     assert.equal(modelMessages[0].role, 'user', '请求投影不得回写 Session 消息')
