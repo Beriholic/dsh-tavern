@@ -14,6 +14,7 @@ import { createChatPersistence } from '../../tavern-plugin/lib/domain/chat-persi
 import { createChatJournalStore } from '../../tavern-plugin/lib/domain/chat-journal-store.js'
 import { createProfileDataStore } from '../../tavern-plugin/lib/profile-data-store.js'
 import { createSessionStablePrefixStorage, ensureSessionStablePrefix } from '../../tavern-plugin/lib/domain/session-stable-prefix.js'
+import { createStoryTimeline } from '../../tavern-plugin/lib/domain/story-timeline.js'
 
 export async function createInitializationNative(bootPath) {
   const bootUrl = pathToFileURL(bootPath)
@@ -67,9 +68,10 @@ export async function createInitializationNative(bootPath) {
       return persistence.write(chat, metadata)
     }
     const snapshots = createPlayCardSnapshots({ worldBooks: { bound: async () => null }, planner: createContextPlanner({ prompt: () => '' }), readCard: async () => card, writeChat: write })
+    const timeline = createStoryTimeline({ id: () => randomUUID() })
     return createConversationInitialization({
       cards: { read: async () => card, readChat: async () => card, script: async () => undefined, extensions: async () => ({}) },
-      chats: { resolve: registry.resolve, publish: registry.publish, write }, snapshots,
+      chats: { resolve: registry.resolve, publish: registry.publish, write }, snapshots, timeline,
       presets: { fullSnapshot: async () => null }, settings: async () => ({}),
       logger: { warn() {} }, cardGreeting: () => '工作台', emptyCardWorkspace: () => ({}), id: () => randomUUID(), present: async chat => structuredClone(chat),
       native: { wait: async () => target, selection: () => selection, ensurePrefix: (session, text) => ensureSessionStablePrefix(session, text, storage),

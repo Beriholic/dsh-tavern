@@ -2,6 +2,7 @@ import { createConversationInitialization } from '../../tavern-plugin/lib/domain
 import { createPlayCardSnapshots } from '../../tavern-plugin/lib/domain/play-card-snapshots.js'
 import { createContextPlanner } from '../../tavern-plugin/lib/domain/context-planner.js'
 import { createTavernConversationRegistry } from '../../tavern-plugin/lib/domain/tavern-conversation-registry.js'
+import { createStoryTimeline } from '../../tavern-plugin/lib/domain/story-timeline.js'
 
 export function initializationFixture(options = {}) {
   const saved = new Map(), sessions = new Map(), writes = [], trace = []
@@ -36,6 +37,7 @@ export function initializationFixture(options = {}) {
     return sessions.get(id)
   }
   function make() {
+    const timeline = createStoryTimeline({ id: prefix => prefix + '-' + ++sequence, now: () => 123 })
     const snapshots = createPlayCardSnapshots({
       userPreferenceProfile: options.userPreferenceProfile,
       captureSceneWorldbook: options.captureSceneWorldbook,
@@ -45,6 +47,7 @@ export function initializationFixture(options = {}) {
     return createConversationInitialization({
       cards: { read: async path => { state.reads++; await fail('card'); return path === card.path ? structuredClone(card) : undefined }, readChat: async () => structuredClone(card), script: async () => structuredClone(state.script), extensions: async () => structuredClone(state.extensions) },
       chats: { resolve: registry.resolve, publish: registry.publish, write }, snapshots,
+      timeline,
       userPreferenceProfile: options.userPreferenceProfile,
       presets: { fullSnapshot: async () => { state.presetReads++; await fail('preset'); return structuredClone(state.preset) } },
       settings: async () => state.settings, cardGreeting: () => '卡片工作台开场白', emptyCardWorkspace: () => ({ mountedResources: [], draft: {} }),

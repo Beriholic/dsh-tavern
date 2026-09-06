@@ -13,7 +13,8 @@ function groupOfMode(mode) { return !mode || mode === 'story' || mode === 'scrip
 
 /** Owns initialization, repeat-entry and opening recovery; never generates a model turn. */
 export function createConversationInitialization(options) {
-  const { cards, chats, snapshots, native, presets, settings, cardGreeting, emptyCardWorkspace, present } = options
+  const { cards, chats, snapshots, native, presets, settings, cardGreeting, emptyCardWorkspace, present, timeline } = options
+  if (!timeline || typeof timeline.apply !== 'function') throw new Error('Conversation Initialization 缺少 Story Timeline')
   const id = options.id
   const now = options.now || Date.now
   const logger = options.logger || console
@@ -32,7 +33,7 @@ export function createConversationInitialization(options) {
   function newChat(card, mode, requestMode) {
     const chatMode = mode === 'card' ? 'card' : (mode === 'script' ? 'script' : 'story')
     const hasCard = card !== null && card !== undefined && str(card.path) !== ''
-    return {
+    const chat = {
       id: id('chat'),
       cardPath: hasCard ? card.path : '',
       cardName: hasCard ? card.name : '卡片工作台',
@@ -67,6 +68,7 @@ export function createConversationInitialization(options) {
       createdAt: now(),
       updatedAt: now()
     }
+    return timeline.apply({ chat, intent: { kind: 'ensure' } }).chat
   }
 
   async function playPresetSnapshot() {

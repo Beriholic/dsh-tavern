@@ -1267,6 +1267,7 @@ export async function apply(ctx) {
   const conversationInitialization = createConversationInitialization({
     cards: { read: readCard, readChat: readChatCard, script: readScript, extensions: readCardExtensions },
     chats: { resolve: chatForSession, publish: conversationRegistry.publish, write: writeChat },
+    timeline: storyTimeline,
     snapshots: playCardSnapshots,
     userPreferenceProfile,
     presets: runtimePresets,
