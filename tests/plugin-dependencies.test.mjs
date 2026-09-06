@@ -152,6 +152,29 @@ test('Desktop 无 bootstrap 环境变量时按 app 可执行文件定位，不�
   assert.ok(resolveDshBootModule({ host: 'desktop', platform: 'darwin', env: { DSH_DESKTOP_APP_EXECUTABLE: path.join(f.root, 'Desktop.app/Contents/MacOS/DSH Desktop') } }).includes('Desktop.app'))
 })
 
+test('Desktop 内置更新使用当前 Tavern 插件作为宿主依赖锚点，不把系统 Node 当成 Desktop', t => {
+  const f = fixture(t)
+  const anchor = path.join(f.pluginDirectory, 'lib/application-updater.js')
+  mkdirSync(path.dirname(anchor), { recursive: true })
+  writeFileSync(anchor, '')
+  const scope = path.join(f.pluginDirectory, 'node_modules/@deepseek-ai')
+  mkdirSync(scope, { recursive: true })
+  for (const [name, directory] of Object.entries(f.packages)) {
+    symlinkSync(directory, path.join(scope, name.slice('@deepseek-ai/'.length)), 'junction')
+  }
+  const deps = resolveHostDependencies({
+    host: 'desktop',
+    dsh: '/wrong/cli',
+    platform: 'win32',
+    // The updater itself may run under an unrelated system Node; resolution
+    // must still come from the already-loaded Tavern plugin.
+    execPath: process.execPath,
+    env: { DSH_TAVERN_HOST_DEPENDENCY_ANCHOR: anchor },
+  })
+  assert.equal(deps.length, 3)
+  for (const dependency of deps) assert.equal(dependency.directory, realpathSync(f.packages[dependency.name]))
+})
+
 test('本地包版本不等于宿主或 alpha.2 也不拦截；依赖安装失败仍恢复源码配置', t => {
   const f = fixture(t)
   const pkg = path.join(f.packages['@deepseek-ai/dsh-tools'], 'package.json')

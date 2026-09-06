@@ -214,7 +214,11 @@ export async function apply(ctx) {
     }
     return values
   }
-  const applicationUpdater = createApplicationUpdater({ dataRoot, sourceRoot })
+  const applicationUpdater = createApplicationUpdater({
+    dataRoot,
+    sourceRoot,
+    hostDependencyAnchor: fileURLToPath(import.meta.url),
+  })
   const modelRequestLog = createModelRequestLog({
     readJson: async function (path) { return await profileData.readJson(path) },
     writeJson: async function (path, value) { return await profileData.writeJson(path, value) },

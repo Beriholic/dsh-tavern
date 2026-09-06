@@ -585,6 +585,7 @@ test('UI 更新沿用 Profile 中记录的 Desktop 宿主并脱离当前服务�
       sourceRoot: '/app/dsh-tavern',
       dshHome: root,
       execPath: '/runtime/node',
+      hostDependencyAnchor: '/app/dsh-tavern/tavern-plugin/lib/application-updater.js',
       platform: 'linux',
       spawnProcess(command, args, options) { calls.push({ command, args, options }); return child },
       now: () => 123,
@@ -598,6 +599,7 @@ test('UI 更新沿用 Profile 中记录的 Desktop 宿主并脱离当前服务�
     assert.ok(calls[0].args.includes('--status-file'))
     assert.ok(calls[0].args.includes('--delay=800'))
     assert.equal(calls[0].options.detached, true)
+    assert.equal(calls[0].options.env.DSH_TAVERN_HOST_DEPENDENCY_ANCHOR, '/app/dsh-tavern/tavern-plugin/lib/application-updater.js')
     assert.equal(child.unrefCalled, true)
     assert.deepEqual(JSON.parse(await readFile(path.join(dataRoot, 'update-status.json'), 'utf8')), JSON.parse(JSON.stringify({ phase: 'running', host: 'desktop', startedAt: 123, pid: 4321, ...runningVersion })))
   } finally {

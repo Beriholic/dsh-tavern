@@ -40,9 +40,12 @@ function resolveCommandFile(command, env, platform) {
 function resolveHostAnchor({ dsh, host = 'cli', env = process.env, execPath = process.execPath, platform = process.platform }) {
   let anchor
   if (host === 'desktop') {
-    // Desktop's terminal supplies this on Windows. On macOS its node shim
-    // runs the app executable directly, so execPath identifies the same host.
-    if (env.DSH_DESKTOP_DSH_BOOTSTRAP) {
+    // UI updates outlive the current Host process. Preserve the already-loaded
+    // plugin's module-resolution root instead of mistaking a system node.exe
+    // for the Desktop executable after the update detaches.
+    if (env.DSH_TAVERN_HOST_DEPENDENCY_ANCHOR) {
+      anchor = env.DSH_TAVERN_HOST_DEPENDENCY_ANCHOR
+    } else if (env.DSH_DESKTOP_DSH_BOOTSTRAP) {
       anchor = env.DSH_DESKTOP_DSH_BOOTSTRAP.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
     } else {
       const executable = env.DSH_DESKTOP_APP_EXECUTABLE || execPath

@@ -172,6 +172,7 @@ export function createApplicationUpdater(options) {
   const dshHome = path.resolve(options.dshHome || path.join(dataRoot, '../../..'))
   const profileManifest = path.join(dshHome, 'profiles', 'tavern', 'package.json')
   const execPath = options.execPath || process.execPath
+  const hostDependencyAnchor = options.hostDependencyAnchor || ''
   const platform = options.platform || process.platform
   const runtimeHost = options.runtimeHost || process.env.DSH_TAVERN_RUNTIME_HOST
   const spawnProcess = options.spawnProcess || spawn
@@ -440,8 +441,15 @@ export function createApplicationUpdater(options) {
         windowsHide: true,
         stdio: 'ignore',
         env: process.versions.electron
-          ? { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
-          : process.env,
+          ? {
+              ...process.env,
+              ...(hostDependencyAnchor ? { DSH_TAVERN_HOST_DEPENDENCY_ANCHOR: hostDependencyAnchor } : {}),
+              ELECTRON_RUN_AS_NODE: '1',
+            }
+          : {
+              ...process.env,
+              ...(hostDependencyAnchor ? { DSH_TAVERN_HOST_DEPENDENCY_ANCHOR: hostDependencyAnchor } : {}),
+            },
       })
       if (typeof child.once === 'function') {
         await new Promise(function (resolve, reject) {
