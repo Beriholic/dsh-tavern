@@ -35,7 +35,7 @@ test('新旧设置均固定信任人物卡，不再应用手动样式，也不�
   } }]) {
     const before = JSON.stringify(document)
     const result = presentTavernSettings(document, {})
-    assert.equal(result.compatibilityMode, false)
+    assert.equal(result.compatibilityMode, true)
     assert.equal(result.trustedCardMode, true)
     assert.equal(Object.hasOwn(result, 'styleEnvironment'), false)
     assert.equal(JSON.stringify(document), before)
@@ -69,16 +69,16 @@ test('后台模型可以固定为独立 provider/model，也可以恢复为开�
   assert.throws(() => applyTavernSettingsPatch({}, { backgroundModel: { provider: '', model: 'x' } }), /配置无效/)
 })
 
-test('真实设置保存链路关闭兼容模式成功返回，旧关闭信任值不影响运行', async t => {
+test('实验分支始终公开兼容模式，旧关闭信任值不影响运行', async t => {
   const harness = await settingsHarness(t)
   await harness.profileData.writeJson(harness.settingsPath, {
     compatibilityMode: true, trustedCardMode: false, styleEnvironment: { customCss: 'body {}' }, unknown: '保留'
   })
   const result = await harness.update({ compatibilityMode: false })
-  assert.equal(result.compatibilityMode, false)
+  assert.equal(result.compatibilityMode, true)
   assert.equal(result.trustedCardMode, true)
   assert.equal(Object.hasOwn(result, 'styleEnvironment'), false)
-  assert.equal((await harness.read()).compatibilityMode, false)
+  assert.equal((await harness.read()).compatibilityMode, true)
   // Retain legacy data on disk without letting it control the current runtime.
   assert.equal((await harness.saved()).unknown, '保留')
   assert.equal((await harness.saved()).trustedCardMode, false)
@@ -175,16 +175,16 @@ test('后台对话框以只读标签显示实际模型，不替换前台模型�
   assert.doesNotMatch(clientSource.slice(clientSource.indexOf('function TavernBackgroundModelLabel'), clientSource.indexOf('function TavernSettingsSection')), /React\.createElement\("button"/)
 })
 
-test('旧开启设置无效，接口拒绝重新开启，重新读取仍关闭且保留原始数据', async t => {
+test('实验分支无论历史设置为何都公开兼容能力', async t => {
   const harness = await settingsHarness(t)
   const legacy = { compatibilityMode: true, unknown: '保留' }
   await harness.profileData.writeJson(harness.settingsPath, legacy)
-  assert.equal((await harness.read()).compatibilityMode, false)
-  await assert.rejects(harness.update({ compatibilityMode: true }), /兼容模式已停用/)
-  assert.equal((await harness.read()).compatibilityMode, false)
-  assert.deepEqual(await harness.saved(), legacy)
-  assert.equal(presentTavernSettings(await harness.saved(), {}).compatibilityMode, false)
-  assert.doesNotMatch(clientSource, /启用兼容模式|新开兼容对话|兼容（实验性）|什么是兼容模式/)
+  assert.equal((await harness.read()).compatibilityMode, true)
+  assert.equal((await harness.update({ compatibilityMode: false })).compatibilityMode, true)
+  assert.equal((await harness.read()).compatibilityMode, true)
+  assert.equal((await harness.saved()).compatibilityMode, false)
+  assert.equal(presentTavernSettings(await harness.saved(), {}).compatibilityMode, true)
+  assert.match(clientSource, /新开兼容对话|兼容（实验性）/)
 })
 
 test('旧 play-mode 覆盖保留在数据中，但不再出现在可用提示词列表', () => {
@@ -200,7 +200,7 @@ test('旧 play-mode 覆盖保留在数据中，但不再出现在可用提示词
 test('系统正文提示词默认使用内置内容，并可保存自定义覆盖', function () {
   const defaults = { story: '内置正文提示词' }
   assert.deepEqual(presentTavernSettings({}, defaults), {
-    compatibilityMode: false,
+    compatibilityMode: true,
     webSearchEnabled: false,
     backgroundModel: null,
     trustedCardMode: true,
@@ -213,7 +213,7 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
   assert.equal(saved.unknown, 1)
   assert.equal(resolveSystemPrompt(saved, 'story', function () { return '默认' }), '用户正文提示词')
   assert.deepEqual(presentTavernSettings(saved, defaults), {
-    compatibilityMode: false,
+    compatibilityMode: true,
     webSearchEnabled: false,
     backgroundModel: null,
     trustedCardMode: true,

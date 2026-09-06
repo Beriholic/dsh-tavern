@@ -1213,7 +1213,7 @@ test('剧本预览只显示当前召回和后续块', () => {
   assert.doesNotMatch(clientSource, /上一块（已召回）|当前待召回|scriptPreview\.previous/)
 })
 
-test('兼容模式入口关闭，普通游玩与资源兼容能力保留', () => {
+test('实验分支开放兼容入口并保留普通游玩与资源能力', () => {
 	const player = between(clientSource, 'function TavernPlayerNameAction', 'function TavernStatusPanel')
 	const shell = between(clientSource, 'function TavernSidebar', 'function register(input)')
 	const action = between(clientSource, 'function CandidateAction', 'function CandidateDockActions')
@@ -1222,7 +1222,7 @@ test('兼容模式入口关闭，普通游玩与资源兼容能力保留', () =>
 	const llmStream = between(serverSource, "ctx.on('llm/stream'", "ctx.on('agent/turn-stopping'")
 	const systemAssembly = between(serverSource, "ctx.on('system-prompt/assemble'", '// ---------- 模型可选工具 ----------')
 
-	assert.match(shell, /const compatibilityAvailable = false/)
+	assert.match(shell, /const compatibilityAvailable = true/)
 	assert.match(clientSource, /name: "settings\.section"/)
 	assert.match(clientSource, /id: "dsh-tavern"/)
 	assert.doesNotMatch(clientSource, /启用兼容模式（实验性）/)
@@ -1233,13 +1233,13 @@ test('兼容模式入口关闭，普通游玩与资源兼容能力保留', () =>
 	assert.match(clientSource, /Boolean\(result && result\.active\) !== active/)
 	assert.match(clientSource, /releaseTavernHelperRuntime/)
 	assert.match(clientSource, /updateTavernSettings/)
-	assert.doesNotMatch(shell, /switchPlayRequestMode\("sillytavern"\)/)
+	assert.match(shell, /switchPlayRequestMode\("sillytavern"\)/)
 	assert.match(shell, /item\.requestMode === "sillytavern" \? "sillytavern" : "dsh"\) === requestMode/)
 	assert.match(shell, /item\.requestMode === "sillytavern" \? "sillytavern" : "dsh"\) === nextRequestMode/)
 	assert.doesNotMatch(shell, /call\("setRequestMode", \{ sessionId: target\.sessionId/)
-	assert.doesNotMatch(shell, /兼容对话|新开兼容对话|什么是兼容模式/)
+	assert.match(shell, /兼容对话|新开兼容对话/)
 	assert.match(shell, /if \(!target\) \{ props\.sessions\.clear\(\); openPicker\(\); return; \}/)
-	assert.doesNotMatch(shell, /兼容（实验性）/)
+	assert.match(shell, /兼容（实验性）/)
 	assert.match(coordination, /requestMode: sync\.requestMode === "sillytavern"/)
 	assert.match(action, /"重新生成候选项"[\s\S]*"重新生成正文"/)
 	assert.doesNotMatch(action, /requestMode === "sillytavern"\) return/)
@@ -1252,7 +1252,7 @@ test('兼容模式入口关闭，普通游玩与资源兼容能力保留', () =>
 	assert.doesNotMatch(serverSource, /resolveDeveloperMode|DSH_TAVERN_DEV_MODE|仅在开发模式下可用/)
 	assert.match(serverSource, /getTavernSettings/)
 	assert.match(serverSource, /settings\.compatibilityMode && requestMode === 'sillytavern'/)
-	assert.match(serverSource, /兼容模式已停用/)
+	assert.doesNotMatch(serverSource, /兼容模式已停用/)
 	assert.match(preStep, /foregroundStrategies\.prepareStep/)
 	assert.match(serverSource, /compileTurn: compileCompatibilityTurn/)
 	assert.match(serverSource, /applySillyTavernStrictTools\(compiled\.messages/)

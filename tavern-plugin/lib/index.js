@@ -1526,11 +1526,9 @@ export async function apply(ctx) {
     return name
   }
   async function setRequestMode(sessionId, requestMode) {
-    if (requestMode === 'sillytavern') throw new Error('兼容模式已停用')
     const chat = await chatForSession(sessionId)
     if (chat === undefined) throw new Error('当前会话没有绑定人物卡')
     if ((chat.mode || 'story') === 'card') throw new Error('卡片工作台不能切换请求模式')
-    if (chat.requestMode === 'sillytavern') throw new Error('兼容模式已停用，原对话存档保留，请新建游玩对话')
     chat.requestMode = requestMode === 'sillytavern' ? 'sillytavern' : 'dsh'
     await writeChat(chat)
     return chat.requestMode
@@ -2047,7 +2045,7 @@ export async function apply(ctx) {
     const activeChatIds = []
     for (const row of recoveredIndex.chats || []) {
       const chat = await readChat(row.id)
-      if (chat === undefined || chat.requestMode === 'sillytavern') continue
+      if (chat === undefined) continue
       activeChatIds.push(row.id)
       try { if (await presetLibrary.migrateChat(chat)) await writeChat(chat) } catch (error) { console.warn('dsh-tavern: 旧对话预设条目配置迁移失败', chat.id, error) }
       await syncChatSummary(chat)
@@ -2071,13 +2069,6 @@ export async function apply(ctx) {
 
   // ---------- HTTP RPC（客户端同源 fetch） ----------
   async function dispatch(method, args) {
-    if (args && args.requestMode === 'sillytavern') throw new Error('兼容模式已停用')
-    // Retired conversations remain on disk, but stale clients cannot operate them.
-    const targetChats = [
-      args && args.sessionId ? await chatForSession(args.sessionId) : undefined,
-      args && args.chatId ? await readChat(args.chatId) : undefined
-    ]
-    if (targetChats.some(function (chat) { return chat && chat.requestMode === 'sillytavern' })) throw new Error('兼容模式已停用，原对话存档保留，请新建游玩对话')
     switch (method) {
       case 'listCards': return { cards: await listCards() }
       case 'getUpdateStatus': return { status: await applicationUpdater.status() }
@@ -2228,7 +2219,7 @@ export async function apply(ctx) {
       }
       case 'listSessions': {
         const settings = await readTavernSettings()
-        return { sessions: (await listTavernSessions()).filter(function (chat) { return chat.requestMode !== 'sillytavern' }), capabilities: { compatibilityMode: false, trustedCardMode: settings.trustedCardMode } }
+        return { sessions: await listTavernSessions(), capabilities: { compatibilityMode: true, trustedCardMode: settings.trustedCardMode } }
       }
       case 'listMobileCardImports': return await mobileCardImport.list()
       case 'importMobileCard': return { card: await importCard(await mobileCardImport.read(args && args.id)) }

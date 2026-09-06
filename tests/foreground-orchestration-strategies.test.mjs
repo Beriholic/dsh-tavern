@@ -48,17 +48,19 @@ function strategies(overrides = {}) {
   return { value: createForegroundOrchestrationStrategies(options), compatibility: createCompatibilityOrchestrationStrategy(options.compatibility), calls, chats }
 }
 
-test('正式编排拒绝旧兼容对话的生成与系统提示组装，不写入、不调用模型也不静默迁移', async () => {
+test('正式编排为兼容对话选择 SillyTavern 编译策略', async () => {
   const run = strategies()
   const chat = run.chats.get('compat')
-  const before = structuredClone(chat)
-  for (const step of [1, 2]) {
-    await assert.rejects(run.value.prepareStep({ chat, sessionId: 'compat', payload: { turn: 3, step, messages: [userMessage('继续')] } }), /兼容模式已停用/)
-  }
-  await assert.rejects(run.value.assembleSystemPrompt({ sections: [], tools: [] }, { chat, sessionId: 'compat' }), /兼容模式已停用/)
-  assert.deepEqual(run.calls, [])
-  assert.deepEqual(chat, before)
-  assert.equal(run.value.projectRequest({ sessionId: 'compat', messages: [] }), null)
+  const payload = { turn: 3, step: 1, messages: [userMessage('继续')] }
+  const prepared = await run.value.prepareStep({ chat, sessionId: 'compat', payload, decision: { kind: 'enter', messages: payload.messages }, requestId: 'compat-request' })
+  assert.equal(prepared.messages, payload.messages)
+  const projected = run.value.projectRequest({ sessionId: 'compat', messages: [] }, { turn: 3, step: 1 })
+  assert.equal(projected.messages[0].content[0].text, 'compat')
+  const assembly = await run.value.assembleSystemPrompt({ sections: [{}], contexts: [{}], tools: [] }, { chat, sessionId: 'compat' })
+  assert.deepEqual(assembly.sections, [])
+  assert.deepEqual(run.calls, [
+    ['compat.before', '继续'], ['compat.begin', 3, 'compat-request'], ['compat.compile', '继续'], ['compat.persist', 3]
+  ])
 })
 
 test('前台固定背景来自标准 Session 消息，不进入当轮 system、Frame 或预设投影', async () => {
