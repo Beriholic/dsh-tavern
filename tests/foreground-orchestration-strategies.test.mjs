@@ -75,7 +75,7 @@ test('前台固定背景来自标准 Session 消息，不进入当轮 system、F
     async resolvePreset() { return { front: { text: '预设前置指令' } } },
     async ensureSessionPrefix() { return await ensureSessionStablePrefix(session, cardText, storage) },
     async prepareTurn() { return { frame: { userInput: { projectedText: '本轮玩家输入' } } } },
-    appendFrame(input) { return { messages: input.messages.concat(userMessage('本轮动态指令')), receipt: {} } },
+    appendFrame(input) { return { messages: input.messages.concat([pluginMessage('user', '本轮动态指令', 'dsh-tavern', 'foreground-frame')]), receipt: {} } },
     recordFrame() {}, async visibleTools() { return [] },
     modePrompt() { return '正文任务' }, controlledToolNames: new Set()
   } })
@@ -90,8 +90,13 @@ test('前台固定背景来自标准 Session 消息，不进入当轮 system、F
     const modelMessages = session.deriveMessages().concat(prepared.messages)
     assert.equal(modelMessages.filter(message => message.id === 'tavern-session-prefix:native').length, 1)
     assert.equal(modelMessages[0].source.form, 'snapshot')
+    assert.equal(modelMessages[0].role, 'user', 'Session 权威历史保持原样')
     const request = run.value.projectRequest({ sessionId: 'native', system, messages: modelMessages })
-    assert.equal(request.messages[0], modelMessages[0])
+    assert.equal(request.messages[0].role, 'system', '仅在游玩请求边界把人物卡前缀投影为 system')
+    assert.equal(request.messages.at(-1).role, 'system', '仅在游玩请求边界把本轮正文编排投影为 system')
+    assert.notEqual(request.messages[0], modelMessages[0])
+    assert.equal(modelMessages[0].role, 'user', '请求投影不得回写 Session 消息')
+    assert.equal(modelMessages.at(-1).role, 'user', '本轮 Frame 在 Session 中仍保持原角色')
     assert.equal(run.value.projectRequest(request), null)
     cardText = '后续轮次不重新覆盖最初背景'
   }
