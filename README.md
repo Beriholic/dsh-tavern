@@ -153,6 +153,12 @@ dsh-tavern 使用尽可能少而精的提示词，把流程和状态交给程序
 
 ![正文与右侧小手机聊天界面](docs/images/readme/phone-panel.png)
 
+#### 文生图：插画与剧情一起展示
+
+公开灯塔案例中现场生成的场景插画，在游玩页面中与右侧状态栏一起显示。
+
+![公开灯塔案例的场景插画与完整产品界面](docs/images/readme/scene-image-product.png)
+
 ## 首次安装与重新安装
 
 提供桌面版和命令行版两种安装方式。两者使用同一套 Tavern Profile 和数据，请勿同时运行。
