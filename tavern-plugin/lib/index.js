@@ -54,7 +54,7 @@ import { createPlayChatDebugReference, readPlayChatDebugTurn } from './domain/pl
 import { createPhoneChat } from './domain/phone-chat.js'
 import { createPresetLibrary } from './domain/preset-library.js'
 import { resolveRuntimePresetMacros } from './domain/runtime-presets.js'
-import { compileSillyTavernRequest } from './domain/sillytavern-compatibility.js'
+import { compileSillyTavernRequest, createCleanCompatibilityPreset } from './domain/sillytavern-compatibility.js'
 import { applySillyTavernStrictTools } from './domain/sillytavern-strict-tools.js'
 import { createForegroundOrchestrationStrategies } from './domain/foreground-orchestration-strategies.js'
 import { abortedRegenerationTurns, clearFailedTurnSurface, hasRollbackMessages, supersededRegenerationErrorTurns } from './domain/rollback-surface.js'
@@ -2707,14 +2707,13 @@ export async function apply(ctx) {
   async function compileCompatibilityTurn(chat, userText) {
     const snapshot = await resolveChatRuntimePreset(chat)
     const presetPath = str(snapshot && snapshot.presetPath)
-    if (presetPath === '') throw new Error('请先在预设库中选择一份外部预设')
-    const preset = await readPreset(presetPath)
-    const presetDocument = await readPresetDocument(presetPath)
+    const preset = presetPath === '' ? createCleanCompatibilityPreset() : await readPreset(presetPath)
+    const presetDocument = presetPath === '' ? {} : await readPresetDocument(presetPath)
     if (!preset || preset.valid !== true || preset.recognized !== true || !presetDocument) throw new Error('当前预设不存在或无法读取：' + presetPath)
     const card = await readChatCard(chat)
     const extensions = await readCardExtensions(chat.cardPath)
     const regexScripts = (Array.isArray(extensions && extensions.regexScripts) ? extensions.regexScripts : []).concat(
-      Array.isArray(snapshot.regexScripts) ? snapshot.regexScripts : []
+      Array.isArray(snapshot && snapshot.regexScripts) ? snapshot.regexScripts : []
     )
     const worldInfo = await compatibilityWorldInfo(chat, card, userText)
     const compiled = compileSillyTavernRequest({
@@ -2741,6 +2740,7 @@ export async function apply(ctx) {
     compiled.trace.worldBookRefs = worldInfo.refs
     compiled.trace.presetPath = presetPath
     compiled.trace.presetTitle = preset.title
+    compiled.trace.presetMode = presetPath === '' ? 'builtin-clean' : 'external'
     compiled.trace.regexCount = regexScripts.length
     const helperMacros = applyTavernHelperVariableMacros(compiled.messages, {
       message: lastTavernHelperVariables(chat.messages),

@@ -51,5 +51,5 @@ test('侧栏同时提供普通游玩与兼容实验入口', () => {
   assert.match(client, /const compatibilityAvailable = true/)
   assert.match(client, /switchPlayRequestMode\("sillytavern"\)/)
   assert.match(client, /兼容（实验性）/)
-  assert.match(client, /当前外部预设会以 SillyTavern 原始顺序生效/)
+  assert.match(client, /未选择外部预设时自动使用内置纯净预设/)
 })

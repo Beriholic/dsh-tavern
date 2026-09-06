@@ -1,12 +1,44 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { compileSillyTavernRequest } from '../tavern-plugin/lib/domain/sillytavern-compatibility.js'
+import { compileSillyTavernRequest, createCleanCompatibilityPreset } from '../tavern-plugin/lib/domain/sillytavern-compatibility.js'
 import { renderTavernMacros } from '../tavern-plugin/lib/domain/tavern-macro-engine.js'
 
 function resolveMacros(text, context) {
   return { text: String(text).replaceAll('{{char}}', context.charName).replaceAll('{{user}}', context.macroState.userName), diagnostics: [], macroState: context.macroState }
 }
+
+test('未选择外部预设时内置纯净预设保留人物卡、世界书、历史与当前输入', () => {
+  const result = compileSillyTavernRequest({
+    card: {
+      name: '角色',
+      description: '人物描述',
+      personality: '人物性格',
+      scenario: '开场情境',
+      system_prompt: '人物卡主提示',
+      post_history_instructions: '人物卡历史后指令'
+    },
+    preset: createCleanCompatibilityPreset(),
+    presetDocument: {},
+    history: [{ role: 'assistant', text: '开场白' }],
+    input: '继续',
+    worldInfoBefore: '世界书前置',
+    worldInfoAfter: '世界书后置',
+    resolveMacros
+  })
+  assert.deepEqual(result.messages.map(function (item) { return [item.role, item.content] }), [
+    ['system', '人物卡主提示'],
+    ['system', '世界书前置'],
+    ['system', '人物描述'],
+    ['system', '人物性格'],
+    ['system', '开场情境'],
+    ['system', '世界书后置'],
+    ['assistant', '开场白'],
+    ['user', '继续'],
+    ['system', '人物卡历史后指令']
+  ])
+  assert.equal(result.trace.presetTitle, '内置纯净预设')
+})
 
 test('兼容编译器按 prompt_order 展开 marker 并保留 system user assistant 边界', () => {
   const result = compileSillyTavernRequest({
