@@ -436,8 +436,7 @@ test('人物卡 promptOnly 正则写入 Session，但展示投影仍保留原始
   assert.equal(run.chat().messages.at(-1).displayText, '<draft_notes>内部推演</draft_notes>\n正文。')
 })
 
-test('旧对话保留提示词快照，新回复使用实时预设正则', async () => {
-  let liveRegexScripts = []
+test('旧对话的后续回复继续使用创建时固化的预设正则', async () => {
   const run = harness('story', {
     runtimePresetSnapshot: {
       text: '固定提示词',
@@ -446,18 +445,14 @@ test('旧对话保留提示词快照，新回复使用实时预设正则', async
         placement: [2], enabled: true, markdownOnly: true, promptOnly: false, runOnEdit: false
       }]
     },
-    resolvePresetRegexScripts: async function () { return liveRegexScripts }
+    resolvePresetRegexScripts: async function (chat) { return chat.runtimePresetSnapshot.regexScripts }
   })
-  liveRegexScripts = [{
-    id: 'preset-status', name: '实时预设状态面板', findRegex: '<status>([\\s\\S]*?)<\\/status>', replaceString: '<aside>$1</aside>',
-    placement: [2], enabled: true, markdownOnly: true, promptOnly: false, runOnEdit: false
-  }]
   await run.orchestrator.prepare({ sessionId: 'session-1', turn: 2, userText: '查看状态' })
   const saved = await run.orchestrator.finalize({
-    sessionId: 'session-1', turn: 2, userText: '查看状态', assistantText: '她继续向前走。\n\n<status>体力 80</status>'
+    sessionId: 'session-1', turn: 2, userText: '查看状态', assistantText: '她继续向前走。\n\n<old>体力 80</old>'
   })
 
-  assert.equal(saved.reply.sessionText, '她继续向前走。\n\n<status>体力 80</status>')
+  assert.equal(saved.reply.sessionText, '她继续向前走。\n\n<old>体力 80</old>')
   assert.equal(saved.reply.displayText, '她继续向前走。\n\n<aside>体力 80</aside>')
   assert.equal(run.chat().presentation, undefined)
 })

@@ -74,7 +74,10 @@ test('游玩请求把 Tavern 固定背景与本轮编排固化为 system，Sessi
   const run = strategies({ nativePlay: {
     async modeFor() { return 'story' },
     filterMessages(messages) { return messages },
-    async resolvePreset() { return { front: { text: '预设前置指令' } } },
+    async resolvePreset() { return {
+      front: { entries: [{ role: 'user', content: '预设前置指令' }] },
+      back: { entries: [{ role: 'system', content: '预设后置指令' }] }
+    } },
     async ensureSessionPrefix() { return await ensureSessionStablePrefix(session, cardText, storage) },
     async prepareTurn() { return { frame: { userInput: { projectedText: '本轮玩家输入' } } } },
     appendFrame(input) { return { messages: input.messages.concat([pluginMessage('user', '本轮动态指令', 'dsh-tavern', 'foreground-frame')]), receipt: {} } },
@@ -94,12 +97,11 @@ test('游玩请求把 Tavern 固定背景与本轮编排固化为 system，Sessi
     assert.equal(modelMessages[0].source.form, 'snapshot')
     assert.equal(modelMessages[0].role, 'user', 'Session 权威历史保持原样')
     const request = run.value.projectRequest({ sessionId: 'native', system, messages: modelMessages })
-    assert.deepEqual(request.messages.map(message => message.role), ['system', 'user', 'assistant', 'user', 'user', 'system'])
+    assert.deepEqual(request.messages.map(message => message.role), ['system', 'user', 'assistant', 'user'])
     assert.equal(request.messages[0].role, 'system', '仅在游玩请求边界把人物卡前缀投影为 system')
-    assert.deepEqual(request.messages.slice(1, 4).map(message => message.source.form || message.source.model), [
-      'synthetic-trajectory', 'synthetic-trajectory', 'synthetic-trajectory'
-    ])
-    assert.equal(request.messages.at(-1).role, 'system', '仅在游玩请求边界把本轮正文编排投影为 system')
+    assert.match(request.messages[0].content[0].text, /^预设前置指令\n\n人物卡固定基本信息/)
+    assert.equal(request.messages.at(-1).role, 'user', '本轮指令和预设后段保持 user 语义')
+    assert.match(request.messages.at(-1).content[0].text, /本轮动态指令\n\n预设后置指令$/)
     assert.notEqual(request.messages[0], modelMessages[0])
     assert.equal(modelMessages[0].role, 'user', '请求投影不得回写 Session 消息')
     assert.equal(modelMessages.at(-1).role, 'user', '本轮 Frame 在 Session 中仍保持原角色')

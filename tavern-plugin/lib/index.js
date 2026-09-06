@@ -1021,7 +1021,9 @@ export async function apply(ctx) {
         scriptProgress = scriptContinuity.inspect({ script: script, state: chat.scriptState, request: { kind: 'progress' } })
       }
     }
-    const activePresetSnapshot = groupOfMode(chat.mode) === 'play' ? await runtimePresets.fullSnapshot() : null
+    const activePresetSnapshot = groupOfMode(chat.mode) === 'play' && chat.runtimePresetSnapshot && typeof chat.runtimePresetSnapshot === 'object'
+      ? chat.runtimePresetSnapshot
+      : null
     let replyDisplay = { projections: replyProjectionsOf(chat), presentation: null, latestSourceBacked: false }
     let cardExtensions = { regexScripts: [], helperScripts: [] }
     if ((chat.mode || 'story') === 'story' || (chat.mode || 'story') === 'script') {
@@ -2017,7 +2019,7 @@ export async function apply(ctx) {
     projectWorldBookTemplates: nativeWorldBookTemplateContext,
     resolvePresetRegexScripts: async function (chat) {
       if (!chat || groupOfMode(chat.mode) !== 'play') return []
-      const snapshot = await runtimePresets.fullSnapshot()
+      const snapshot = chat.runtimePresetSnapshot && typeof chat.runtimePresetSnapshot === 'object' ? chat.runtimePresetSnapshot : null
       return Array.isArray(snapshot && snapshot.regexScripts) ? snapshot.regexScripts : []
     },
     now: Date.now,
@@ -2619,40 +2621,10 @@ export async function apply(ctx) {
   }
 
   async function resolveChatRuntimePreset(chat) {
-    if (!chat) return null
-    const raw = groupOfMode(chat.mode) === 'play' ? await runtimePresets.fullSnapshot() : null
-    const presetPath = str(raw && raw.presetPath)
-    if (presetPath === '') {
-      const needsClearing = chat.runtimePresetSnapshot !== null || str(chat.bypassPlanId) !== '' || str(chat.runtimePresetPath) !== ''
-      chat.runtimePresetSnapshot = null
-      chat.bypassPlanId = ''
-      chat.runtimePresetPath = ''
-      if (needsClearing) {
-        await updateChat(chat.id, function (current) {
-          if (!current || typeof current !== 'object') return current
-          return Object.assign({}, current, {
-            runtimePresetSnapshot: null,
-            bypassPlanId: '',
-            runtimePresetPath: '',
-            updatedAt: Date.now()
-          })
-        }, { source: 'runtime-preset.clear' })
-      }
-      return null
-    }
-    chat.runtimePresetSnapshot = raw
-    chat.bypassPlanId = ''
-    chat.runtimePresetPath = presetPath
-    await updateChat(chat.id, function (current) {
-      if (!current || typeof current !== 'object') return current
-      return Object.assign({}, current, {
-        runtimePresetSnapshot: raw,
-        bypassPlanId: '',
-        runtimePresetPath: presetPath,
-        updatedAt: Date.now()
-      })
-    }, { source: 'runtime-preset.resolve' })
-    return raw
+    if (!chat || groupOfMode(chat.mode) !== 'play') return null
+    return chat.runtimePresetSnapshot && typeof chat.runtimePresetSnapshot === 'object'
+      ? chat.runtimePresetSnapshot
+      : null
   }
 
   function compatibilityWorldBookMatch(entry, source) {
@@ -2713,8 +2685,8 @@ export async function apply(ctx) {
   async function compileCompatibilityTurn(chat, userText) {
     const snapshot = await resolveChatRuntimePreset(chat)
     const presetPath = str(snapshot && snapshot.presetPath)
-    const preset = presetPath === '' ? createCleanCompatibilityPreset() : await readPreset(presetPath)
-    const presetDocument = presetPath === '' ? {} : await readPresetDocument(presetPath)
+    const preset = presetPath === '' ? createCleanCompatibilityPreset() : snapshot.compatibilityPreset
+    const presetDocument = presetPath === '' ? {} : snapshot.compatibilityPresetDocument
     if (!preset || preset.valid !== true || preset.recognized !== true || !presetDocument) throw new Error('当前预设不存在或无法读取：' + presetPath)
     const card = await readChatCard(chat)
     const extensions = await readCardExtensions(chat.cardPath)

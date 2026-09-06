@@ -131,7 +131,7 @@ export function createConversationInitialization(options) {
     const chat = newChat(card, chatMode || 'story', effectiveRequestMode)
     chat.bypassPlanId = runtimePresetSnapshot && runtimePresetSnapshot.planId || ''
     chat.runtimePresetSnapshot = runtimePresetSnapshot
-    chat.runtimePresetPath = ''
+    chat.runtimePresetPath = str(runtimePresetSnapshot && runtimePresetSnapshot.presetPath)
     chat.macroState = macroState
     // The sidebar setting is the sole opt-in; opening previews and legacy clients cannot override it.
     const profile = groupOfMode(chat.mode) === 'play' && options.userPreferenceProfile

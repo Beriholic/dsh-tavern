@@ -82,7 +82,7 @@ test('没有前后和旧残留时保持原 messages 引用', () => {
   assert.equal(projectRuntimePresetRequestMessages(messages, null), messages)
 })
 
-test('激活前段时把 DSH system 移入 messages，并按 strict_tools 归一化中途 system 与相邻角色', () => {
+test('普通游玩把预设前段合并为唯一开头 system，后段合并到末尾 user', () => {
   const snapshot = {
     front: { entries: [
       { role: 'user', content: '前段：林岚，29 岁，与其他角色无亲属关系。' },
@@ -104,7 +104,7 @@ test('激活前段时把 DSH system 移入 messages，并按 strict_tools 归一
   assert.equal(request.system, 'DSH 内置系统提示')
   assert.equal(projected.system, '')
   assert.deepEqual(projected.messages.map(function (message) { return [message.role, message.content[0].text] }), [
-    ['user', '前段：林岚，29 岁，与其他角色无亲属关系。\n\n前段约束\n\nDSH 内置系统提示'],
+    ['system', '前段：林岚，29 岁，与其他角色无亲属关系。\n\n前段约束\n\nDSH 内置系统提示'],
     ['assistant', '历史'],
     ['user', '本轮任务\n\n后段约束']
   ])
@@ -116,7 +116,7 @@ test('激活前段时把 DSH system 移入 messages，并按 strict_tools 归一
   assert.deepEqual(projected.messages[2].source.sections.map(function (section) { return section.name }), [
     'tavern:runtime-preset-back'
   ])
-  assert.equal(projected.messages.slice(1).some(function (message) { return message.role === 'system' }), false)
+  assert.equal(projected.messages.filter(function (message) { return message.role === 'system' }).length, 1)
 })
 
 test('没有激活前段时不改写 DSH 顶层 system', () => {
@@ -141,7 +141,7 @@ test('角色归一化不合并或破坏 DSH 工具消息', () => {
   })
 
   assert.deepEqual(projected.messages.map(function (message) { return message.role }), [
-    'user', 'assistant', 'assistant', 'tool', 'user'
+    'system', 'assistant', 'assistant', 'tool', 'user'
   ])
   assert.deepEqual(projected.messages[1].tool_calls, toolCalls)
   assert.equal(projected.messages[3].tool_call_id, 'call-1')

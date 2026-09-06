@@ -417,6 +417,8 @@ export function createRuntimePresetModule(options = {}) {
       const result = {
         presetPath: activePath,
         presetName: preset.title,
+        compatibilityPreset: preset,
+        compatibilityPresetDocument: document,
         front,
         middle,
         back,
@@ -426,7 +428,7 @@ export function createRuntimePresetModule(options = {}) {
         regexSources: regexScripts.map(function (script) { return { path: activePath, regexKey: script.regexKey, id: script.id, name: script.name } }),
         createdAt: now()
       }
-      result.digest = createHash('sha256').update(JSON.stringify({ front, middle, back, regexScripts })).digest('hex')
+      result.digest = createHash('sha256').update(JSON.stringify({ front, middle, back, regexScripts, compatibilityPreset: preset, compatibilityPresetDocument: document })).digest('hex')
       if (current.lastError !== null) await mutate(function (latest) { latest.lastError = null; return latest })
       return result
     } catch (error) {

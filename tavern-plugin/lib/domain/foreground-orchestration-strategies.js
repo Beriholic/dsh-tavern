@@ -98,11 +98,11 @@ function isNativeForegroundFrame(message) {
     && source.plugin === 'dsh-tavern' && source.form === 'foreground-frame'
 }
 
-/** Keep Tavern-owned model context authoritative without rewriting append-only Session events. */
+/** Promote only the stable opening context; per-turn instructions remain user input. */
 export function projectNativeContextAsSystem(messages) {
   let changed = false
   const projected = (Array.isArray(messages) ? messages : []).map(function (message) {
-    if (!isNativeStablePrefix(message) && !isNativeForegroundFrame(message)) return message
+    if (!isNativeStablePrefix(message)) return message
     changed = true
     return Object.assign({}, message, { role: 'system' })
   })

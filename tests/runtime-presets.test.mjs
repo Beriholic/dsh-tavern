@@ -96,6 +96,8 @@ test('整份预设快照每次读取源文件的原始启用状态，不依赖�
   assert.equal(snapshot.presetPath, 'presets/先导入.json')
   assert.equal(snapshot.front.text, '第一段')
   assert.deepEqual(snapshot.regexScripts.map(function (script) { return script.regexKey }), ['status#1'])
+  assert.equal(snapshot.compatibilityPreset.entries[0].content, '第一段')
+  assert.deepEqual(snapshot.compatibilityPresetDocument, {})
 
   value.presets.get('presets/先导入.json').entries[0].content = '编辑后立即生效'
   value.presets.get('presets/先导入.json').entries[2].enabled = true
