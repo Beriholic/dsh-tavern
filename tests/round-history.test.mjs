@@ -74,6 +74,10 @@ function harness({ checkpoint = false, mode = 'story' } = {}) {
       outcome: { status: settlementOutcome === 'failure' ? 'failure' : 'success' },
       apply(draft) { draft.settleStatus = 'done' }
     }).chat
+    if (settlementOutcome === 'failure') {
+      chat.settleStatus = 'failed'
+      chat.settleError = '后台结算尚未完成'
+    }
   }, present: async value => structuredClone(value) }
   return { create: () => createRoundHistory(options), options, calls, session, agent, timeline, get chat() { return chat },
     setGeneration(value) { generation = value }, setSettlement(value) { settlementOutcome = value }, beforeGenerate(fn) { beforeGenerate = fn }, revisions }
@@ -145,7 +149,7 @@ test('生成中误点回退不写入，完成后再次点击能正常回退', as
   assert.deepEqual(result.messages.map(item => item.text), ['开场'])
 })
 
-test('变量结算失败后可丢弃未提交正文，不连带回退上一轮 checkpoint', async () => {
+test('变量结算失败后仍可显式回退已提交正文，不连带回退上一轮 checkpoint', async () => {
   const h = harness({ checkpoint: true })
   h.chat._storageRevision = 2
   h.revisions.set(2, structuredClone(h.chat))
@@ -171,8 +175,11 @@ test('变量结算失败后可丢弃未提交正文，不连带回退上一轮 c
   }, { source: 'fixture' })
   h.session.append('user/message', { turn: 3, role: 'user', content: [{ type: 'text', text: '继续' }], source: { kind: 'user' } }, { surfaceOp: 'append' })
   h.session.append('assistant/message', { turn: 3, step: 1, message: { role: 'assistant', source: { kind: 'model', provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: '临时正文' }] } }, { surfaceOp: 'append' })
-  const active = Object.values(h.timeline.inspect({ chat: h.chat }).operations).filter(operation => operation.status === 'running' || operation.status === 'foreground-completed')
-  assert.deepEqual(active.map(operation => [operation.kind, operation.status, operation.background?.phase]), [['body', 'foreground-completed', 'failed']])
+  const bodyOperation = Object.values(h.timeline.inspect({ chat: h.chat }).operations).find(operation => operation.kind === 'body' && Number(operation.turn) === 3)
+  assert.deepEqual([bodyOperation.status, bodyOperation.background?.phase], ['completed', 'failed'])
+  const unfinished = Object.values(h.timeline.inspect({ chat: h.chat }).operations).filter(operation => operation.status === 'running' ||
+    (operation.kind === 'body' && operation.status === 'completed' && ['pending', 'running'].includes(operation.background?.phase)))
+  assert.deepEqual(unfinished, [])
   assert.notEqual(h.agent.phase.kind, 'running')
 
   const result = await h.create().rollback('session', 'chat')
@@ -308,7 +315,7 @@ test('真实 journal 持久化：消息面失败后 checkpoint 可恢复、重�
   assert.equal((await reopened.read('chat')).messages.length, 1)
 })
 
-test('完整重生成保留玩家输入，只在结算成功后原子替换唯一正文', async () => {
+test('完整重生成先独立替换唯一正文，再执行后台结算', async () => {
   const h = harness({ checkpoint: true })
   const originalEvents = structuredClone(h.session.events)
   const result = await h.create().regenerate('', '写得短一些', 'session')
@@ -326,7 +333,7 @@ test('完整重生成保留玩家输入，只在结算成功后原子替换唯�
   assert.ok(h.calls.indexOf('readRevision') < h.calls.indexOf('rollback.regen'))
   assert.ok(!h.calls.includes('MESSAGE_SWIPED'))
   assert.ok(h.calls.indexOf('foreground.regen-commit') < h.calls.indexOf('settlement'))
-  assert.ok(h.calls.lastIndexOf('surface:assistant/message') > h.calls.indexOf('settlement'))
+  assert.ok(h.calls.lastIndexOf('surface:assistant/message') < h.calls.indexOf('settlement'))
   assert.ok(!h.calls.includes('MESSAGE_RECEIVED'), 'MVU stays owned by background settlement')
   assert.deepEqual(h.session.events.slice(0, 2), originalEvents, 'append-only event history')
   const replacement = h.session.events.at(-1)
@@ -353,25 +360,23 @@ test('当前正文尚在后台结算时，重新生成先取消旧结算再替�
   assert.ok(h.calls.indexOf('cancel-settlement:chat') < h.calls.indexOf('followup'))
 })
 
-test('重生成的后台结算失败时恢复旧整轮，并清理临时模型消息', async () => {
+test('重生成的后台结算失败时保留新正文并允许继续', async () => {
   const h = harness({ checkpoint: true })
-  const original = structuredClone(h.chat.messages)
   h.setSettlement('failure')
-  await assert.rejects(h.create().regenerate('chat', '', 'session'), /已恢复原正文和状态.*后台结算尚未完成/)
-  assert.deepEqual(h.chat.messages, original)
+  const result = await h.create().regenerate('chat', '', 'session')
+  assert.equal(h.chat.messages.at(-1).text, '新正文3')
+  assert.equal(result.messages.at(-1).text, '新正文3')
   assert.equal(h.chat.regenInProgress, undefined)
   assert.deepEqual(h.chat.suppressedDshTurns, [3])
-  assert.ok(h.calls.includes('foreground.regen-abort'))
-  assert.deepEqual(h.session.surface.nodes, [0, 1, h.session.events.length - 1])
-  const cleanup = h.session.events.at(-1)
-  assert.equal(cleanup.data.source.plugin, 'dsh-tavern-regeneration-abort')
-  assert.deepEqual(cleanup.data.content, [])
-  assert.deepEqual(cleanup.sourceEventSeqs, [2, 3])
+  assert.equal(h.chat.settleStatus, 'failed')
+  assert.equal(h.chat.settleError, '后台结算尚未完成')
+  assert.ok(!h.calls.includes('foreground.regen-abort'))
+  assert.equal(h.session.events.at(-1).surfaceOp.op, 'replace')
+  assert.doesNotThrow(() => h.timeline.apply({ chat: h.chat, intent: { kind: 'body.begin', turn: 4, userText: '继续' } }))
 })
 
-for (const thrown of [false, true]) test('重生成保留真实结算错误并明确恢复旧整轮：throw=' + thrown, async () => {
+for (const thrown of [false, true]) test('重生成保留真实结算错误但不恢复旧正文：throw=' + thrown, async () => {
   const h = harness({ checkpoint: true })
-  const original = structuredClone(h.chat.messages)
   const cause = new Error('Tavern Chat 已被另一项操作修改，拒绝覆盖冲突字段：messages')
   cause.code = 'DSH_TAVERN_CHAT_CONFLICT'
   h.options.queueSettlement = async () => {
@@ -379,16 +384,12 @@ for (const thrown of [false, true]) test('重生成保留真实结算错误并�
     h.chat.settleStatus = 'failed'
     h.chat.settleError = cause.message
   }
-  await assert.rejects(h.create().regenerate('chat', '', 'session'), error => {
-    assert.match(error.message, /已恢复原正文和状态/)
-    assert.match(error.message, /冲突字段：messages/)
-    assert.doesNotMatch(error.message, /请先重试结算/)
-    if (thrown) { assert.equal(error.cause, cause); assert.equal(error.code, cause.code) }
-    return true
-  })
-  assert.deepEqual(h.chat.messages, original)
-  assert.equal(h.chat.settleStatus, 'done')
-  assert.ok(h.calls.includes('foreground.regen-abort'))
+  const result = await h.create().regenerate('chat', '', 'session')
+  assert.equal(result.messages.at(-1).text, '新正文3')
+  assert.equal(h.chat.messages.at(-1).text, '新正文3')
+  assert.equal(h.chat.settleStatus, 'failed')
+  assert.match(h.chat.settleError, /冲突字段：messages/)
+  assert.ok(!h.calls.includes('foreground.regen-abort'))
 })
 
 for (const mode of ['throw', 'missing', 'empty']) test('重生成 '+mode+' 恢复原剧情且不排后台结算', async () => {

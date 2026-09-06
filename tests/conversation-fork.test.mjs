@@ -60,7 +60,7 @@ test('分叉只接受没有前台或后台未完成工作的游玩对话', () =>
   assert.throws(() => assertConversationForkable({ ...sourceChat(), mode: 'card' }), /只有游玩对话/)
   assert.throws(() => assertConversationForkable(sourceChat(), { agentRunning: true }), /正文仍在生成/)
   const settling = sourceChat()
-  settling.timeline.operations.running = { kind: 'body', status: 'foreground-completed' }
+  settling.timeline.operations.running = { kind: 'body', status: 'completed', background: { phase: 'pending' } }
   assert.throws(() => assertConversationForkable(settling), /状态结算/)
   assert.throws(() => assertConversationForkable({
     ...sourceChat(),

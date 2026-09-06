@@ -207,7 +207,7 @@ test('Foreground Turn 提交后直接开放状态结算，不创建世界书 Age
   assert.equal(Object.values(harness.timeline.inspect({ chat: harness.current() }).operations).some(function (operation) { return operation.role === 'worldbook' }), false)
 
   await assert.rejects(harness.coordinator.begin(harness.current(), 'candidate'), function (error) {
-    return error && error.code === 'ROUND_INCOMPLETE'
+    return error && error.code === 'BACKGROUND_BUSY'
   })
 
   const settlement = await harness.coordinator.begin(harness.current(), 'settlement')
@@ -216,7 +216,7 @@ test('Foreground Turn 提交后直接开放状态结算，不创建世界书 Age
   assert.equal(harness.coordinator.activity(afterSettlement.chat).busy, false)
 })
 
-test('Round 结算失败后只能重试结算，不能穿插候选任务', async () => {
+test('结算失败后释放后台 Agent，可继续候选任务或重试结算', async () => {
   const harness = coordinatorHarness()
   const body = harness.timeline.apply({ chat: harness.current(), intent: { kind: 'body.begin', turn: 1, userText: '向前走' } })
   const foreground = harness.timeline.complete({
@@ -229,10 +229,8 @@ test('Round 结算失败后只能重试结算，不能穿插候选任务', async
   const settlement = await harness.coordinator.begin(harness.current(), 'settlement')
   await settlement.fail()
 
-  await assert.rejects(
-    harness.coordinator.begin(harness.current(), 'candidate'),
-    function (error) { return error && error.code === 'ROUND_INCOMPLETE' && error.operationId === body.value.operationId }
-  )
+  const candidate = await harness.coordinator.begin(harness.current(), 'candidate')
+  await candidate.commit()
   await assert.doesNotReject(harness.coordinator.begin(harness.current(), 'settlement'))
 })
 

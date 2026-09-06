@@ -130,16 +130,6 @@ export function createBackgroundTaskCoordinator(options = {}) {
         }
       }
       const currentActivity = activity(source)
-      const incompleteRound = Object.values(timeline.inspect({ chat: source }).operations || {}).find(function (operation) {
-        return operation && operation.kind === 'body' && operation.status === 'foreground-completed'
-      })
-      if (incompleteRound !== undefined && requestedRole !== 'settlement') {
-        const error = new Error('当前剧情轮次尚未完成状态结算')
-        error.code = 'ROUND_INCOMPLETE'
-        error.operationId = str(incompleteRound.id)
-        error.activity = currentActivity
-        throw error
-      }
       const expectedPending = currentActivity.phase === 'pending' && currentActivity.role === requestedRole
       const conflictingPending = currentActivity.phase === 'pending' && currentActivity.role !== requestedRole
       if ((currentActivity.busy || conflictingPending) && !expectedPending) {

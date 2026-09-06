@@ -54,7 +54,7 @@ import { createPlayChatDebugReference, readPlayChatDebugTurn } from './domain/pl
 import { createPhoneChat } from './domain/phone-chat.js'
 import { createPresetLibrary } from './domain/preset-library.js'
 import { resolveRuntimePresetMacros } from './domain/runtime-presets.js'
-import { compileSillyTavernRequest } from './domain/sillytavern-compatibility.js'
+import { compileSillyTavernRequest, createCleanCompatibilityPreset } from './domain/sillytavern-compatibility.js'
 import { applySillyTavernStrictTools } from './domain/sillytavern-strict-tools.js'
 import { createForegroundOrchestrationStrategies } from './domain/foreground-orchestration-strategies.js'
 import { abortedRegenerationTurns, clearFailedTurnSurface, hasRollbackMessages, supersededRegenerationErrorTurns } from './domain/rollback-surface.js'
@@ -1526,11 +1526,9 @@ export async function apply(ctx) {
     return name
   }
   async function setRequestMode(sessionId, requestMode) {
-    if (requestMode === 'sillytavern') throw new Error('兼容模式已停用')
     const chat = await chatForSession(sessionId)
     if (chat === undefined) throw new Error('当前会话没有绑定人物卡')
     if ((chat.mode || 'story') === 'card') throw new Error('卡片工作台不能切换请求模式')
-    if (chat.requestMode === 'sillytavern') throw new Error('兼容模式已停用，原对话存档保留，请新建游玩对话')
     chat.requestMode = requestMode === 'sillytavern' ? 'sillytavern' : 'dsh'
     await writeChat(chat)
     return chat.requestMode
@@ -1795,7 +1793,8 @@ export async function apply(ctx) {
         const completed = waitingRuntime ? await taskRun.defer(completion) : await taskRun.commit(completion)
         if (completed.status === 'missing') return
         if (completed.status === 'stale') {
-          if (backgroundTasks.activity(completed.chat).busy) continue
+          const activity = backgroundTasks.activity(completed.chat)
+          if (activity.role === 'settlement' && (activity.phase === 'pending' || activity.phase === 'running')) continue
           return
         }
         if (completed.status === 'deferred') {
@@ -1819,7 +1818,11 @@ export async function apply(ctx) {
           participant: taskRun.participant({ sessionId: backgroundSessionId, boundary: backgroundBoundary })
         })
         if (failed.status === 'missing') return
-        if (failed.status === 'stale' && backgroundTasks.activity(failed.chat).busy) continue
+        if (failed.status === 'stale') {
+          const activity = backgroundTasks.activity(failed.chat)
+          if (activity.role === 'settlement' && (activity.phase === 'pending' || activity.phase === 'running')) continue
+          return
+        }
         const latest = await readChat(chatId)
         if (latest === undefined) return
         const target = pendingMvuTarget(latest)
@@ -2047,7 +2050,7 @@ export async function apply(ctx) {
     const activeChatIds = []
     for (const row of recoveredIndex.chats || []) {
       const chat = await readChat(row.id)
-      if (chat === undefined || chat.requestMode === 'sillytavern') continue
+      if (chat === undefined) continue
       activeChatIds.push(row.id)
       try { if (await presetLibrary.migrateChat(chat)) await writeChat(chat) } catch (error) { console.warn('dsh-tavern: 旧对话预设条目配置迁移失败', chat.id, error) }
       await syncChatSummary(chat)
@@ -2071,13 +2074,6 @@ export async function apply(ctx) {
 
   // ---------- HTTP RPC（客户端同源 fetch） ----------
   async function dispatch(method, args) {
-    if (args && args.requestMode === 'sillytavern') throw new Error('兼容模式已停用')
-    // Retired conversations remain on disk, but stale clients cannot operate them.
-    const targetChats = [
-      args && args.sessionId ? await chatForSession(args.sessionId) : undefined,
-      args && args.chatId ? await readChat(args.chatId) : undefined
-    ]
-    if (targetChats.some(function (chat) { return chat && chat.requestMode === 'sillytavern' })) throw new Error('兼容模式已停用，原对话存档保留，请新建游玩对话')
     switch (method) {
       case 'listCards': return { cards: await listCards() }
       case 'getUpdateStatus': return { status: await applicationUpdater.status() }
@@ -2228,8 +2224,9 @@ export async function apply(ctx) {
       }
       case 'listSessions': {
         const settings = await readTavernSettings()
-        return { sessions: (await listTavernSessions()).filter(function (chat) { return chat.requestMode !== 'sillytavern' }), capabilities: { compatibilityMode: false, trustedCardMode: settings.trustedCardMode } }
+        return { sessions: await listTavernSessions(), capabilities: { compatibilityMode: true, trustedCardMode: settings.trustedCardMode } }
       }
+      case 'markConversationOpened': return await conversationRegistry.touch(args && args.sessionId, Date.now())
       case 'listMobileCardImports': return await mobileCardImport.list()
       case 'importMobileCard': return { card: await importCard(await mobileCardImport.read(args && args.id)) }
       case 'importCard': return { card: await importCard(args && args.payload) }
@@ -2716,14 +2713,13 @@ export async function apply(ctx) {
   async function compileCompatibilityTurn(chat, userText) {
     const snapshot = await resolveChatRuntimePreset(chat)
     const presetPath = str(snapshot && snapshot.presetPath)
-    if (presetPath === '') throw new Error('请先在预设库中选择一份外部预设')
-    const preset = await readPreset(presetPath)
-    const presetDocument = await readPresetDocument(presetPath)
+    const preset = presetPath === '' ? createCleanCompatibilityPreset() : await readPreset(presetPath)
+    const presetDocument = presetPath === '' ? {} : await readPresetDocument(presetPath)
     if (!preset || preset.valid !== true || preset.recognized !== true || !presetDocument) throw new Error('当前预设不存在或无法读取：' + presetPath)
     const card = await readChatCard(chat)
     const extensions = await readCardExtensions(chat.cardPath)
     const regexScripts = (Array.isArray(extensions && extensions.regexScripts) ? extensions.regexScripts : []).concat(
-      Array.isArray(snapshot.regexScripts) ? snapshot.regexScripts : []
+      Array.isArray(snapshot && snapshot.regexScripts) ? snapshot.regexScripts : []
     )
     const worldInfo = await compatibilityWorldInfo(chat, card, userText)
     const compiled = compileSillyTavernRequest({
@@ -2750,6 +2746,7 @@ export async function apply(ctx) {
     compiled.trace.worldBookRefs = worldInfo.refs
     compiled.trace.presetPath = presetPath
     compiled.trace.presetTitle = preset.title
+    compiled.trace.presetMode = presetPath === '' ? 'builtin-clean' : 'external'
     compiled.trace.regexCount = regexScripts.length
     const helperMacros = applyTavernHelperVariableMacros(compiled.messages, {
       message: lastTavernHelperVariables(chat.messages),

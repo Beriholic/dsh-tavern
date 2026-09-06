@@ -5,6 +5,7 @@ import { Session } from './fixtures/dsh-session-host.mjs'
 import { sessionEvents } from '../tavern-plugin/lib/domain/session-events.js'
 import { createForegroundOrchestrationStrategies, createNativePlayOrchestrationStrategy, createCompatibilityOrchestrationStrategy, projectRegenerationRequestMessages } from '../tavern-plugin/lib/domain/foreground-orchestration-strategies.js'
 import { ensureSessionStablePrefix } from '../tavern-plugin/lib/domain/session-stable-prefix.js'
+import { ensureSessionSeedTrajectory } from '../tavern-plugin/lib/domain/session-seed-trajectory.js'
 
 function userMessage(text) {
   return { role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } }
@@ -48,32 +49,35 @@ function strategies(overrides = {}) {
   return { value: createForegroundOrchestrationStrategies(options), compatibility: createCompatibilityOrchestrationStrategy(options.compatibility), calls, chats }
 }
 
-test('正式编排拒绝旧兼容对话的生成与系统提示组装，不写入、不调用模型也不静默迁移', async () => {
+test('正式编排为兼容对话选择 SillyTavern 编译策略', async () => {
   const run = strategies()
   const chat = run.chats.get('compat')
-  const before = structuredClone(chat)
-  for (const step of [1, 2]) {
-    await assert.rejects(run.value.prepareStep({ chat, sessionId: 'compat', payload: { turn: 3, step, messages: [userMessage('继续')] } }), /兼容模式已停用/)
-  }
-  await assert.rejects(run.value.assembleSystemPrompt({ sections: [], tools: [] }, { chat, sessionId: 'compat' }), /兼容模式已停用/)
-  assert.deepEqual(run.calls, [])
-  assert.deepEqual(chat, before)
-  assert.equal(run.value.projectRequest({ sessionId: 'compat', messages: [] }), null)
+  const payload = { turn: 3, step: 1, messages: [userMessage('继续')] }
+  const prepared = await run.value.prepareStep({ chat, sessionId: 'compat', payload, decision: { kind: 'enter', messages: payload.messages }, requestId: 'compat-request' })
+  assert.equal(prepared.messages, payload.messages)
+  const projected = run.value.projectRequest({ sessionId: 'compat', messages: [] }, { turn: 3, step: 1 })
+  assert.equal(projected.messages[0].content[0].text, 'compat')
+  const assembly = await run.value.assembleSystemPrompt({ sections: [{}], contexts: [{}], tools: [] }, { chat, sessionId: 'compat' })
+  assert.deepEqual(assembly.sections, [])
+  assert.deepEqual(run.calls, [
+    ['compat.before', '继续'], ['compat.begin', 3, 'compat-request'], ['compat.compile', '继续'], ['compat.persist', 3]
+  ])
 })
 
-test('前台固定背景来自标准 Session 消息，不进入当轮 system、Frame 或预设投影', async () => {
+test('游玩请求把 Tavern 固定背景与本轮编排固化为 system，Session 仍保持追加式 user 消息', async () => {
   const session = Session.create('native')
   const savedPrefixes = new Map()
   const storage = { async read(id) { return savedPrefixes.get(id) }, async write(id, value) { savedPrefixes.set(id, value) } }
   let cardText = '人物卡固定基本信息\n常驻世界书'
   await ensureSessionStablePrefix(session, cardText, storage)
+  await ensureSessionSeedTrajectory(session)
   const run = strategies({ nativePlay: {
     async modeFor() { return 'story' },
     filterMessages(messages) { return messages },
     async resolvePreset() { return { front: { text: '预设前置指令' } } },
     async ensureSessionPrefix() { return await ensureSessionStablePrefix(session, cardText, storage) },
     async prepareTurn() { return { frame: { userInput: { projectedText: '本轮玩家输入' } } } },
-    appendFrame(input) { return { messages: input.messages.concat(userMessage('本轮动态指令')), receipt: {} } },
+    appendFrame(input) { return { messages: input.messages.concat([pluginMessage('user', '本轮动态指令', 'dsh-tavern', 'foreground-frame')]), receipt: {} } },
     recordFrame() {}, async visibleTools() { return [] },
     modePrompt() { return '正文任务' }, controlledToolNames: new Set()
   } })
@@ -88,8 +92,17 @@ test('前台固定背景来自标准 Session 消息，不进入当轮 system、F
     const modelMessages = session.deriveMessages().concat(prepared.messages)
     assert.equal(modelMessages.filter(message => message.id === 'tavern-session-prefix:native').length, 1)
     assert.equal(modelMessages[0].source.form, 'snapshot')
+    assert.equal(modelMessages[0].role, 'user', 'Session 权威历史保持原样')
     const request = run.value.projectRequest({ sessionId: 'native', system, messages: modelMessages })
-    assert.equal(request.messages[0], modelMessages[0])
+    assert.deepEqual(request.messages.map(message => message.role), ['system', 'user', 'assistant', 'user', 'user', 'system'])
+    assert.equal(request.messages[0].role, 'system', '仅在游玩请求边界把人物卡前缀投影为 system')
+    assert.deepEqual(request.messages.slice(1, 4).map(message => message.source.form || message.source.model), [
+      'synthetic-trajectory', 'synthetic-trajectory', 'synthetic-trajectory'
+    ])
+    assert.equal(request.messages.at(-1).role, 'system', '仅在游玩请求边界把本轮正文编排投影为 system')
+    assert.notEqual(request.messages[0], modelMessages[0])
+    assert.equal(modelMessages[0].role, 'user', '请求投影不得回写 Session 消息')
+    assert.equal(modelMessages.at(-1).role, 'user', '本轮 Frame 在 Session 中仍保持原角色')
     assert.equal(run.value.projectRequest(request), null)
     cardText = '后续轮次不重新覆盖最初背景'
   }

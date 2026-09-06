@@ -3,7 +3,11 @@ import test from 'node:test'
 import { initializationFixture } from './fixtures/conversation-initialization.mjs'
 import { createUserPreferenceProfile } from '../tavern-plugin/lib/domain/user-preference-profile.js'
 
-const messages = session => session.events.filter(event => event.type === 'assistant/message')
+const messages = session => session.events.filter(event => event.type === 'assistant/message' && event.data?.message?.source?.model === 'character-card')
+const seedMessages = session => session.events.filter(event => {
+  const source = event.type === 'assistant/message' ? event.data?.message?.source : event.data?.source
+  return source?.form === 'synthetic-trajectory' || source?.model === 'synthetic-trajectory'
+})
 
 async function profileFixture() {
   let value
@@ -82,6 +86,47 @@ test('开场白使用 Tavern 合成模型来源，不冒充缺少 reasoning 续�
   assert.deepEqual(opening.source, { kind: 'model', provider: 'dsh-tavern', model: 'character-card' })
 })
 
+test('原生游玩把固定会话种子写在人物卡背景之后、开场白之前，重入不重复', async () => {
+  const h = initializationFixture()
+  await h.make().start(h.input)
+  const first = structuredClone(h.session().events)
+  const seed = seedMessages(h.session())
+
+  assert.deepEqual(seed.map(event => event.type), ['user/message', 'assistant/message', 'user/message'])
+  assert.ok(seed.every(event => event.seq < messages(h.session())[0].seq))
+  assert.ok(h.trace.indexOf('prefix') < h.trace.indexOf('flush'))
+  await h.make().start(h.input)
+  assert.deepEqual(h.session().events, first)
+
+  const compatibility = initializationFixture()
+  await compatibility.make().start({ ...compatibility.input, requestMode: 'sillytavern' })
+  assert.equal(seedMessages(compatibility.session()).length, 0)
+
+  const card = initializationFixture()
+  await card.make().start({ ...card.input, mode: 'card', cardPath: '' })
+  assert.equal(seedMessages(card.session()).length, 0)
+})
+
+test('会话种子任一消息写入中断后可恢复，且不重放已经追加的前缀', async () => {
+  for (const suffix of [':1', ':2', ':3']) {
+    const h = initializationFixture()
+    let failed = false
+    h.state.failures.append = (_type, data) => {
+      const messageId = data?.id || data?.message?.id || ''
+      if (!failed && messageId.endsWith(suffix)) { failed = true; throw Error('seed append failed') }
+    }
+    await assert.rejects(h.make().start(h.input), /seed append failed/)
+    const before = structuredClone(h.session().events)
+    delete h.state.failures.append
+
+    await h.make().ensureOpening('session')
+
+    assert.deepEqual(h.session().events.slice(0, before.length), before)
+    assert.equal(seedMessages(h.session()).length, 3)
+    assert.equal(messages(h.session()).length, 1)
+  }
+})
+
 test('新游戏固化创建时的联网搜索设置，之后不随设置变化', async () => {
   const h = initializationFixture()
   h.state.settings.webSearchEnabled = true
@@ -123,7 +168,7 @@ test('double clicks and ensureOpening share session ordering and do not create d
   assert.deepEqual(h.session().events, before, 'reentering keeps the originally selected opening')
 })
 
-test('mode selection preserves legacy aliases, script alignment and compatibility policy', async () => {
+test('mode selection preserves legacy aliases and enables compatibility experiments', async () => {
   for (const mode of ['card', 'revision', 'extract']) {
     const h = initializationFixture()
     const chat = await h.make().start({ ...h.input, cardPath: '', mode })
@@ -136,15 +181,10 @@ test('mode selection preserves legacy aliases, script alignment and compatibilit
   }
   const h = initializationFixture()
   h.state.script = { title: '剧本', version: 1, chunks: [{ id: 'one', text: '第二个开场白' }, { id: 'two', text: '后续' }] }
-  const chat = await h.make().start({ ...h.input, mode: 'story', openingId: 'alternate:0' })
+  const chat = await h.make().start({ ...h.input, mode: 'story', openingId: 'alternate:0', requestMode: 'sillytavern' })
   assert.equal(chat.mode, 'script'); assert.equal(chat.openingText, '第二个开场白')
-  assert.equal(chat.requestMode, 'dsh'); assert.ok(chat.scriptState)
-  for (const enabled of [true, false]) {
-    const restricted = initializationFixture(); restricted.state.settings.compatibilityMode = enabled
-    const before = structuredClone(restricted.state)
-    await assert.rejects(restricted.make().start({ ...restricted.input, requestMode: 'sillytavern' }), /兼容模式已停用/)
-    assert.deepEqual(restricted.state, before)
-  }
+  assert.equal(chat.requestMode, 'sillytavern'); assert.ok(chat.scriptState)
+  assert.equal(h.session().prefix, undefined, 'compatibility path must not install native prefix')
 })
 
 test('opening binds a pre-publication worldbook snapshot without leaving temporary chat metadata', async () => {
@@ -231,13 +271,18 @@ test('native flush failure and marker-save failure recover across module reload 
 test('every partial native append boundary is resumable without deleting history or duplicating events', async () => {
   for (const stage of ['turn/start', 'step/start', 'assistant/message', 'step/end', 'turn/end']) {
     const h = initializationFixture()
-    h.state.failures.append = type => { if (type === stage) throw Error('append failed') }
+    h.state.failures.append = (type, data) => {
+      if (type === stage && (stage !== 'assistant/message' || data?.message?.source?.model === 'character-card')) throw Error('append failed')
+    }
     await assert.rejects(h.make().start(h.input), /append failed/)
     const before = structuredClone(h.session().events)
     delete h.state.failures.append
     await h.make().ensureOpening('session')
     assert.deepEqual(h.session().events.slice(0, before.length), before)
-    assert.deepEqual(h.session().events.map(x => x.type), ['turn/start', 'step/start', 'assistant/message', 'step/end', 'turn/end'])
+    assert.deepEqual(h.session().events.map(x => x.type), [
+      'user/message', 'assistant/message', 'user/message',
+      'turn/start', 'step/start', 'assistant/message', 'step/end', 'turn/end'
+    ])
   }
 })
 

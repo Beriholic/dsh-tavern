@@ -90,6 +90,44 @@ function overrideContent(entry, card) {
 }
 
 /**
+ * Built-in prompt order for compatibility conversations without an external
+ * SillyTavern preset. This is deliberately small: it only projects card,
+ * world-book, example and conversation data already owned by Tavern.
+ */
+export function createCleanCompatibilityPreset() {
+  const definitions = [
+    ['main', 'system', false],
+    ['worldInfoBefore', 'system', true],
+    ['charDescription', 'system', true],
+    ['charPersonality', 'system', true],
+    ['scenario', 'system', true],
+    ['personaDescription', 'system', true],
+    ['worldInfoAfter', 'system', true],
+    ['dialogueExamples', 'system', true],
+    ['chatHistory', 'system', true],
+    ['jailbreak', 'system', false]
+  ]
+  return {
+    valid: true,
+    recognized: true,
+    title: '内置纯净预设',
+    orderGroupIndex: null,
+    entries: definitions.map(function ([identifier, entryRole, marker]) {
+      return {
+        entryKey: 'builtin:' + identifier,
+        identifier,
+        name: identifier,
+        role: entryRole,
+        content: '',
+        marker,
+        enabled: true,
+        ordered: true
+      }
+    })
+  }
+}
+
+/**
  * Compile one foreground request at the SillyTavern prompt-order seam.
  * Callers provide resources and projections; this module owns ordering,
  * marker expansion, role preservation and absolute-depth insertion.

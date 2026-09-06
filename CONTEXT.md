@@ -6,15 +6,15 @@ Tavern Chat 中唯一权威的剧情记录。它用单调递增的 revision、br
 
 ## Foreground Turn
 
-玩家可见的一轮输入与正文回复。Foreground Turn 完成后只是当前 Round 的暂存结果；在配套状态结算成功前，它不会单独推进 Story Timeline revision，也不会产生 checkpoint。
+玩家可见的一轮输入与正文回复，也是剧情的独立提交边界。Foreground Turn 成功后立即推进 Story Timeline revision 并建立 checkpoint；后续状态结算失败不能撤销正文，也不能阻止下一轮。
 
 ## Round
 
-一次不可拆分的正式剧情事务，由 Foreground Turn 与紧随其后的状态结算组成。只有两者都成功，Round 才一次性提交正文、派生状态、checkpoint 和新的 Story Timeline revision。未完成、等待运行时或结算失败的 Round 会阻止下一轮正文、回退与正文替代；候选生成不属于 Round。
+一次已提交的 Foreground Turn 及其绑定的派生状态工作。正文提交决定 Round 是否存在；状态结算可以随后完成、失败或因版本过期作废，不参与正文的提交与回退边界。候选生成不属于 Round。
 
 ## Last Round Replacement
 
-对最后一个已完成 Round 的整体替代。系统保留原玩家输入，重新生成正文并重新执行后台状态结算；只有新 Round 全部成功后，才用它替换旧正文、派生状态和模型可见投影。失败时旧 Round 继续有效。它不保存或切换多个 Swipe，也不允许修改已有后续剧情的历史轮次。
+对最后一个已提交 Foreground Turn 的替代。系统保留原玩家输入；新正文成功后立即替换旧正文、建立新的 checkpoint 并更新模型可见投影，随后重新执行后台状态结算。只有前台生成或提交失败才恢复旧正文；后台失败保留新正文。它不保存或切换多个 Swipe，也不允许修改已有后续剧情的历史轮次。
 
 ## Background Agent
 
@@ -26,7 +26,7 @@ Background Agent 基于特定 Story Timeline branch/revision 执行的一项工�
 
 ## Background Cycle
 
-Foreground Turn 完成后产生、并与它属于同一 Round 的状态结算 Background Operation。世界书关键词匹配在本地完成，不创建 Background Operation。Background Cycle 成功前，当前 Round 不提交，也不能开始下一次 Foreground Turn。
+Foreground Turn 提交后产生、并绑定该正文 branch/revision 的状态结算 Background Operation。世界书关键词匹配在本地完成，不创建 Background Operation。失败会暴露重试入口但不阻塞下一次 Foreground Turn；旧 operation 的迟到结果不能覆盖更新 revision 的状态。
 
 ## Background Activity
 
@@ -90,7 +90,7 @@ Host 中管理酒馆脚本工作的排队、offer、显式 start、执行租约�
 
 ## MVU Settlement Effect
 
-酒馆脚本运行模块完成一次 MVU 结算后返回的、绑定 Background Operation 与 Story Timeline 版本的纯数据效果。它在浏览器执行阶段不写入 Chat；只有对应 Round 仍有效时，Background Task Coordinator 才把变量效果、Settlement Receipt、checkpoint 与新 revision 一次提交。中文正式名称为“MVU 结算效果”。
+酒馆脚本运行模块完成一次 MVU 结算后返回的、绑定 Background Operation 与 Story Timeline 版本的纯数据效果。它在浏览器执行阶段不写入 Chat；只有对应正文仍是当前 branch/revision 时，Background Task Coordinator 才提交变量效果与 Settlement Receipt。正文 checkpoint 与 revision 已在 Foreground Turn 成功时独立提交。中文正式名称为“MVU 结算效果”。
 
 ## MVU Settlement Reconciler
 

@@ -85,6 +85,30 @@ function snapshotMessage(text) {
   }
 }
 
+function isNativeStablePrefix(message) {
+  const source = message && message.source
+  return str(message && message.id).startsWith('tavern-session-prefix:') && message.role === 'user'
+    && source && source.kind === 'plugin' && source.plugin === 'dsh-tavern'
+    && (source.form === 'snapshot' || source.form === 'session-prefix')
+}
+
+function isNativeForegroundFrame(message) {
+  const source = message && message.source
+  return message && message.role === 'user' && source && source.kind === 'plugin'
+    && source.plugin === 'dsh-tavern' && source.form === 'foreground-frame'
+}
+
+/** Keep Tavern-owned model context authoritative without rewriting append-only Session events. */
+export function projectNativeContextAsSystem(messages) {
+  let changed = false
+  const projected = (Array.isArray(messages) ? messages : []).map(function (message) {
+    if (!isNativeStablePrefix(message) && !isNativeForegroundFrame(message)) return message
+    changed = true
+    return Object.assign({}, message, { role: 'system' })
+  })
+  return changed ? projected : messages
+}
+
 function projectLegacyTemplatePrefix(messages, text) {
   const replacement = str(text).trim()
   if (replacement === '' || !Array.isArray(messages)) return messages
@@ -281,8 +305,9 @@ export function createNativePlayOrchestrationStrategy(options) {
     const staged = stagedRequests.get(sessionId)
     if (optionsValue === null || typeof optionsValue !== 'object' || optionsValue.purpose !== undefined || staged === undefined || redispatches.has(optionsValue)) return null
     const regeneratedMessages = projectRegenerationRequestMessages(optionsValue.messages)
-    const baseRequest = regeneratedMessages === optionsValue.messages
-      ? optionsValue : Object.assign({}, optionsValue, { messages: regeneratedMessages })
+    const nativeMessages = projectNativeContextAsSystem(regeneratedMessages)
+    const baseRequest = nativeMessages === optionsValue.messages
+      ? optionsValue : Object.assign({}, optionsValue, { messages: nativeMessages })
     let request = projectRuntimePresetRequest(baseRequest, staged.snapshot, {
       scope: staged.scope,
       turn: staged.turn,
@@ -343,8 +368,7 @@ export function createForegroundOrchestrationStrategies(options) {
   const compatibility = createCompatibilityOrchestrationStrategy(options.compatibility)
 
   function select(chat) {
-    if (chat && chat.requestMode === 'sillytavern') throw new Error('兼容模式已停用，原对话存档保留，请新建游玩对话')
-    return nativePlay
+    return chat && chat.requestMode === 'sillytavern' ? compatibility : nativePlay
   }
 
   async function prepareStep(input) {

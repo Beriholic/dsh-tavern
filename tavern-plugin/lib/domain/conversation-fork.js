@@ -74,7 +74,8 @@ export function assertConversationForkable(chat, options = {}) {
   if (options.agentRunning === true || chat.regenInProgress === true) throw new Error('当前正文仍在生成，请等待完成后再分叉')
   const timeline = object(chat.timeline)
   const unfinished = Object.values(object(timeline.operations)).find(function (operation) {
-    return operation && (operation.status === 'running' || (operation.kind === 'body' && operation.status === 'foreground-completed'))
+    return operation && (operation.status === 'running' || (operation.kind === 'body' && operation.status === 'completed' &&
+      ['pending', 'running'].includes(str(object(operation.background).phase))))
   })
   if (unfinished) throw new Error('当前轮次尚未完成生成或状态结算，请等待完成后再分叉')
   if (['pending', 'running'].includes(str(chat.settleStatus))) throw new Error('当前轮次尚未完成状态结算，请等待完成后再分叉')
