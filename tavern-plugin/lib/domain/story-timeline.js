@@ -199,6 +199,15 @@ export function createStoryTimeline(options = {}) {
     return operation
   }
 
+  function updateSettlementBackground(chat, operation, phase) {
+    const round = chat.timeline.operations[str(operation && operation.roundOperationId)]
+    if (round && round.kind === 'body' && round.status === 'completed') {
+      round.background = { phase, role: 'settlement', updatedAt: now() }
+      return round
+    }
+    return updateBackground(chat, phase, 'settlement')
+  }
+
   function beginBody(chat, intent) {
     const turn = Math.max(0, Number(intent.turn) || 0)
     const userText = str(intent.userText).trim()
@@ -324,7 +333,7 @@ export function createStoryTimeline(options = {}) {
     const round = role === 'settlement' ? pendingSettlementBody(chat) : undefined
     if (round !== undefined) operation.roundOperationId = round.id
     chat.timeline.operations[operation.id] = operation
-    if (role === 'settlement') updateBackground(chat, 'running', role)
+    if (role === 'settlement') updateSettlementBackground(chat, operation, 'running')
     trimOperations(chat.timeline)
     return Object.assign(operationValue(operation, participantRequest(chat, role)), { created: true })
   }
@@ -481,7 +490,7 @@ export function createStoryTimeline(options = {}) {
       operation.status = 'deferred'
       operation.completedAt = now()
       operation.committedRevision = chat.timeline.revision
-      if (operation.kind === 'agent' && operation.role === 'settlement') updateBackground(chat, 'pending', operation.role)
+      if (operation.kind === 'agent' && operation.role === 'settlement') updateSettlementBackground(chat, operation, 'pending')
       chat.timeline.updatedAt = now()
       return { chat, value: { status: 'deferred', branchId: chat.timeline.branchId, revision: chat.timeline.revision } }
     }
@@ -489,12 +498,7 @@ export function createStoryTimeline(options = {}) {
       commitParticipant(chat, operation, outcome.participant)
       operation.status = 'failed'
       operation.completedAt = now()
-      if (operation.kind === 'agent' && operation.role === 'settlement') {
-        const round = chat.timeline.operations[str(operation.roundOperationId)]
-        if (round && round.kind === 'body' && round.status === 'completed') {
-          round.background = { phase: 'failed', role: operation.role, updatedAt: now() }
-        } else updateBackground(chat, 'failed', operation.role)
-      }
+      if (operation.kind === 'agent' && operation.role === 'settlement') updateSettlementBackground(chat, operation, 'failed')
       return { chat, value: { status: 'failed', branchId: chat.timeline.branchId, revision: chat.timeline.revision } }
     }
     let settlementRound = null
@@ -520,7 +524,7 @@ export function createStoryTimeline(options = {}) {
     if (operation.kind !== 'body') operation.status = 'completed'
     operation.completedAt = now()
     operation.committedRevision = chat.timeline.revision
-    if (operation.kind === 'agent' && operation.role === 'settlement') updateBackground(chat, 'completed', 'settlement')
+    if (operation.kind === 'agent' && operation.role === 'settlement') updateSettlementBackground(chat, operation, 'completed')
     chat.timeline.updatedAt = now()
     return { chat, value: { status: 'committed', branchId: chat.timeline.branchId, revision: chat.timeline.revision } }
   }

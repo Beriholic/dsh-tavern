@@ -81,8 +81,13 @@ export async function createInitializationNative(bootPath) {
     get target() { return target }, get persistence() { return persistence },
     async restoreDetached() {
       // Recreate the native Session from only persisted JSON, including its header.
-      const saved = JSON.parse(await readFile(eventsPath, 'utf8'))
-      target = { session: Session.fromRestore(sessionId, saved.events, saved.header, saved.inheritedEventCount ?? 0) }
+      const saved = await readFile(eventsPath, 'utf8').then(JSON.parse).catch(error => {
+        if (error && error.code === 'ENOENT') return null
+        throw error
+      })
+      target = { session: saved === null
+        ? Session.create(sessionId)
+        : Session.fromRestore(sessionId, saved.events, saved.header, saved.inheritedEventCount ?? 0) }
       storage = createSessionStablePrefixStorage(join(root, 'prefix'))
     },
     async checkpoint() { await flush(target.session) },

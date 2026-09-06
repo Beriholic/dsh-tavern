@@ -144,6 +144,37 @@ test('结算延后、失败和重试都不重复提交正文 checkpoint', () => 
   assert.equal(timeline.inspect({ chat: current }).checkpointCount, 1)
 })
 
+test('多轮在同一毫秒完成时，结算状态仍只更新 roundOperationId 绑定的正文', () => {
+  let sequence = 0
+  const timeline = createStoryTimeline({
+    id(prefix) { sequence += 1; return prefix + '-' + sequence },
+    now() { return 1000 }
+  })
+  let chat = { id: 'chat-same-ms', mode: 'story', messages: [], posture: '', _storageRevision: 1 }
+
+  function commitBody(turn) {
+    const begun = timeline.apply({ chat, intent: { kind: 'body.begin', turn, userText: '第' + turn + '轮' } })
+    chat = timeline.complete({
+      chat: begun.chat,
+      operationId: begun.value.operationId,
+      basedOn: begun.value.basedOn,
+      outcome: { status: 'success' }
+    }).chat
+    return begun.value.operationId
+  }
+
+  const firstBodyId = commitBody(1)
+  let settlement = timeline.apply({ chat, intent: { kind: 'agent.begin', role: 'settlement' } })
+  chat = timeline.complete({ chat: settlement.chat, operationId: settlement.value.operationId, basedOn: settlement.value.basedOn, outcome: { status: 'success' } }).chat
+
+  const secondBodyId = commitBody(2)
+  settlement = timeline.apply({ chat, intent: { kind: 'agent.begin', role: 'settlement' } })
+  chat = timeline.complete({ chat: settlement.chat, operationId: settlement.value.operationId, basedOn: settlement.value.basedOn, outcome: { status: 'failed' } }).chat
+
+  assert.equal(chat.timeline.operations[firstBodyId].background.phase, 'completed')
+  assert.equal(chat.timeline.operations[secondBodyId].background.phase, 'failed')
+})
+
 test('旧正文结算迟到时不能覆盖更新正文之后的派生状态', () => {
   const { timeline, chat } = harness()
   const first = timeline.apply({ chat, intent: { kind: 'body.begin', turn: 1, userText: '推门' } })
