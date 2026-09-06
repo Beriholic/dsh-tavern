@@ -250,6 +250,32 @@ test('游玩回合由生命周期自动准备与提交，不再要求模型回�
   assert.deepEqual(run.settlements, [])
 })
 
+test('后台结算失败不阻止下一轮正文，下一轮建立独立 checkpoint', async () => {
+  const run = harness('story', { autoSettle: false })
+  await run.orchestrator.prepare({ sessionId: 'session-1', turn: 2, userText: '推开窗' })
+  await run.orchestrator.finalize({ sessionId: 'session-1', turn: 2, userText: '推开窗', assistantText: '雨水扑进房间。' })
+  let chat = run.chat()
+  const settlement = run.timeline.apply({ chat, intent: { kind: 'agent.begin', role: 'settlement' } })
+  chat = run.timeline.complete({
+    chat: settlement.chat,
+    operationId: settlement.value.operationId,
+    basedOn: settlement.value.basedOn,
+    outcome: { status: 'failed' }
+  }).chat
+  chat.settleStatus = 'failed'
+  chat.settleError = '未调用 posture_submit'
+  run.replaceChat(chat)
+
+  await assert.doesNotReject(run.orchestrator.prepare({ sessionId: 'session-1', turn: 3, userText: '继续' }))
+  await run.orchestrator.finalize({ sessionId: 'session-1', turn: 3, userText: '继续', assistantText: '她走进雨里。' })
+
+  const current = run.chat()
+  assert.equal(current.messages.at(-1).text, '她走进雨里。')
+  assert.equal(current.settleStatus, 'pending')
+  assert.equal(current.settleError, null)
+  assert.equal(run.timeline.inspect({ chat: current }).checkpointCount, 2)
+})
+
 test('同一正文 operation 重试复用 ForegroundFrame id', async () => {
   const run = harness('story')
   const first = await run.orchestrator.prepare({ sessionId: 'session-1', turn: 2, userText: '推开窗' })

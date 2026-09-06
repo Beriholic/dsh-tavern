@@ -53,16 +53,11 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
   const view = present
   const pendingRollbacks = new Set()
 
-  function failedForegroundRound(chat) {
-    return Object.values(storyTimeline.inspect({ chat }).operations || {}).find(function (operation) {
-      return operation && operation.kind === 'body' && operation.status === 'foreground-completed' && operation.background?.phase === 'failed'
-    })
-  }
-
   function assertRollbackIdle(chat) {
     const agent = sessions.get(chat.sessionId)
     const unfinished = Object.values(storyTimeline.inspect({ chat }).operations || {}).some(function (operation) {
-      return operation && (operation.status === 'running' || (operation.kind === 'body' && operation.status === 'foreground-completed' && operation.background?.phase !== 'failed'))
+      return operation && (operation.status === 'running' || (operation.kind === 'body' && operation.status === 'completed' &&
+        operation.background && ['pending', 'running'].includes(str(operation.background.phase))))
     })
     if (agent?.phase?.kind === 'running' || unfinished || chat.regenInProgress === true) throw new Error('当前轮次尚未完成生成或后台处理，请等待完成后再回退')
   }
@@ -82,7 +77,8 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     let chat = str(chatId) === '' ? await chatForSession(sessionId) : await readChat(chatId)
     if (chat === undefined) throw new Error('聊天不存在: ' + chatId)
     const activeRound = Object.values(storyTimeline.inspect({ chat }).operations || {}).find(function (operation) {
-      return operation && operation.kind === 'body' && operation.status === 'foreground-completed'
+      return operation && operation.kind === 'body' && operation.status === 'completed' &&
+        operation.background && ['pending', 'running'].includes(str(operation.background.phase))
     })
     if (chat.regenInProgress === true) throw new Error('正文正在重新生成，请等待完成')
     const card = await readChatCard(chat)
@@ -226,24 +222,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       oldAssistantSeq: oldSeq,
       eventStart
     })
-    // 重生成正文与后台结算共同组成替代 Round；结算成功前不替换旧正文。
-    let settledChat
-    try {
-      await queueSettlement(committedChat.id)
-      settledChat = await readChat(committedChat.id)
-      if (settledChat === undefined) throw new Error('重新生成结算后找不到聊天')
-      const incompleteRound = Object.values(storyTimeline.inspect({ chat: settledChat }).operations || {}).find(function (operation) {
-        return operation && operation.kind === 'body' && operation.status === 'foreground-completed'
-      })
-      if (settledChat.settleStatus === 'failed' || incompleteRound !== undefined) {
-        throw new Error(str(settledChat.settleError).trim() || '后台结算尚未完成')
-      }
-    } catch (error) {
-      await restoreFailedRegen()
-      const failure = new Error('重新生成失败，已恢复原正文和状态。后台结算原因：' + str(error?.message || error), { cause: error })
-      if (error?.code) failure.code = error.code
-      throw failure
-    }
+    // 正文替代先独立提交到可见 Surface；后台结算失败不能撤销用户已经得到的新正文。
     session.append('assistant/message', {
       turn: oldTurn,
       step: 1,
@@ -252,6 +231,19 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       surfaceOp: { op: 'replace', start: replacement.start, end: replacement.end },
       sourceEventSeqs: replacement.shadowedSeqs
     })
+    let settledChat = committedChat
+    try {
+      await queueSettlement(committedChat.id)
+      settledChat = await readChat(committedChat.id) || committedChat
+    } catch (error) {
+      const message = str(error?.message || error) || '后台结算失败'
+      settledChat = await updateChat(committedChat.id, function (current) {
+        if (!current || typeof current !== 'object') return current
+        current.settleStatus = 'failed'
+        current.settleError = message
+        return current
+      }, { source: 'settlement.regen-failed' })
+    }
     const result = await view(settledChat, card)
     result.adopted = { text: body, guidance: guide, hiddenTurn: oldTurn, syntheticTurn: syntheticTurn }
     return result
@@ -270,7 +262,6 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
   async function rollbackChat(chat) {
     assertRollbackIdle(chat)
     const originalChat = structuredClone(chat)
-    const failedRound = failedForegroundRound(chat)
     const mode = chat.mode || 'story'
     if (mode !== 'story' && mode !== 'script') throw new Error('仅游玩模式支持回退本轮')
     const card = await readChatCard(chat)
@@ -335,15 +326,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       const reference = rollbackCommit !== null && rollbackCommit.scriptReference !== null && typeof rollbackCommit.scriptReference === 'object' ? rollbackCommit.scriptReference : null
       legacyBefore.scriptState = scriptContinuity.transition({ script: script, state: chat.scriptState, event: { kind: 'restore', revision: revision, reference: reference } }).state
     }
-    let rollbackIntent
-    if (failedRound !== undefined) {
-      if (Number(failedRound.turn) !== hiddenTurn) throw new Error('变量结算失败轮次与原生消息流不一致，无法安全回退')
-      const beforeChat = await readChatRevision(chat.id, Math.max(0, Number(failedRound.beforeRevision) || 0))
-      if (beforeChat === undefined) throw new Error('找不到变量结算失败前的历史 Chat revision: ' + failedRound.beforeRevision)
-      rollbackIntent = { kind: 'replacement.abort', restoreChat: beforeChat }
-    } else {
-      rollbackIntent = await prepareRollbackIntent(chat, { kind: 'turn.rollback', turn: hiddenTurn, legacyBefore })
-    }
+    const rollbackIntent = await prepareRollbackIntent(chat, { kind: 'turn.rollback', turn: hiddenTurn, legacyBefore })
     assertRollbackIdle(chat)
     const rolled = storyTimeline.apply({ chat, intent: rollbackIntent })
     chat = rolled.chat

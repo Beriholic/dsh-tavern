@@ -587,6 +587,8 @@ export function createTurnOrchestrator(options) {
         })
         bindSceneWorldbook(assistantMessage, rememberedFrame(chat, operation.id)?.source?.sceneWorldbook || operation.sceneWorldbook)
         draft.messages.push(assistantMessage)
+        draft.settleStatus = 'pending'
+        draft.settleError = null
         draft.foregroundError = null
         draft.presentationWarnings = Array.isArray(reply.warnings) ? clone(reply.warnings) : []
         rememberCommit(draft, turn, { mode, userText, requestId, scriptReference }, before, now)

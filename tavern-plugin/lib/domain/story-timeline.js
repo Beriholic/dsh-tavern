@@ -85,6 +85,15 @@ export function createStoryTimeline(options = {}) {
     incoming.operations = object(incoming.operations)
     incoming.updatedAt = Number(incoming.updatedAt) || now()
     chat.timeline = incoming
+    // v1 原子 Round 存档把正文停在 foreground-completed，等待结算后才建 checkpoint。
+    // 新语义下正文本身就是提交边界；惰性迁移可让既有失败轮次立即继续游玩。
+    const legacyForeground = Object.values(incoming.operations).filter(function (operation) {
+      return operation && operation.kind === 'body' && operation.status === 'foreground-completed' &&
+        str(operation.basedOn && operation.basedOn.branchId) === incoming.branchId
+    }).sort(function (left, right) {
+      return (Number(left.foregroundCompletedAt) || Number(left.createdAt) || 0) - (Number(right.foregroundCompletedAt) || Number(right.createdAt) || 0)
+    })
+    for (const operation of legacyForeground) commitBody(chat, operation)
     return chat
   }
 
@@ -155,16 +164,16 @@ export function createStoryTimeline(options = {}) {
     })[0]
   }
 
-  function pendingRoundBody(chat) {
-    return Object.values(chat.timeline.operations).filter(function (operation) {
-      return operation.kind === 'body' && operation.status === 'foreground-completed' &&
-        str(operation.basedOn && operation.basedOn.branchId) === chat.timeline.branchId
+  function pendingSettlementBody(chat) {
+    const latest = Object.values(chat.timeline.operations).filter(function (operation) {
+      return operation.kind === 'body' && operation.status === 'completed' && str(operation.committedBranchId) === chat.timeline.branchId
     }).sort(function (left, right) {
-      return (Number(right.foregroundCompletedAt) || Number(right.createdAt) || 0) - (Number(left.foregroundCompletedAt) || Number(left.createdAt) || 0)
+      return (Number(right.committedRevision) || 0) - (Number(left.committedRevision) || 0)
     })[0]
+    return latest !== undefined && ['pending', 'running', 'failed'].includes(str(object(latest.background).phase)) ? latest : undefined
   }
 
-  function finalizeRound(chat, operation) {
+  function commitBody(chat, operation) {
     chat.timeline.checkpoints.push({
       id: makeId('checkpoint'),
       turn: operation.turn,
@@ -180,7 +189,7 @@ export function createStoryTimeline(options = {}) {
     operation.completedAt = now()
     operation.committedBranchId = chat.timeline.branchId
     operation.committedRevision = chat.timeline.revision
-    operation.background = { phase: 'completed', role: 'settlement', updatedAt: now() }
+    operation.background = { phase: 'pending', role: 'settlement', updatedAt: now() }
   }
 
   function updateBackground(chat, phase, role) {
@@ -193,14 +202,6 @@ export function createStoryTimeline(options = {}) {
   function beginBody(chat, intent) {
     const turn = Math.max(0, Number(intent.turn) || 0)
     const userText = str(intent.userText).trim()
-    const incomplete = pendingRoundBody(chat)
-    if (incomplete !== undefined) {
-      const error = new Error('上一轮正文尚未完成后台结算，请先等待或重试结算')
-      error.code = 'ROUND_INCOMPLETE'
-      error.operationId = incomplete.id
-      error.phase = str(incomplete.background && incomplete.background.phase) || 'pending'
-      throw error
-    }
     const existing = Object.values(chat.timeline.operations).find(function (operation) {
       return operation.kind === 'body' && operation.status === 'running' && Number(operation.turn) === turn
     })
@@ -320,7 +321,7 @@ export function createStoryTimeline(options = {}) {
       id: makeId('operation'), kind: 'agent', role, status: 'running',
       requestId, basedOn: basedOn(chat), createdAt: now()
     }
-    const round = role === 'settlement' ? pendingRoundBody(chat) : undefined
+    const round = role === 'settlement' ? pendingSettlementBody(chat) : undefined
     if (round !== undefined) operation.roundOperationId = round.id
     chat.timeline.operations[operation.id] = operation
     if (role === 'settlement') updateBackground(chat, 'running', role)
@@ -347,7 +348,7 @@ export function createStoryTimeline(options = {}) {
       // A deferred operation has not executed its saved submission and can resume
       // when the browser returns. An interrupted/unqueued round cannot claim that.
       // Also repair chats already converted to pending by older recovery code.
-      const orphaned = background.status === 'foreground-completed' &&
+      const orphaned = background.status === 'completed' &&
         ['pending', 'running'].includes(background.background.phase) && latest?.status !== 'deferred'
       if (interruptedRole !== '' || orphaned) {
         background.background = { phase: 'failed', role: 'settlement', reason: 'interrupted', updatedAt: now() }
@@ -490,7 +491,7 @@ export function createStoryTimeline(options = {}) {
       operation.completedAt = now()
       if (operation.kind === 'agent' && operation.role === 'settlement') {
         const round = chat.timeline.operations[str(operation.roundOperationId)]
-        if (round && round.kind === 'body' && round.status === 'foreground-completed') {
+        if (round && round.kind === 'body' && round.status === 'completed') {
           round.background = { phase: 'failed', role: operation.role, updatedAt: now() }
         } else updateBackground(chat, 'failed', operation.role)
       }
@@ -499,19 +500,19 @@ export function createStoryTimeline(options = {}) {
     let settlementRound = null
     if (operation.kind === 'agent' && operation.role === 'settlement' && str(operation.roundOperationId) !== '') {
       settlementRound = chat.timeline.operations[operation.roundOperationId]
-      if (!settlementRound || settlementRound.kind !== 'body' || settlementRound.status !== 'foreground-completed'
-        || !sameBasedOn(settlementRound.basedOn, operation.basedOn)) {
+      if (!settlementRound || settlementRound.kind !== 'body' || settlementRound.status !== 'completed'
+        || str(settlementRound.committedBranchId) !== str(operation.basedOn.branchId)
+        || Number(settlementRound.committedRevision) !== Number(operation.basedOn.revision)) {
         operation.status = 'stale'
         return { chat, value: { status: 'stale', branchId: chat.timeline.branchId, revision: chat.timeline.revision } }
       }
     }
     if (typeof input.apply === 'function') input.apply(chat)
     if (operation.kind === 'body') {
-      operation.status = 'foreground-completed'
       operation.foregroundCompletedAt = now()
-      operation.background = { phase: 'pending', role: 'settlement', updatedAt: now() }
+      commitBody(chat, operation)
     } else if (settlementRound !== null) {
-      finalizeRound(chat, settlementRound)
+      settlementRound.background = { phase: 'completed', role: 'settlement', updatedAt: now() }
     } else if (outcome.stateChanged === true) {
       chat.timeline.revision++
     }

@@ -1,6 +1,8 @@
 # 前台正文与后台结算组成原子 Round
 
-> 状态：Accepted
+> 状态：Superseded by ADR 0006
+
+本 ADR 保留为历史记录。后台结算失败牵连已经成功的正文，实际代价高于它避免的不一致；现行决定见 ADR 0006。
 
 正文生成和状态结算不再是两个可以交错推进剧情的独立阶段。一次正式 Round 由 Foreground Turn 和它唯一对应的状态结算组成；只有两者都成功，Story Timeline 才建立 checkpoint 并把 revision 增加一次。
 

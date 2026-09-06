@@ -140,7 +140,7 @@ test('重启丢失 MVU 回执：显示中断、保留正文变量、可从真实
   await assert.rejects(run.history.regenerate('chat', '', 'session'), /无法访问 DSH 会话/, '结算完成后已通过保护，继续访问原生会话')
 })
 
-test('变量 effect、receipt、checkpoint 与 Round revision 在一次 commit 中落盘', async () => {
+test('变量 effect 与 receipt 提交时不重复推进正文 checkpoint 和 revision', async () => {
   const run = await harness({ beginRunning: false })
   let updates = 0
   const originalUpdate = run.store.updateChat
@@ -234,11 +234,11 @@ test('保存 pending 期间 MVU 已加载失败，不丢失通知或永久等待
   assert.equal(resumed, 1)
   assert.equal(run.tasks.activity(run.get()).phase, 'failed')
   assert.match(run.get().settleError, /MVU 模块加载失败/)
-  assert.equal(run.get().timeline.checkpoints.length, 0)
+  assert.equal(run.get().timeline.checkpoints.length, 1)
   assert.equal(run.get().messages[1].variables[0].stat_data.hp, 10)
 })
 
-test('MVU 执行超时返回错误回执时不提交 Round，仍能重试', async () => {
+test('MVU 执行超时保留已提交正文 checkpoint，仍能重试结算', async () => {
   const run = await harness()
   await run.tasks.recover(run.get())
   run.sandbox.mvuSettlement.settleVariables = async () => ({
@@ -247,7 +247,7 @@ test('MVU 执行超时返回错误回执时不提交 Round，仍能重试', asyn
   await run.sandbox.retrySettlement('session', 2)
   await run.sandbox.queueSettlement('chat')
   assert.equal(run.tasks.activity(run.get()).phase, 'failed')
-  assert.equal(run.get().timeline.checkpoints.length, 0)
-  assert.equal(run.get().timeline.operations[run.body.value.operationId].status, 'foreground-completed')
+  assert.equal(run.get().timeline.checkpoints.length, 1)
+  assert.equal(run.get().timeline.operations[run.body.value.operationId].status, 'completed')
   assert.equal(run.sandbox.mvuReceiptsOf(run.get())[0].receipt.status, 'error')
 })

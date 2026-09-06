@@ -1793,7 +1793,8 @@ export async function apply(ctx) {
         const completed = waitingRuntime ? await taskRun.defer(completion) : await taskRun.commit(completion)
         if (completed.status === 'missing') return
         if (completed.status === 'stale') {
-          if (backgroundTasks.activity(completed.chat).busy) continue
+          const activity = backgroundTasks.activity(completed.chat)
+          if (activity.role === 'settlement' && (activity.phase === 'pending' || activity.phase === 'running')) continue
           return
         }
         if (completed.status === 'deferred') {
@@ -1817,7 +1818,11 @@ export async function apply(ctx) {
           participant: taskRun.participant({ sessionId: backgroundSessionId, boundary: backgroundBoundary })
         })
         if (failed.status === 'missing') return
-        if (failed.status === 'stale' && backgroundTasks.activity(failed.chat).busy) continue
+        if (failed.status === 'stale') {
+          const activity = backgroundTasks.activity(failed.chat)
+          if (activity.role === 'settlement' && (activity.phase === 'pending' || activity.phase === 'running')) continue
+          return
+        }
         const latest = await readChat(chatId)
         if (latest === undefined) return
         const target = pendingMvuTarget(latest)
