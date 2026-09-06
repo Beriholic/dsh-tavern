@@ -4937,10 +4937,9 @@ window.__ModuleLoader__.load({
 					h("button", { className: "dsh-tavern-update-button", disabled: checkingOrRunning || updateStatus.phase === "restart-required" || updateStatus.phase === "installed-restart-required", onClick: checkUpdate }, updateStatus.phase === "checking" ? "正在检查…" : (updateStatus.phase === "running" ? "正在更新…" : (updateStatus.phase === "installed-restart-required" ? "请手动重启" : (updateStatus.phase === "restart-required" ? "重启 Desktop 后可用" : "检查更新")))));
 			return h(React.Fragment, null, h(TavernErrorCenter), h("div", { className: "dsh-tavern-sidebar", style: { position: "relative", width: props.embedded ? "100%" : props.width + "px" } },
 				h("div", { className: "dsh-tavern-side-head" }, h("div", { className: "dsh-tavern-side-brand" }, "🍺 DSH Tavern"), props.embedded ? null : h("button", { className: "dsh-tavern-side-icon", title: "收起侧栏", onClick: props.toggleSidebar }, "◧")),
-				h("div", { className: "dsh-tavern-mode-switch compatibility-enabled" },
+				h("div", { className: "dsh-tavern-mode-switch" },
 					h("button", { className: uiMode === "play" && requestMode === "dsh" ? "active" : "", disabled: busy, onClick: function () { switchPlayRequestMode("dsh"); } }, "游玩"),
-					h("button", { className: uiMode === "card" ? "active" : "", disabled: busy, onClick: function () { switchMode("card"); } }, "卡片"),
-					h("button", { className: uiMode === "play" && requestMode === "sillytavern" ? "active" : "", disabled: busy, title: "按 SillyTavern 语义构造正文请求；未选外部预设时使用内置纯净预设", onClick: function () { switchPlayRequestMode("sillytavern"); } }, "兼容（实验性）")
+					h("button", { className: uiMode === "card" ? "active" : "", disabled: busy, onClick: function () { switchMode("card"); } }, "卡片")
 				),
 				h("button", { className: "dsh-tavern-side-new", disabled: busy, onClick: function () { openPicker(); } }, uiMode === "play" ? (requestMode === "sillytavern" ? "＋ 选择人物卡 · 新开兼容对话" : "＋ 选择人物卡 · 新开游玩") : "＋ 新建卡片工作台对话"),
 				uiMode === "play" && requestMode === "sillytavern" ? h("div", { className: "dsh-tavern-compatibility-notice" },
@@ -5820,7 +5819,7 @@ window.__ModuleLoader__.load({
 					return h("div", { className: "dsh-tavern-presets" },
 					h("div", { className: "dsh-tavern-status-head" }, h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { setDetailPath(""); setPreset(null); } }, "← 返回预设库"), h("div", { className: "dsh-tavern-status-title" }, preset.title)),
 					h("div", { className: "dsh-tavern-preset-detail" }, error ? h("div", { className: "dsh-tavern-dock-error" }, error) : null,
-						h("div", { className: "dsh-tavern-preset-summary" }, h("b", null, "编辑前／中／后三段预设"), h("p", null, "三段代表提示词进入前台请求的真实位置；点击条目展开编辑，保存后下一轮游玩直接生效。"), h("p", null, "预设用于游玩正文；从 SillyTavern 导入的预设，效果可能与原酒馆不同。"), h("p", null, "卡片模式中的引用只供 Agent 阅读和编辑，后台 Agent 也不会运行预设。")),
+						h("div", { className: "dsh-tavern-preset-summary" }, h("b", null, "编辑前／中／后三段预设"), h("p", null, "三段代表提示词进入前台请求的真实位置；点击条目展开编辑。"), h("p", null, "预设在新建游玩对话时固化；修改只对之后新建的对话生效，已有对话继续使用创建时的预设快照。"), h("p", null, "预设用于游玩正文；从 SillyTavern 导入的预设，效果可能与原酒馆不同。"), h("p", null, "卡片模式中的引用只供 Agent 阅读和编辑，后台 Agent 也不会运行预设。")),
 						h("div", { className: "dsh-tavern-preset-detail-actions" }, h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { exportFile(preset); } }, "导出"), h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { rename(preset); } }, "重命名"), h("button", { className: "dsh-tavern-btn danger", disabled: busy, onClick: function () { remove(preset); } }, "删除")),
 						h("div", { className: "dsh-tavern-preset-section-title" }, "提示词三段 · " + (preset.entries || []).length + " 个源条目"),
 						phaseSection("front", "前段", "位于系统上下文和历史之前；适合稳定身份、世界前提与总体规则。", entryGroups.front),
@@ -5837,7 +5836,7 @@ window.__ModuleLoader__.load({
 						h("strong", null, catalog.activePresetPath ? "当前预设：" + catalog.activePresetTitle : "当前使用内置设置"),
 						h("p", { className: "dsh-tavern-preset-warning" }, h("strong", null, "使用建议："), "建议保留内置预设。要调整文风、叙事方式或写作规则，优先在卡片模式中写入人物卡，或在游玩中通过 Guide 注入要求。外部预设会参与前台请求并可能改变系统行为，仅在明确了解其内容和影响时使用。"),
 						h("p", null, "支持导入 SillyTavern 预设；在游玩中按 DSH Tavern 的方式应用，效果可能与原酒馆不同。"),
-						h("p", null, "修改预设后，下一轮游玩请求直接生效；卡片模式中的引用仅供 Agent 阅读和编辑，后台 Agent 不运行预设。")),
+						h("p", null, "预设选择、提示词和正则修改仅对新建游玩对话生效；已有对话继续使用创建时的预设快照。卡片模式中的引用仅供 Agent 阅读和编辑，后台 Agent 不运行预设。")),
 					catalog.presets.length ? catalog.presets.map(function (item) {
 						return h("div", { key: item.path, className: "dsh-tavern-preset-row" },
 								h("div", { className: "dsh-tavern-preset-row-head" }, h("button", { className: "dsh-tavern-preset-row-main", disabled: busy, title: "查看并编辑预设", onClick: function () { loadPreset(item.path); } }, h("b", null, item.title), h("span", null, "前 " + Number(item.phaseCounts && item.phaseCounts.front || 0) + " · 中 " + Number(item.phaseCounts && item.phaseCounts.middle || 0) + " · 后 " + Number(item.phaseCounts && item.phaseCounts.back || 0) + " · 正则 " + item.regexCount))),

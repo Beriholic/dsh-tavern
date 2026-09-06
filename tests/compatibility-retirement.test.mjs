@@ -47,9 +47,8 @@ test('启动恢复包含兼容与普通会话', async () => {
   assert.deepEqual(Array.from(context.background), ['compat', 'native'])
 })
 
-test('侧栏同时提供普通游玩与兼容实验入口', () => {
+test('侧栏隐藏兼容实验入口但保留底层兼容能力', () => {
   assert.match(client, /const compatibilityAvailable = true/)
-  assert.match(client, /switchPlayRequestMode\("sillytavern"\)/)
-  assert.match(client, /兼容（实验性）/)
-  assert.match(client, /未选择外部预设时自动使用内置纯净预设/)
+  assert.doesNotMatch(client, /onClick: function \(\) \{ switchPlayRequestMode\("sillytavern"\); \} \}, "兼容（实验性）"/)
+  assert.match(client, /requestMode === "sillytavern"/)
 })
