@@ -19,6 +19,16 @@ function between(source, start, end) {
   return source.slice(from, to)
 }
 
+test('打开游玩会话持久记录最近打开时间，并用同一字段排序与展示', () => {
+  const sidebar = between(clientSource, 'function TavernSidebar', 'function TavernResourcesTab')
+  const open = between(sidebar, 'async function openSessionWhenReady', 'async function finishPendingOpen')
+
+  assert.match(open, /call\("markConversationOpened", \{ sessionId: sessionId \}\)/)
+  assert.ok(open.indexOf('sessionListRecoveryRef.current.open(sessionId)') < open.indexOf('call("markConversationOpened"'))
+  assert.match(serverSource, /case 'markConversationOpened': return await conversationRegistry\.touch/)
+  assert.match(sidebar, /formatTime\(item\.lastOpenedAt/)
+})
+
 test('卡片模式从空白工作台直接进入 Agent 对话', () => {
 	const flow = between(clientSource, 'async function newCardConversation', 'function formatTime')
 	const lifecycle = between(clientSource, 'const conversationLifecycle = createConversationLifecycleModule', 'async function retryPendingOpen')

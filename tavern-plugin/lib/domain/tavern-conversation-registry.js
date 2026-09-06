@@ -10,7 +10,8 @@ function chatRows(index) {
   return index && Array.isArray(index.chats) ? index.chats : []
 }
 
-function chatSummary(chat) {
+function chatSummary(chat, preservedLastOpenedAt = 0) {
+  const updatedAt = Math.max(0, Number(chat && (chat.updatedAt || chat.createdAt)) || 0)
   return {
     id: str(chat && chat.id),
     cardPath: str(chat && chat.cardPath),
@@ -18,12 +19,13 @@ function chatSummary(chat) {
     title: str(chat && chat.title),
     mode: str(chat && chat.mode) || 'story',
     requestMode: chat && chat.requestMode === 'sillytavern' ? 'sillytavern' : 'dsh',
-    updatedAt: Math.max(0, Number(chat && (chat.updatedAt || chat.createdAt)) || 0)
+    updatedAt,
+    lastOpenedAt: Math.max(0, Number(chat && chat.lastOpenedAt) || 0, Number(preservedLastOpenedAt) || 0) || updatedAt
   }
 }
 
 function sameSummary(left, right) {
-  return left && right && ['id', 'cardPath', 'cardName', 'title', 'mode', 'requestMode', 'updatedAt'].every(function (key) { return left[key] === right[key] })
+  return left && right && ['id', 'cardPath', 'cardName', 'title', 'mode', 'requestMode', 'updatedAt', 'lastOpenedAt'].every(function (key) { return left[key] === right[key] })
 }
 
 /**
@@ -115,9 +117,9 @@ export function createTavernConversationRegistry(options = {}) {
   async function sync(chat) {
     if (!chat || str(chat.id) === '') throw new Error('不能同步没有 id 的 Tavern Chat 摘要')
     const index = await store.readIndex()
-    const summary = chatSummary(chat)
     const rows = chatRows(index)
-    const current = rows.find(function (item) { return item && item.id === summary.id })
+    const current = rows.find(function (item) { return item && item.id === str(chat.id) })
+    const summary = chatSummary(chat, current && current.lastOpenedAt)
     if (sameSummary(current, summary)) return summary
     await store.writeIndex(Object.assign({}, index || {}, { chats: rows.filter(function (item) { return !item || item.id !== summary.id }).concat([summary]) }))
     return summary
@@ -133,10 +135,29 @@ export function createTavernConversationRegistry(options = {}) {
       const summary = summaries.get(chatId)
       if (!summary) continue
       const normalized = chatSummary(summary)
-      rows.push({ sessionId, chatId, cardPath: normalized.cardPath, cardName: normalized.cardName, title: normalized.title, mode: normalized.mode, requestMode: normalized.requestMode, updatedAt: normalized.updatedAt })
+      rows.push({ sessionId, chatId, cardPath: normalized.cardPath, cardName: normalized.cardName, title: normalized.title, mode: normalized.mode, requestMode: normalized.requestMode, updatedAt: normalized.updatedAt, lastOpenedAt: normalized.lastOpenedAt })
     }
-    rows.sort(function (left, right) { return right.updatedAt - left.updatedAt })
+    rows.sort(function (left, right) { return right.lastOpenedAt - left.lastOpenedAt || right.updatedAt - left.updatedAt })
     return rows
+  }
+
+  async function touch(sessionId, openedAt = Date.now()) {
+    const id = str(sessionId)
+    if (id === '') throw new Error('不能记录空 Session 的打开时间')
+    const currentLinks = await links()
+    const chatId = str(currentLinks[id])
+    if (chatId === '') return { touched: false }
+    const index = await store.readIndex()
+    const rows = chatRows(index)
+    const position = rows.findIndex(function (item) { return item && str(item.id) === chatId })
+    if (position < 0) return { touched: false }
+    const stamp = Math.max(0, Number(openedAt) || 0)
+    const previous = Math.max(0, Number(rows[position].lastOpenedAt) || 0)
+    if (stamp <= previous) return { touched: false, lastOpenedAt: previous }
+    const nextRows = rows.slice()
+    nextRows[position] = Object.assign({}, rows[position], { lastOpenedAt: stamp })
+    await store.writeIndex(Object.assign({}, index || {}, { chats: nextRows }))
+    return { touched: true, lastOpenedAt: stamp }
   }
 
   async function remove(chatId) {
@@ -157,5 +178,5 @@ export function createTavernConversationRegistry(options = {}) {
     return { deleted: true }
   }
 
-  return { links, resolve, publish, sync, list, remove }
+  return { links, resolve, publish, sync, list, touch, remove }
 }

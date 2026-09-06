@@ -52,7 +52,7 @@ test('发布 Tavern Chat 时一次完成 Chat、索引和 Session 关联', async
   await registry.publish(chat)
 
   assert.deepEqual(store.snapshot().links, { 'session-1': 'chat-1' })
-  assert.deepEqual(store.snapshot().index.chats, [{ id: 'chat-1', cardPath: 'cards/a.json', cardName: 'A', title: '冒险', mode: 'story', requestMode: 'sillytavern', updatedAt: 10 }])
+  assert.deepEqual(store.snapshot().index.chats, [{ id: 'chat-1', cardPath: 'cards/a.json', cardName: 'A', title: '冒险', mode: 'story', requestMode: 'sillytavern', updatedAt: 10, lastOpenedAt: 10 }])
   assert.deepEqual(await registry.resolve('session-1'), chat)
 })
 
@@ -66,9 +66,38 @@ test('会话列表只读轻量索引，不物化完整聊天', async function ()
   const registry = createTavernConversationRegistry({ store: store.adapter })
 
   assert.deepEqual(await registry.list(), [{
-    sessionId: 'session-heavy', chatId: 'chat-heavy', cardPath: 'cards/heavy.json', cardName: '灯火阑珊', title: '测试', mode: 'story', requestMode: 'sillytavern', updatedAt: 99
+    sessionId: 'session-heavy', chatId: 'chat-heavy', cardPath: 'cards/heavy.json', cardName: '灯火阑珊', title: '测试', mode: 'story', requestMode: 'sillytavern', updatedAt: 99, lastOpenedAt: 99
   }])
   assert.equal(store.snapshot().chatReads, 0)
+})
+
+test('游玩历史按最后打开时间排序，而不是被后台写入时间打乱', async function () {
+  const store = memoryStore({
+    links: { 'session-new-write': 'chat-new-write', 'session-last-opened': 'chat-last-opened' },
+    index: { chats: [
+      { id: 'chat-new-write', cardName: '后台刚写入', updatedAt: 200, lastOpenedAt: 20 },
+      { id: 'chat-last-opened', cardName: '最近打开', updatedAt: 100, lastOpenedAt: 300 }
+    ] }
+  })
+  const registry = createTavernConversationRegistry({ store: store.adapter })
+
+  assert.deepEqual((await registry.list()).map(item => item.sessionId), ['session-last-opened', 'session-new-write'])
+})
+
+test('记录打开时间后置顶会话，后续摘要同步保留该排序信息', async function () {
+  const store = memoryStore({
+    links: { one: 'chat-1', two: 'chat-2' },
+    index: { chats: [
+      { id: 'chat-1', cardName: '一', updatedAt: 100, lastOpenedAt: 100 },
+      { id: 'chat-2', cardName: '二', updatedAt: 200, lastOpenedAt: 200 }
+    ] }
+  })
+  const registry = createTavernConversationRegistry({ store: store.adapter })
+
+  await registry.touch('one', 300)
+  await registry.sync({ id: 'chat-1', cardName: '一', updatedAt: 400 })
+
+  assert.deepEqual((await registry.list()).map(item => [item.sessionId, item.lastOpenedAt]), [['one', 300], ['two', 200]])
 })
 
 test('聊天更新后同步索引摘要，不把消息正文写入索引', async function () {
@@ -77,7 +106,7 @@ test('聊天更新后同步索引摘要，不把消息正文写入索引', async
 
   await registry.sync({ id: 'chat-6', cardPath: 'cards/new.json', cardName: '新名', title: '新标题', mode: 'script', requestMode: 'dsh', updatedAt: 20, messages: [{ text: '不应进入索引' }] })
 
-  assert.deepEqual(store.snapshot().index.chats, [{ id: 'chat-6', cardPath: 'cards/new.json', cardName: '新名', title: '新标题', mode: 'script', requestMode: 'dsh', updatedAt: 20 }])
+  assert.deepEqual(store.snapshot().index.chats, [{ id: 'chat-6', cardPath: 'cards/new.json', cardName: '新名', title: '新标题', mode: 'script', requestMode: 'dsh', updatedAt: 20, lastOpenedAt: 20 }])
 })
 
 test('索引发布失败时回滚 Chat 和 Session 关联', async function () {

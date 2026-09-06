@@ -2226,6 +2226,7 @@ export async function apply(ctx) {
         const settings = await readTavernSettings()
         return { sessions: await listTavernSessions(), capabilities: { compatibilityMode: true, trustedCardMode: settings.trustedCardMode } }
       }
+      case 'markConversationOpened': return await conversationRegistry.touch(args && args.sessionId, Date.now())
       case 'listMobileCardImports': return await mobileCardImport.list()
       case 'importMobileCard': return { card: await importCard(await mobileCardImport.read(args && args.id)) }
       case 'importCard': return { card: await importCard(args && args.payload) }

@@ -4758,6 +4758,8 @@ window.__ModuleLoader__.load({
 			}
 			async function openSessionWhenReady(sessionId) {
 				await sessionListRecoveryRef.current.open(sessionId);
+				await call("markConversationOpened", { sessionId: sessionId });
+				await refresh();
 				setError("");
 			}
 			async function finishPendingOpen(pending) {
@@ -4776,7 +4778,6 @@ window.__ModuleLoader__.load({
 					(pending.selectedResources || []).forEach(function (resource) { props.appendMention(pending.sessionId, resource.kind, resource.path, resource.title); });
 				} else if (typeof props.openStatusTab === "function") props.openStatusTab(pending.sessionId);
 				setOpeningPicker(null); setPicking(false); setCardEntry("");
-				await refresh();
 			}
 			const conversationLifecycle = createConversationLifecycleModule({
 				archiveCurrent: archiveCurrentBlankSession,
@@ -5050,7 +5051,7 @@ window.__ModuleLoader__.load({
 					} catch (err) { setError(String(err && err.message || err)); }
 				} },
 					h("div", { className: "dsh-tavern-side-row-name" }, title),
-					h("div", { className: "dsh-tavern-side-row-meta" }, h("span", null, item.mode === "card" ? (item.cardPath ? ("已创建：" + item.cardName) : "尚未创建正式人物卡") : (modeLabel(item.mode || "story") + " · " + item.cardName)), h("span", null, formatTime(summary ? summary.updatedAt : item.updatedAt)))
+					h("div", { className: "dsh-tavern-side-row-meta" }, h("span", null, item.mode === "card" ? (item.cardPath ? ("已创建：" + item.cardName) : "尚未创建正式人物卡") : (modeLabel(item.mode || "story") + " · " + item.cardName)), h("span", null, formatTime(item.lastOpenedAt || (summary ? summary.updatedAt : item.updatedAt))))
 					),
 					h("button", { className: "dsh-tavern-side-row-more", title: "对话操作", "aria-expanded": menuSession === item.sessionId ? "true" : "false", onClick: function () { setMenuSession(menuSession === item.sessionId ? null : item.sessionId); } }, "⋯"),
 					menuSession === item.sessionId ? h("div", { className: "dsh-tavern-side-row-menu" },
