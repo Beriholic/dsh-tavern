@@ -69,11 +69,55 @@ function hasRawHtml(value) {
   }
 }
 
-function isWrappedHtmlDocument(value) {
-  const source = str(value).trim()
-  if (/^<!doctype\s+html\b/i.test(source)) return true
-  const opening = source.match(/^<([a-z][\w:-]*)\b[^>]*>/i)
-  return opening !== null && new RegExp('</' + opening[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '>\\s*$', 'i').test(source)
+// Markdown HTML blocks may extend past a closing tag until the next blank line.
+// Recover element boundaries without parsing/re-serializing author scripts or markup.
+function splitHtmlBoundaries(source) {
+  const segments = []
+  const stack = []
+  const voidTags = new Set('area base br col embed hr img input link meta param source track wbr'.split(' '))
+  const tokens = /<!--[\s\S]*?(?:-->|$)|<!doctype\b[^>]*>|<\/?([a-z][\w:-]*)\b(?:"[^"]*"|'[^']*'|[^'">])*?>|(`+)[\s\S]*?\2/gi
+  let cursor = 0
+  let start = -1
+  function append(kind, value) {
+    if (!value) return
+    const previous = segments[segments.length - 1]
+    if (previous && (previous.kind === kind || !value.trim())) {
+      previous[previous.kind === 'html' ? 'content' : 'text'] += value
+    } else segments.push(kind === 'html' ? { kind, content: value } : { kind, text: value })
+  }
+  let token
+  while ((token = tokens.exec(source))) {
+    if (token[2]) continue // Inline code is prose, never executable HTML.
+    const tag = (token[1] || '').toLowerCase()
+    const closing = /^<\//.test(token[0])
+    if (start < 0) {
+      append('text', source.slice(cursor, token.index))
+      start = token.index
+    }
+    if (closing) {
+      const index = stack.lastIndexOf(tag)
+      if (index >= 0) stack.length = index
+    } else if (tag && !voidTags.has(tag) && !/\/\s*>$/.test(token[0])) {
+      stack.push(tag)
+      // Script/style strings can contain arbitrary tags; only their end tag matters.
+      if (['script', 'style', 'textarea', 'title'].includes(tag)) {
+        const end = new RegExp('</' + tag + '\\s*>', 'gi')
+        end.lastIndex = tokens.lastIndex
+        const match = end.exec(source)
+        if (!match) { tokens.lastIndex = source.length; break }
+        tokens.lastIndex = end.lastIndex
+        stack.pop()
+      }
+    }
+    if (!stack.length) {
+      append('html', source.slice(start, tokens.lastIndex))
+      cursor = tokens.lastIndex
+      start = -1
+    }
+  }
+  if (start >= 0) append('html', source.slice(start)) // Unclosed UI remains isolated.
+  else append('text', source.slice(cursor))
+  return segments
 }
 
 function unwrapNarrativeContent(value) {
@@ -86,33 +130,29 @@ function splitPlainSegment(value) {
   const narrative = unwrapNarrativeContent(source)
   if (narrative !== null) return splitPlainSegment(narrative)
   if (!hasRawHtml(source)) return [{ kind: 'text', text: source }]
-  if (isWrappedHtmlDocument(source)) return [{ kind: 'html', content: source }]
   try {
-    const segments = []
-    for (const token of marked.lexer(source, { gfm: true })) {
-      const raw = str(token && token.raw)
-      if (raw === '') continue
-      const kind = token.type === 'space'
-        ? (segments.length > 0 ? segments[segments.length - 1].kind : 'text')
-        : (token.type === 'html' || hasRawHtml(raw) ? 'html' : 'text')
-      const previous = segments[segments.length - 1]
-      if (previous && previous.kind === kind) {
-        if (kind === 'html') previous.content += raw
-        else previous.text += raw
-      } else {
-        segments.push(kind === 'html' ? { kind, content: raw } : { kind, text: raw })
+    // Protect Markdown code blocks before scanning; retain exact source offsets.
+    const normalized = source.replace(/\r\n?/g, '\n')
+    const tokens = marked.lexer(normalized, { gfm: true })
+    const masked = tokens.map(token => token.type === 'code'
+      ? str(token.raw).replace(/[^\r\n]/g, 'x') : str(token.raw)).join('')
+    if (masked.length !== normalized.length) return [{ kind: 'html', content: source }]
+    let offset = 0
+    return splitHtmlBoundaries(masked).map(part => {
+      const key = part.kind === 'html' ? 'content' : 'text'
+      const start = offset
+      for (let index = 0; index < part[key].length; index += 1) {
+        offset += source[offset] === '\r' && source[offset + 1] === '\n' ? 2 : 1
       }
-    }
-    const rebuilt = segments.map(function (segment) {
-      return segment.kind === 'html' ? segment.content : segment.text
-    }).join('')
-    return rebuilt === source && segments.length > 0 ? segments : [{ kind: 'html', content: source }]
+      const original = source.slice(start, offset)
+      return { kind: part.kind, [key]: original }
+    })
   } catch (_error) {
     return [{ kind: 'html', content: source }]
   }
 }
 
-/** Native prose and isolated block HTML share one ordered projection; never split inline or full-document HTML. */
+/** Native prose and isolated block HTML share one ordered projection; keep element interiors intact. */
 export function projectDisplayParts(value) {
   const segments = fencedSegments(value)
   return {

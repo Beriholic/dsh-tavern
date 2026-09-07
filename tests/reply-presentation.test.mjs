@@ -262,8 +262,8 @@ test('代码示例中的 HTML 不作为活动页面执行', () => {
   }
 })
 
-test('整页美化和内联 raw HTML 继续整体隔离，不把外来脚本和样式注入宿主', () => {
-  for (const source of ['<html><head><style>body{color:red}</style></head><body>正文</body></html>', '正文 <b>强调</b>']) {
+test('整页美化继续整体隔离，不把外来脚本和样式注入宿主', () => {
+  for (const source of ['<html><head><style>body{color:red}</style></head><body>正文</body></html>']) {
     assert.deepEqual(projectDisplayParts(source).parts, [{ kind: 'html', content: source }])
   }
 })
@@ -274,4 +274,40 @@ test('独立块级脚本与正文拆开，但脚本仍只进入 iframe', () => {
     { kind: 'markdown', text: '正文\n' },
     { kind: 'html', content: '<script>document.body.replaceChildren()</script>' }
   ])
+})
+
+test('HTML 闭合后立即接正文也保持原生正文，多个面板不吞掉中间段落', () => {
+  const source = '前文。\n<div>面板</div>\n后文。\n<div>第二面板</div>\n尾声。'
+  const result = projectReplyLayers(source)
+  assert.equal(result.sessionText, source)
+  assert.deepEqual(result.displayParts.map(part => part.kind), ['markdown', 'html', 'markdown', 'html', 'markdown'])
+  assert.equal(result.displayParts[1].content.trim(), '<div>面板</div>')
+  assert.equal(result.displayParts[3].content.trim(), '<div>第二面板</div>')
+  assert.match(result.displayParts[2].text, /后文/)
+  assert.match(result.displayParts[4].text, /尾声/)
+})
+
+test('同段 HTML 与正文拆分，代码示例保留为原生 Markdown', () => {
+  const source = '使用 `<b>示例</b>`，正文 <b>强调</b> 尾声'
+  assert.deepEqual(projectDisplayParts(source).parts, [
+    { kind: 'markdown', text: '使用 `<b>示例</b>`，正文 ' },
+    { kind: 'html', content: '<b>强调</b>' },
+    { kind: 'markdown', text: ' 尾声' }
+  ])
+})
+
+test('多行 UI 保持完整且不吞掉尾声，脚本中的伪标签不改变边界', () => {
+  const html = '<div title="a > b">\n<div>标题</div>\n\n<script>const sample = "<div>";</script>\n<div>内容</div>\n</div>'
+  const source = '前文\n' + html + '\n尾声'
+  const parts = projectDisplayParts(source).parts
+  assert.deepEqual(parts.map(part => part.kind), ['markdown', 'html', 'markdown'])
+  assert.equal(parts[1].content.trim(), html)
+  assert.equal(parts[2].text.trim(), '尾声')
+})
+
+test('Windows 换行仍隔离面板并保留原始换行', () => {
+  const source = '前文。\r\n<div>面板</div>\r\n后文。'
+  const parts = projectDisplayParts(source).parts
+  assert.deepEqual(parts.map(part => part.kind), ['markdown', 'html', 'markdown'])
+  assert.equal(parts.map(part => part.text ?? part.content).join(''), source)
 })
