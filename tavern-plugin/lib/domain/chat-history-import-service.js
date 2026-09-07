@@ -1,3 +1,4 @@
+import { prepareWorldBookRecall } from './worldbook-recall.js'
 import { createHash } from 'node:crypto'
 import { parse as parseYaml } from 'yaml'
 import { parseChatHistory, chatHistoryPreview } from './chat-history-import.js'
@@ -33,7 +34,7 @@ export function incompatibleState(expected, actual, path = '') {
   })
 }
 
-export function createChatHistoryImportService({ initialization, cards, worldBooks, store, chats, native, planner }) {
+export function createChatHistoryImportService({ initialization, cards, worldBooks, store, chats, native, planner, projectWorldBookTemplates }) {
   const pending = new Map()
   async function inspect(input) {
     const parsed = parseChatHistory(input.text)
@@ -43,7 +44,7 @@ export function createChatHistoryImportService({ initialization, cards, worldBoo
     let initialVariables, initialError = ''
     try { initialVariables = importInitialVariables(card, worldBook) } catch (error) { initialError = error.message }
     const incompatible = parsed.hasMvu && initialVariables !== undefined && parsed.messages.some(m => m.variables && incompatibleState(initialVariables.stat_data, m.variables.stat_data))
-    return { parsed, card, initialVariables, initialError, incompatible }
+    return { parsed, card, worldBook, initialVariables, initialError, incompatible }
   }
   async function preview(input) {
     const result = await inspect(input)
@@ -53,7 +54,7 @@ export function createChatHistoryImportService({ initialization, cards, worldBoo
   }
   async function perform(input) {
     if (!/^[a-zA-Z0-9-]{8,100}$/.test(input.operationId || '') || !input.sessionId) throw new Error('导入操作或 Session 标识无效')
-    const { parsed, card, initialVariables, initialError, incompatible } = await inspect(input)
+    const { parsed, card, worldBook, initialVariables, initialError, incompatible } = await inspect(input)
     if (incompatible && !input.textOnly) throw new Error('变量结构与人物卡不兼容，请换卡或选择仅导入正文')
     const identity = createHash('sha256').update(JSON.stringify([input.cardPath, parsed.digest, input.textOnly === true, input.userName || parsed.userName])).digest('hex')
     const path = 'chat-imports/' + input.operationId + '.json'
@@ -67,8 +68,19 @@ export function createChatHistoryImportService({ initialization, cards, worldBoo
     if (!journal) {
       const chat = await initialization.prepareImport({ cardPath: input.cardPath, sessionId: input.sessionId, userName: input.userName || parsed.userName })
       if (chat.mvu?.enabled && (input.textOnly || parsed.messages.some(m => !m.variables)) && !initialVariables) throw new Error(initialError || '无法读取这张 MVU 卡的初始变量，请补充有效快照后重试')
-      const framePlan = await planner.plan({ purpose: 'body', card, chat, worldBookContext: '', scriptReference: null })
-      const plan = buildImportedConversation(chat, parsed, { operationId: input.operationId, fileName: input.fileName, initialVariables, textOnly: input.textOnly === true, framePlan })
+      const plan = await buildImportedConversation(chat, parsed, {
+        operationId: input.operationId, fileName: input.fileName, initialVariables, textOnly: input.textOnly === true,
+        prepareFrame: async ({ chat, turn, userText }) => {
+          // Like native play, recall against the preceding body, and project
+          // templates with only the state available before this output.
+          const recalled = prepareWorldBookRecall({ chat, card, worldBook, turn: turn - 1 })
+          chat.worldBookReads = recalled.recordReads(chat.worldBookReads)
+          const templates = projectWorldBookTemplates ? await projectWorldBookTemplates(chat, card) : null
+          return planner.plan({ purpose: 'body', card, chat, userText, sessionId: input.sessionId,
+            nativeTurn: turn, scriptReference: null,
+            worldBookContext: [recalled.context, templates?.context].filter(Boolean).join('\n\n') })
+        }
+      })
       const checkpointInputs = plan.chat.timeline.checkpoints.map(c => ({ id: c.id, messageCount: c.importMessageCount, before: c.importBefore }))
       journal = { version: 1, identity, sessionId: input.sessionId, status: 'writing', plan, checkpointInputs }
       await store.writeJson(path, journal)

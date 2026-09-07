@@ -20,7 +20,7 @@ function plan() {
   return buildImportedConversation(chat, parseChatHistory(text), {operationId:'import-test',framePlan})
 }
 test('real host restores imported roles and turns without model execution', async () => {
-  const p = plan(), session = Session.create('import-test')
+  const p = await plan(), session = Session.create('import-test')
   await appendImportedEvents(session, p, async()=>{})
   const contexts = session.deriveMessages().filter(m => m.source?.form === 'foreground-frame')
   assert.equal(contexts.length, 2)
@@ -40,8 +40,8 @@ test('real host restores imported roles and turns without model execution', asyn
   await appendImportedEvents(restored,p,async()=>{})
   assert.equal(storyMessages(restored).length,5)
 })
-test('successive rollback restores selected MVU states without storage-history snapshots', () => {
-  let chat=plan().chat
+test('successive rollback restores selected MVU states without storage-history snapshots', async () => {
+  let chat=(await plan()).chat
   for (const checkpoint of chat.timeline.checkpoints) {
     checkpoint.before = { ...checkpoint.importBefore, messages: structuredClone(chat.messages.slice(0, checkpoint.importMessageCount)) }
     delete checkpoint.importBefore; delete checkpoint.importMessageCount
@@ -59,7 +59,7 @@ test('consecutive roles form native rounds and retain every paragraph and the fi
   {is_user:true,mes:'go'},{is_user:true,mes:'carefully'},{is_user:false,mes:'arrived',variables:[{stat_data:{hp:8}}]},
   {is_user:false,mes:'and rested',variables:[{stat_data:{hp:9}}]}]
  const chat=timeline.apply({chat:{id:'chat',messages:[],scriptState:null},intent:{kind:'ensure'}}).chat
- const p=buildImportedConversation(chat,parseChatHistory(rows.map(JSON.stringify).join('\n')),{operationId:'grouped-test',framePlan})
+ const p=await buildImportedConversation(chat,parseChatHistory(rows.map(JSON.stringify).join('\n')),{operationId:'grouped-test',framePlan})
  const session=Session.create('grouped-test')
  await appendImportedEvents(session,p,async()=>{})
  assert.deepEqual(storyMessages(session).map(m=>m.content[0].text),['opening\n\nopening continued','go\n\ncarefully','arrived\n\nand rested'])

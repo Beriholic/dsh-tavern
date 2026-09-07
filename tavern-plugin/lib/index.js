@@ -1296,6 +1296,7 @@ export async function apply(ctx) {
     }
   })
   const chatHistoryImporter = createChatHistoryImportService({
+    projectWorldBookTemplates: nativeWorldBookTemplateContext,
     planner: contextPlanner,
     initialization: conversationInitialization,
     cards: { read: readCard }, worldBooks, store: profileData,

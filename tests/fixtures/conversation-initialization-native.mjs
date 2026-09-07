@@ -32,8 +32,12 @@ export async function createInitializationNative(bootPath) {
   const requests = [], state = { failMarker: false, failFlush: false }, handles = new Set()
   const selection = { provider: 'initialization-fixture', model: 'text' }
   const sessionId = 'opening-session'
+  const worldBooks = { bound: async () => ({ view: { entries: [
+    { ref: 'constant', enabled: true, constant: true, content: 'Fixture constant worldbook' },
+    { ref: 'dynamic', enabled: true, primaryKeys: ['导入开场'], content: 'Fixture recalled worldbook' }
+  ] } }) }
   let target, persistence, importer
-  const card = { path: 'cards/test.json', name: '角色', first_mes: '{{user}}，你好。', description: '不可丢失的固定背景' }
+  const card = { path: 'cards/test.json', name: '角色', first_mes: '{{user}}，你好。', description: '不可丢失的固定背景', system_prompt: 'Fixture card special instruction', post_history_instructions: 'Fixture card writing constraint' }
   const data = createProfileDataStore({ dataRoot: root })
   let storage = createSessionStablePrefixStorage(join(root, 'prefix'))
   const eventsPath = join(root, 'native-events.json')
@@ -70,7 +74,7 @@ export async function createInitializationNative(bootPath) {
       if (state.failMarker && metadata.source === 'opening.native-append') throw Error('marker failure')
       return persistence.write(chat, metadata)
     }
-    const snapshots = createPlayCardSnapshots({ worldBooks: { bound: async () => null }, planner: createContextPlanner({ prompt: () => '' }), readCard: async () => card, writeChat: write })
+    const snapshots = createPlayCardSnapshots({ worldBooks, planner: createContextPlanner({ prompt: () => '' }), readCard: async () => card, writeChat: write })
     const timeline = createStoryTimeline({ id: () => randomUUID() })
     const initialization = createConversationInitialization({
       cards: { read: async () => card, readChat: async () => card, script: async () => undefined, extensions: async () => ({}) },
@@ -80,7 +84,7 @@ export async function createInitializationNative(bootPath) {
       native: { wait: async () => target, selection: () => selection, ensurePrefix: (session, text) => ensureSessionStablePrefix(session, text, storage),
         flush: session => target.agent ? ctx.sessions.flush(session) : flush(session) }
     })
-    importer = createChatHistoryImportService({ initialization, cards: { read: async () => card }, worldBooks: { bound: async () => null }, store: data,
+    importer = createChatHistoryImportService({ initialization, cards: { read: async () => card }, worldBooks, store: data,
       planner: createContextPlanner({ prompt: () => 'Native fixture writing rules' }),
       chats: { resolve: registry.resolve, publish: registry.publish, read: persistence.read, readRevision: persistence.readRevision, write: persistence.write },
       native: { wait: async () => target, ensurePrefix: (session, text) => ensureSessionStablePrefix(session, text, storage), flush } })

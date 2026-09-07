@@ -116,5 +116,9 @@ test('failed native flush restores only durable events and finishes the publishe
  const actual=h.requests[0].messages.map(m=>m.content.filter(b=>b.type==='text').map(b=>b.text).join('\n'))
  for(const phrase of ['导入开场','走到花店','抵达花店','返回邮局','已回邮局','继续。']) assert.equal(actual.filter(t=>t===phrase).length,1)
  assert.doesNotMatch(JSON.stringify(actual),/玩家，你好。/)
+ for (const phrase of ['不可丢失的固定背景', 'Fixture constant worldbook', 'Fixture recalled worldbook',
+   'Fixture card special instruction', 'Fixture card writing constraint']) {
+   assert.ok(actual.some(text => text.includes(phrase)), phrase + ' must reach the model adapter')
+ }
  assert.equal(sessionEvents(h.target.session).filter(e=>e.type==='turn\/start').at(-1).data.turn,4)
  })

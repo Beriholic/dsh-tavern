@@ -15,7 +15,7 @@ async function fixture() {
   const rows=[{chat_metadata:{}},{is_user:false,mes:'Original opening'}]
   for(let n=0;n<12;n++)rows.push({is_user:true,mes:'action '+n},{is_user:false,mes:'Secret-'+n+' '+(n===11?'RevokedOnlyQuartz ':'')+'.'.repeat(200)})
   let chat=createStoryTimeline().apply({chat:{id:'chat',sessionId:session.id,mode:'story',messages:[],scriptState:null},intent:{kind:'ensure'}}).chat
-  const plan=buildImportedConversation(chat,parseChatHistory(rows.map(JSON.stringify).join('\n')),{operationId:'import-context-test',framePlan:{text:'Rules',sections:[{kind:'base',required:true,text:'Rules'}]}})
+  const plan=await buildImportedConversation(chat,parseChatHistory(rows.map(JSON.stringify).join('\n')),{operationId:'import-context-test',framePlan:{text:'Rules',sections:[{kind:'base',required:true,text:'Rules'}]}})
   await appendImportedEvents(session,plan,async()=>{})
   session.append('user/message',{id:'new-input',role:'user',content:[{type:'text',text:'Continue'}],source:{kind:'user'}},{surfaceOp:'append'})
   const request={sessionId:session.id,provider:'fixture',model:'small',system:'System rules',messages:session.deriveMessages(),maxTokens:200}

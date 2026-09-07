@@ -1,3 +1,5 @@
+import { projectWorldBookTemplates } from '../tavern-plugin/lib/domain/worldbook-recall.js'
+import { TavernPromptTemplateRuntime } from '../tavern-plugin/lib/domain/tavern-prompt-template-runtime.js'
 import test from 'node:test'
 import { createContextPlanner } from '../tavern-plugin/lib/domain/context-planner.js'
 import assert from 'node:assert/strict'
@@ -81,4 +83,32 @@ test('concurrent requests cannot reuse an operation for different content',async
  const first=service.import(input)
  await assert.rejects(service.import({...input,textOnly:true}),/其他内容/)
  await first
+})
+
+test('import rebuilds card instructions and worldbook context against each historical state', async () => {
+ const h=fixture(), seen=[], runtime=await TavernPromptTemplateRuntime.create()
+ h.options.cards.read=async()=>({name:'card',system_prompt:'Card special rule',post_history_instructions:'Card writing constraint'})
+ h.options.worldBooks.bound=async()=>({view:{entries:[{comment:'[initvar]',content:'hp: 10'},
+  {ref:'walking',enabled:true,primaryKeys:['opening'],content:'Opening worldbook rule'},
+  {ref:'resting',enabled:true,primaryKeys:['walked'],content:'Walked worldbook rule'},
+  {ref:'template',enabled:true,constant:true,content:'<% print("Historical HP " + getvar("stat_data.hp")) %>'}]}})
+ h.options.projectWorldBookTemplates=async(chat)=>{
+  const hp=chat.messages.at(-1)?.variables?.[0]?.stat_data.hp
+  seen.push(hp)
+  return projectWorldBookTemplates({chat, card:await h.options.cards.read(), worldBook:await h.options.worldBooks.bound(), runtime})
+ }
+ await createChatHistoryImportService(h.options).import(input)
+ const frames=h.session.deriveMessages().filter(m=>m.source?.form==='foreground-frame').map(m=>m.content[0].text)
+ assert.equal(frames.length,2)
+ assert.match(frames[0],/Opening worldbook rule/)
+ assert.doesNotMatch(frames[0],/Walked worldbook rule/)
+ assert.match(frames[1],/Walked worldbook rule/)
+ for(const frame of frames){assert.match(frame,/Card special rule/);assert.match(frame,/Card writing constraint/);assert.match(frame,/Fixture writing rules/)}
+ assert.deepEqual(seen,[10,8])
+ assert.match(frames[0],/Historical HP 10/);assert.match(frames[1],/Historical HP 8/)
+ const chat=await h.chats.resolve('session')
+ const before=h.history.get(chat.timeline.checkpoints.at(-1).beforeRevision)
+ assert.ok(before.worldBookReads.walking)
+ assert.equal(before.worldBookReads.resting,undefined)
+
 })

@@ -21,8 +21,8 @@ function nativeMessages(messages) {
 }
 
 /** Build replayable native events and compact checkpoints without running any Agent. */
-export function buildImportedConversation(chat, parsed, { operationId, fileName = '', initialVariables, textOnly = false, framePlan, now = Date.now() }) {
-  if (!framePlan?.text?.trim()) throw new Error('导入缺少原生正文任务指令')
+export async function buildImportedConversation(chat, parsed, { operationId, fileName = '', initialVariables, textOnly = false, framePlan, prepareFrame, now = Date.now() }) {
+  if (!prepareFrame && !framePlan?.text?.trim()) throw new Error('导入缺少原生正文任务指令')
   const frameBuilder = createForegroundFrameBuilder()
   const events = []
   let turn = 0
@@ -53,9 +53,12 @@ export function buildImportedConversation(chat, parsed, { operationId, fileName 
       if (index === 0) message.greeting = true
       if (pendingUsers.length) {
         const userText = pendingUsers.join('\n\n')
+        const beforeWorldBookReads = clone(chat.worldBookReads)
+        const plan = prepareFrame ? await prepareFrame({ chat, turn, userText }) : framePlan
+        if (!plan?.text?.trim()) throw new Error('导入缺少原生正文任务指令')
         const frame = frameBuilder.build({ chatId: chat.id, branchId: chat.timeline.branchId,
           basedOnRevision: chat.timeline.revision, operationId: `import:${operationId}:${turn}`, turn,
-          inputs: foregroundFrameInputs(framePlan, userText, userText, chat.runtimePresetSnapshot, chat),
+          inputs: foregroundFrameInputs(plan, userText, userText, chat.runtimePresetSnapshot, chat),
           source: { importSource: message.importSource } })
         const adapted = createForegroundFrameSessionAdapter({ id: () => `tavern-import-frame:${operationId}:${turn}` })
           .append({ messages: [], frame, step: 1 })
@@ -63,7 +66,7 @@ export function buildImportedConversation(chat, parsed, { operationId, fileName 
         for (const context of adapted.messages) events.push({ type: 'user/message', data: context, intent: { surfaceOp: 'append' } })
         chat.timeline.checkpoints.push({ id: `import-checkpoint:${operationId}:${turn}`, turn, userText: pendingUsers.join('\n\n'),
           importMessageCount: roundStart, importBefore: { scriptState: clone(chat.scriptState), posture: '', candidates: null,
-            settleStatus: 'done', settleError: null, lastSettle: null, preparedWorldBookContext: '', preparedWorldBook: null, participants: beforeParticipants },
+            settleStatus: 'done', settleError: null, lastSettle: null, worldBookReads: beforeWorldBookReads, preparedWorldBookContext: '', preparedWorldBook: null, participants: beforeParticipants },
           participants: beforeParticipants, committedAt: now })
         chat.timeline.checkpoints = chat.timeline.checkpoints.slice(-40)
         chat.timeline.revision++
