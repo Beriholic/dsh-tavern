@@ -1,3 +1,4 @@
+import { createChatHistoryImportService } from '../../tavern-plugin/lib/domain/chat-history-import-service.js'
 import { sessionEvents } from '../../tavern-plugin/lib/domain/session-events.js'
 // Production initialization, Chat journal and installed DSH Session/Agent loop.
 // All files are temporary and the text model is scripted; no paid requests.
@@ -30,7 +31,7 @@ export async function createInitializationNative(bootPath) {
   const requests = [], state = { failMarker: false, failFlush: false }, handles = new Set()
   const selection = { provider: 'initialization-fixture', model: 'text' }
   const sessionId = 'opening-session'
-  let target, persistence
+  let target, persistence, importer
   const card = { path: 'cards/test.json', name: '角色', first_mes: '{{user}}，你好。', description: '不可丢失的固定背景' }
   const data = createProfileDataStore({ dataRoot: root })
   let storage = createSessionStablePrefixStorage(join(root, 'prefix'))
@@ -69,7 +70,7 @@ export async function createInitializationNative(bootPath) {
     }
     const snapshots = createPlayCardSnapshots({ worldBooks: { bound: async () => null }, planner: createContextPlanner({ prompt: () => '' }), readCard: async () => card, writeChat: write })
     const timeline = createStoryTimeline({ id: () => randomUUID() })
-    return createConversationInitialization({
+    const initialization = createConversationInitialization({
       cards: { read: async () => card, readChat: async () => card, script: async () => undefined, extensions: async () => ({}) },
       chats: { resolve: registry.resolve, publish: registry.publish, write }, snapshots, timeline,
       presets: { fullSnapshot: async () => null }, settings: async () => ({}),
@@ -77,8 +78,13 @@ export async function createInitializationNative(bootPath) {
       native: { wait: async () => target, selection: () => selection, ensurePrefix: (session, text) => ensureSessionStablePrefix(session, text, storage),
         flush: session => target.agent ? ctx.sessions.flush(session) : flush(session) }
     })
+    importer = createChatHistoryImportService({ initialization, cards: { read: async () => card }, worldBooks: { bound: async () => null }, store: data,
+      chats: { resolve: registry.resolve, publish: registry.publish, read: persistence.read, readRevision: persistence.readRevision, write: persistence.write },
+      native: { wait: async () => target, ensurePrefix: (session, text) => ensureSessionStablePrefix(session, text, storage), flush } })
+    return initialization
   }
   return {
+    importHistory: async input => { open(); return importer.import(input) },
     open, state, requests, input: { cardPath: card.path, sessionId, mode: 'play', userName: '玩家' },
     get target() { return target }, get persistence() { return persistence },
     async restoreDetached() {

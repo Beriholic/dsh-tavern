@@ -171,7 +171,7 @@ test('sidebar and prewarm are wired to the host adapter, with required services 
   assert.equal(client.inject.includes('remote.agentPresets'), false)
   assert.match(source, /ctx\.get\("uiConversation"\) \|\| ctx\.get\("conversation"\)/)
   assert.match(source, /conversationHost: createConversationHostAdapter\(ctx\)/)
-  assert.equal((source.match(/props\.conversationHost\.connectWorkspace\(targetWorkspaceId\)/g) || []).length, 2)
+  assert.equal((source.match(/props\.conversationHost\.connectWorkspace\(targetWorkspaceId\)/g) || []).length, 3)
   assert.match(source, /props\.conversationHost\.ensurePreset\(sessionId, request\)/)
   assert.match(source, /props\.conversationHost\.forkSession\(item\.sessionId\)/)
   assert.doesNotMatch(source, /props\.workspaces\.connectWorkspace|props\.connection\.api|noteAgentPreset/)

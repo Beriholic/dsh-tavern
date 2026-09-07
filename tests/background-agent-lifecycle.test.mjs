@@ -11,10 +11,10 @@ async function until(condition) {
   for (let n = 0; n < 100; n++) { if (condition()) return; await new Promise(resolve => setImmediate(resolve)) }
   throw new Error('Agent 未到达预期阶段')
 }
-function harness({ work = async () => {}, flush = async () => {}, dispose = async () => {} } = {}) {
+function harness({ work = async () => {}, flush = async () => {}, dispose = async () => {}, needsNewBackgroundSession } = {}) {
   const children = new Map(), starts = [], calls = [], disposals = [], tools = new Map()
   let seq = 0
-  const runner = createBackgroundAgentRunner({ id: () => 'child-' + ++seq, flushSession: flush,
+  const runner = createBackgroundAgentRunner({ id: () => 'child-' + ++seq, flushSession: flush, needsNewBackgroundSession,
     compactAgent: async agent => { calls.push(['compact', agent.session.id]); return { message: 'compacted' } },
     agents: {
       get(id) { if (id.startsWith('game-')) return { id, session: { header: {} } } },
@@ -116,3 +116,16 @@ test('释放所有常驻会话时汇总错误并清空所有权，可重复释�
 test('公共Runner缺少宿主时保留原有错误', () => {
   for (const input of [undefined, null, {}]) assert.throws(() => createBackgroundAgentRunner(input), /缺少 DSH Agent 运行环境/)
 })
+
+ test('needs-session bypasses an obsolete resident cache while normal continuation reuses it', async t => {
+ let fresh = false
+ const h = harness({ needsNewBackgroundSession: async () => fresh })
+ t.after(() => h.runner.dispose())
+ const first = await h.runner.run(h.input())
+ assert.equal((await h.runner.run(h.input())).traceSessionId, first.traceSessionId)
+ fresh = true
+ const next = await h.runner.run(h.input())
+ assert.notEqual(next.traceSessionId, first.traceSessionId)
+ fresh = false
+ assert.equal((await h.runner.run(h.input())).traceSessionId, next.traceSessionId)
+ })

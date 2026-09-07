@@ -1,0 +1,83 @@
+import { sessionEvents } from './session-events.js'
+
+const clone = value => structuredClone(value)
+
+// Native Tavern rounds contain one input and one body. Preserve adjacent source
+// paragraphs in that body, with the state at the end of the combined message.
+function nativeMessages(messages) {
+  const result = []
+  for (const row of messages) {
+    const previous = result.at(-1)
+    if (previous?.role === row.role) {
+      const text = previous.text + '\n\n' + row.text
+      const sourceLines = previous.sourceLines.concat(row.sourceLine)
+      Object.assign(previous, row, { text, sourceLines })
+    } else result.push({ ...row, sourceLines: [row.sourceLine] })
+  }
+  return result
+}
+
+/** Build replayable native events and compact checkpoints without running any Agent. */
+export function buildImportedConversation(chat, parsed, { operationId, fileName = '', initialVariables, textOnly = false, now = Date.now() }) {
+  const events = []
+  let turn = 0
+  let pendingUsers = [], roundStart = 0
+  chat.importHistory = { version: 1, operationId, digest: parsed.digest, status: 'ready', warnings: parsed.warnings,
+    importedAt: now, messageCount: parsed.messages.length }
+  chat.title = fileName.replace(/\.jsonl$/i, '').slice(0, 160) || chat.cardName + ' · 导入对话'
+  chat.nativeOpeningAppended = true
+  chat.settleStatus = 'done'
+  chat.timeline.participants = { background: { role: 'background', lifetime: 'chat', status: 'needs-session', sessionId: '', boundary: null } }
+  const beforeParticipants = clone(chat.timeline.participants)
+  for (const [index, row] of nativeMessages(parsed.messages).entries()) {
+    const messageId = `tavern-import:${operationId}:${row.sourceLine}`
+    const variables = textOnly ? initialVariables : row.variables || initialVariables
+    const message = { role: row.role, text: row.text, sourceText: row.text, projectionText: row.text,
+      sessionText: row.text, displayText: row.text, displayMode: 'markdown', ts: Date.parse(row.timestamp) || now,
+      native: true, name: row.name, swipeId: 0, swipes: [row.text],
+      ...(variables === undefined ? {} : { variables: [clone(variables)] }),
+      importSource: { operationId, line: row.sourceLine, lines: row.sourceLines, swipe: row.sourceSwipe, stateSourceLine: textOnly ? null : row.stateSourceLine, stateInherited: textOnly || row.stateInherited } }
+    if (row.role === 'user') {
+      if (!pendingUsers.length) roundStart = chat.messages.length
+      pendingUsers.push(row.text)
+      events.push({ type: 'user/message', data: { id: messageId, role: 'user', content: [{ type: 'text', text: row.text }],
+        source: { kind: 'user', importSource: message.importSource } }, intent: { surfaceOp: 'append' } })
+    } else {
+      turn++
+      message.turn = turn
+      if (index === 0) message.greeting = true
+      if (pendingUsers.length) {
+        chat.timeline.checkpoints.push({ id: `import-checkpoint:${operationId}:${turn}`, turn, userText: pendingUsers.join('\n\n'),
+          importMessageCount: roundStart, importBefore: { scriptState: clone(chat.scriptState), posture: '', candidates: null,
+            settleStatus: 'done', settleError: null, lastSettle: null, preparedWorldBookContext: '', preparedWorldBook: null, participants: beforeParticipants },
+          participants: beforeParticipants, committedAt: now })
+        chat.timeline.checkpoints = chat.timeline.checkpoints.slice(-40)
+        chat.timeline.revision++
+      }
+      events.push({ type: 'turn/start', data: { turn } }, { type: 'step/start', data: { turn, step: 1 } },
+        { type: 'assistant/message', data: { turn, step: 1, message: { id: messageId, role: 'assistant', content: [{ type: 'text', text: row.text }],
+          source: { kind: 'model', provider: 'dsh-tavern', model: 'chat-import', importSource: message.importSource } } }, intent: { surfaceOp: 'append', sourceEventSeqs: [] } },
+        { type: 'step/end', data: { turn, step: 1 } }, { type: 'turn/end', data: { turn, reason: { kind: 'completed' } } })
+      pendingUsers = []
+    }
+    chat.messages.push(message)
+  }
+  if (chat.mvu?.enabled) chat.mvu.openingInitialization = { version: 2, status: 'complete', completedAt: now, source: 'chat-import' }
+  return { chat, events, lastTurn: turn }
+}
+
+/** Resume only our exact contiguous event prefix; never rewrite append-only history. */
+export async function appendImportedEvents(session, plan, flush) {
+  const events = sessionEvents(session).filter(event => event.type !== 'session/end-seed')
+  let start = events.findIndex(event => event.type === 'turn/start' || event.type === 'assistant/message' ||
+    (event.type === 'user/message' && event.data?.id !== 'tavern-session-prefix:' + session.id))
+  if (start < 0) start = events.length
+  if (events.length > start + plan.events.length) throw new Error('导入期间 Session 已有新事件，请使用新 Session')
+  for (let index = 0; index < plan.events.length; index++) {
+    const expected = plan.events[index], existing = events[start + index]
+    if (existing) {
+      if (existing.type !== expected.type || JSON.stringify(existing.data) !== JSON.stringify(expected.data)) throw new Error('导入事件与当前 Session 不一致，拒绝重复追加')
+    } else session.append(expected.type, expected.data, expected.intent)
+  }
+  await flush(session)
+}

@@ -1,3 +1,4 @@
+import { createChatHistoryImportService } from './domain/chat-history-import-service.js'
 import { sessionEvents } from './domain/session-events.js'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { randomUUID } from 'node:crypto'
@@ -1291,6 +1292,16 @@ export async function apply(ctx) {
       return result
     }
   })
+  const chatHistoryImporter = createChatHistoryImportService({
+    initialization: conversationInitialization,
+    cards: { read: readCard }, worldBooks, store: profileData,
+    chats: { resolve: chatForSession, publish: conversationRegistry.publish, read: readChat, readRevision: readChatRevision, write: rawWriteChat },
+    native: {
+      wait: sessionId => waitForWritableSession({ registry: agentRegistry, sessions: sessionStore, sessionId, sleep }),
+      ensurePrefix: (session, text) => ensureSessionStablePrefix(session, text, stablePrefixStorage),
+      flush: session => sessionStore.flush(session)
+    }
+  })
   async function forkChat(sourceChatId, sourceSessionId, targetSessionId, requestedTurn) {
     const source = str(sourceChatId) === '' ? await chatForSession(str(sourceSessionId)) : await readChat(str(sourceChatId))
     if (source === undefined) throw new Error('找不到要分叉的源对话')
@@ -1318,6 +1329,10 @@ export async function apply(ctx) {
     stablePrefixStorage,
     agents: agentRegistry,
     agentPreset: 'tavern-background',
+    needsNewBackgroundSession: async sessionId => {
+      const chat = await chatForSession(sessionId)
+      return chat?.timeline?.participants?.background?.status === 'needs-session'
+    },
     resolveStablePrefix: async function (input) {
       if (input.task === 'image') return ''
       const chat = await chatForSession(input.sessionId)
@@ -2284,6 +2299,8 @@ export async function apply(ctx) {
 	  case 'heartbeatTavernScriptRuntime': return tavernScriptHostAdapter.heartbeatRuntime(args && args.sessionId, args && args.runtimeId, args && args.ready, args && args.initializationError)
 	  case 'completeTavernHelperEvent': return { completed: tavernScriptHostAdapter.completeEvent(args && args.sessionId, args && args.eventId, args && args.args, args && args.runtimeId, args && args.leaseToken, args && args.error, sanitizeRuntimeDiagnostics(args && args.diagnostics)) }
 	  case 'releaseTavernHelperRuntime': return { released: tavernScriptHostAdapter.releaseRuntime(args && args.sessionId, args && args.runtimeId) }
+      case 'previewChatImport': return await chatHistoryImporter.preview(args || {})
+      case 'importChatHistory': return await chatHistoryImporter.import(args || {})
       case 'startChat': {
         try {
           return { view: await startChat(args && args.path, args && args.sessionId, args && args.mode, args && args.openingId, args && args.userName, args && args.requestMode) }

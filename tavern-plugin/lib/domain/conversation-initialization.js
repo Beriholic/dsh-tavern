@@ -78,7 +78,7 @@ export function createConversationInitialization(options) {
     return prepared === undefined ? await presets.fullSnapshot() : prepared
   }
 
-  async function initialize({ cardPath, sessionId, mode, openingId, userName, requestMode }) {
+  async function initialize({ cardPath, sessionId, mode, openingId, userName, requestMode, importDraft = false }) {
     const currentSettings = await settings()
     const effectiveRequestMode = requestMode === 'sillytavern' ? 'sillytavern' : 'dsh'
     const requestedMode = mode === 'card' || mode === 'revision' || mode === 'extract' ? 'card' : (mode === 'script' ? 'script' : (mode === 'story' ? 'story' : null))
@@ -188,6 +188,12 @@ export function createConversationInitialization(options) {
     }), chat.sceneOpeningWorldbook))
     delete chat.sceneOpeningWorldbook
     const hasSession = typeof sessionId === 'string' && sessionId !== ''
+    if (importDraft) {
+      chat.messages = []
+      chat.openingText = ''
+      delete chat.sceneOpeningWorldbook
+      return chat
+    }
     await chats.publish(chat)
     if (hasSession) await appendNativeOpening(sessionId, chat, card, openingTarget)
     return await present(chat, card)
@@ -292,6 +298,7 @@ export function createConversationInitialization(options) {
 
   return Object.freeze({
     start: input => serialize(input.sessionId, () => initialize(input)),
+    prepareImport: input => serialize(input.sessionId, () => initialize({ ...input, mode: 'play', requestMode: 'dsh', importDraft: true })),
     ensureOpening: sessionId => serialize(sessionId, () => recover(sessionId))
   })
 }

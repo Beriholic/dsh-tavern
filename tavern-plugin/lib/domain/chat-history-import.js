@@ -48,6 +48,7 @@ export function parseChatHistory(text) {
   }
   if (!messages.length) throw new Error('文件中没有可导入的聊天消息')
   if (excluded) warnings.push(`已跳过 ${excluded} 条系统提示消息`)
+  if (messages.some((message, index) => index > 0 && messages[index - 1].role === message.role)) warnings.push('连续同角色消息将按原顺序合并为一条，使用合并末尾的状态，以保持原生轮次结构')
   const names = new Set(messages.filter(m => m.role === 'assistant' && m.name).map(m => m.name))
   if (names.size > 1) throw new Error('暂不支持多角色群聊记录')
   const hasMvu = messages.some(m => m.variables !== undefined)

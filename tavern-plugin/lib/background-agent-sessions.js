@@ -90,7 +90,9 @@ export function createBackgroundAgentSessions(options, task) {
     const requestedSessionId = str(persistent && typeof input.resolvePersistentSessionId === 'function'
       ? await input.resolvePersistentSessionId() : input.persistentSessionId)
     const key = residentKey(input)
-    const residentSessionId = str(residentSessionByParent.get(key))
+    const needsSession = persistent && input.task !== 'image' && typeof options.needsNewBackgroundSession === 'function'
+      && await options.needsNewBackgroundSession(input.sessionId)
+    const residentSessionId = needsSession && requestedSessionId === '' ? '' : str(residentSessionByParent.get(key))
     let traceSessionId = requestedSessionId || (persistent ? residentSessionId : '') || makeId()
     const descriptor = descriptorFor(input, persistent)
     const parentDepth = Number(parent.session.header && parent.session.header.delegationDepth)

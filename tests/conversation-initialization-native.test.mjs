@@ -83,3 +83,18 @@ test('failed native flush restores only durable events and finishes the publishe
   assert.equal((await h.open().ensureOpening(h.input.sessionId)).id, recovered.id)
   assert.equal(h.requests.length, 0)
 })
+
+ test('imported native history survives disk restore and reaches the next real Agent request exactly once', native, async t => {
+ const h = await createInitializationNative(process.env.DSH_BOOT_MODULE)
+ t.after(() => h.dispose())
+ const text = [{chat_metadata:{}},{is_user:false,mes:'导入开场'}, {is_user:true,mes:'走到花店'}, {is_user:false,mes:'抵达花店'}, {is_user:true,mes:'返回邮局'}, {is_user:false,mes:'已回邮局'}].map(JSON.stringify).join('\n')
+ await h.importHistory({...h.input,text,operationId:'native-import-test'})
+ assert.equal(h.requests.length,0)
+ await h.restoreDetached()
+ await h.continueWithAgent()
+ assert.equal(h.requests.length,1)
+ const actual=h.requests[0].messages.map(m=>m.content.filter(b=>b.type==='text').map(b=>b.text).join('\n'))
+ for(const phrase of ['导入开场','走到花店','抵达花店','返回邮局','已回邮局','继续。']) assert.equal(actual.filter(t=>t===phrase).length,1)
+ assert.doesNotMatch(JSON.stringify(actual),/玩家，你好。/)
+ assert.equal(sessionEvents(h.target.session).filter(e=>e.type==='turn\/start').at(-1).data.turn,4)
+ })

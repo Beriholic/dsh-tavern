@@ -30,5 +30,6 @@ test('format failures have line numbers and do not select a different variable s
 test('system notes are excluded and user-ending exports remain ordered', () => {
   const parsed = parseChatHistory(encode({ is_system: true, mes: 'note' }, { is_user: true, mes: 'one' }, { is_user: true, mes: 'two' }) + '\n\n')
   assert.deepEqual(parsed.messages.map(m => m.text), ['one', 'two'])
-  assert.equal(parsed.warnings.length, 1)
+  assert.ok(parsed.warnings.some(w => /跳过 1 条/.test(w)))
+  assert.ok(parsed.warnings.some(w => /连续同角色/.test(w)))
 })
