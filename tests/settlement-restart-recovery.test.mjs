@@ -44,6 +44,7 @@ async function harness({ beginRunning = true, mvu = true } = {}) {
     prepareNextWorldBookContext: async chat => chat, readChatCard: async () => ({}),
     view: async chat => chat, settlementTurn: () => 2,
     projectAgentMessageText: message => message.text, mvuUpdateRules: async () => [],
+    readTavernSettings: async () => ({ backgroundTasks: { posture: true, characterDesign: true } }),
     backgroundModelSelection: () => ({}), runtimePrompt: () => '',
     settleUserText: () => '【本轮正文】\n门开了',
     applySettlement: () => ({ postureUpdated: false }), applyMvuSettlementEffect, createMvuSettlementReconciler,
@@ -250,4 +251,26 @@ test('MVU 执行超时保留已提交正文 checkpoint，仍能重试结算', as
   assert.equal(run.get().timeline.checkpoints.length, 1)
   assert.equal(run.get().timeline.operations[run.body.value.operationId].status, 'completed')
   assert.equal(run.sandbox.mvuReceiptsOf(run.get())[0].receipt.status, 'error')
+})
+
+
+test('普通卡全部自动任务关闭时不请求模型，仍完成原生结算', async () => {
+  const run = await harness({ beginRunning: false, mvu: false })
+  run.sandbox.readTavernSettings = async () => ({ backgroundTasks: { posture: false, characterDesign: false } })
+  run.sandbox.backgroundModelSelection = () => { throw new Error('关闭后不应选择模型') }
+  await run.sandbox.queueSettlement('chat')
+  assert.equal(run.get().settleStatus, 'done')
+  assert.equal(run.get().timeline.operations[run.body.value.operationId].status, 'completed')
+})
+
+test('普通卡只开人物设计无需提交姿势', async () => {
+  const run = await harness({ beginRunning: false, mvu: false })
+  run.sandbox.readTavernSettings = async () => ({ backgroundTasks: { posture: false, characterDesign: true } })
+  run.sandbox.backgroundAgentRunner.run = async input => {
+    assert.deepEqual(Array.from(input.tools, tool => tool.name), ['character_design_read', 'character_design_save'])
+    assert.doesNotMatch(input.system, /posture_submit/)
+    return { text: '已完成', traceSessionId: 'background' }
+  }
+  await run.sandbox.queueSettlement('chat')
+  assert.equal(run.get().settleStatus, 'done')
 })

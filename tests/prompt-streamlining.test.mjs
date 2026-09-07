@@ -179,7 +179,7 @@ test('姿势结算通过短工具参数提交', () => {
   assert.match(systemPrompt, /posture_submit/)
   assert.match(systemPrompt, /位置、姿势、动作/)
   assert.doesNotMatch(flow, /maxTokens:/)
-  assert.match(flow, /tools: \[POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL\]/)
+  assert.match(flow, /backgroundTasksSettings\.posture \? \[POSTURE_SUBMIT_TOOL\]/)
   assert.match(flow, /skill 加载 tavern-character-design/)
   assert.match(flow, /characterDesignDocuments\.execute/)
   assert.match(flow, /normalizePostureSubmission/)

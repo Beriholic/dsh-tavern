@@ -335,6 +335,7 @@ export function createCandidateGenerator(options) {
       if (script === undefined || !Array.isArray(script.chunks) || script.chunks.length === 0) throw new Error('剧本文件不存在，请重新为人物卡导入剧本')
       scriptWindow = scripts.inspect({ script, state: chat.scriptState, request: { kind: 'choice' } })
     }
+    const designEnabled = (await options.backgroundTasks?.())?.characterDesign === true
     const task = prompt(scriptMode ? 'candidate-script' : 'candidate-story')
     const constantWorldBookContext = typeof options.stableWorldBookContext === 'function'
       ? await options.stableWorldBookContext(chat, card) : ''
@@ -361,6 +362,7 @@ export function createCandidateGenerator(options) {
     let submissionError = null
     async function onToolCall(call) {
       if (call && (call.name === CHARACTER_DESIGN_READ_TOOL.name || call.name === CHARACTER_DESIGN_SAVE_TOOL.name)) {
+        if (!designEnabled) return JSON.stringify({ ok: false, error: '人物设计已关闭' })
         if (!characterDesign || typeof characterDesign.execute !== 'function') {
           return JSON.stringify({ ok: false, retryable: false, error: '人物设计存储不可用，请继续完成候选生成' })
         }
@@ -394,7 +396,7 @@ export function createCandidateGenerator(options) {
       temperature: 0.8,
       system: [
         context.taskText,
-        '若确实需要建立、补全或修订长期人物设计，在当前后台 Agent 内调用 skill 加载 tavern-character-design，并按 Skill 使用人物档案工具；无需也不得创建另一个 Agent。完成后继续提交候选项。'
+        designEnabled ? '若确实需要建立、补全或修订长期人物设计，在当前后台 Agent 内调用 skill 加载 tavern-character-design，并按 Skill 使用人物档案工具；无需也不得创建另一个 Agent。完成后继续提交候选项。' : '人物设计已关闭，本任务只生成候选项，不生成档案或调用人物设计 Skill。'
       ].join('\n\n'),
       backgroundContext: context.stableText,
       turnContext: context.dynamicText,
@@ -411,9 +413,7 @@ export function createCandidateGenerator(options) {
       try {
         await reportStage('generating')
         run = await model.runCandidate(Object.assign({}, callOptions, {
-          tools: scriptMode
-            ? [SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, CANDIDATE_SUBMIT_TOOL]
-            : [CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, CANDIDATE_SUBMIT_TOOL],
+          tools: [...(scriptMode ? [SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL] : []), ...(designEnabled ? [CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL] : []), CANDIDATE_SUBMIT_TOOL],
           onToolCall,
           maxToolCalls: scriptMode ? 15 : 10,
           stopToolsWhen: function () { return submittedChoices !== null },

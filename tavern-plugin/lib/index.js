@@ -1487,6 +1487,7 @@ export async function apply(ctx) {
     }
   }
   const candidateGenerator = createCandidateGenerator({
+    backgroundTasks: async () => (await readTavernSettings()).backgroundTasks,
     store: {
       chatForSession: chatForSession,
       readChat: readChat,
@@ -1585,13 +1586,13 @@ export async function apply(ctx) {
   }
 
   // ---------- 后台结算 ----------
-  function settleUserText(chat) {
+  function settleUserText(chat, includePosture = true) {
     const msgs = (chat.messages || []).filter(function (message) {
       return message && (message.role === 'user' || message.role === 'assistant')
     }).slice(-2)
     const lines = [
-      '【上一轮结算姿势】',
-      str(chat.posture) !== '' ? projectAgentContent(chat.posture, { charName: chat.cardName, macroState: chat.macroState }).agentText : '（无）',
+      ...(includePosture ? ['【上一轮结算姿势】',
+      str(chat.posture) !== '' ? projectAgentContent(chat.posture, { charName: chat.cardName, macroState: chat.macroState }).agentText : '（无）'] : []),
       '【最新一轮对话】'
     ]
     for (let i = 0; i < msgs.length; i++) {
@@ -1699,6 +1700,7 @@ export async function apply(ctx) {
       let backgroundBoundary = null
       try {
         const card = await readChatCard(snapshot)
+        const backgroundTasksSettings = (await readTavernSettings()).backgroundTasks
         const mvuTarget = snapshot.mvu && snapshot.mvu.enabled === true && snapshot.mvu.owner === 'official'
           ? pendingMvuTarget(snapshot)
           : null
@@ -1707,6 +1709,7 @@ export async function apply(ctx) {
         let mvuResult = null
         if (mvuTarget !== null) {
           const settlementInput = {
+            backgroundTasks: backgroundTasksSettings,
             operationId: taskRun.operationId,
             chatId: snapshot.id,
             branchId: taskRun.basedOn.branchId,
@@ -1732,7 +1735,7 @@ export async function apply(ctx) {
             if (selection === null) throw new Error('没有可用的模型配置，请先在当前会话的模型选择器中选择模型')
             mvuResult = await mvuSettlement.settleVariables({
               ...settlementInput,
-              system: runtimePrompt('posture-settlement'),
+              system: backgroundTasksSettings.posture ? runtimePrompt('posture-settlement') : '',
               selection,
               persistentSessionId: backgroundSessionId,
               signal
@@ -1747,6 +1750,8 @@ export async function apply(ctx) {
             throw error
           }
           result = { posture: mvuResult.posture }
+        } else if (!backgroundTasksSettings.posture && !backgroundTasksSettings.characterDesign) {
+          result = {}
         } else {
           const selection = backgroundModelSelection(snapshot)
           if (selection === null) throw new Error('没有可用的模型配置，请先在当前会话的模型选择器中选择模型')
@@ -1762,17 +1767,16 @@ export async function apply(ctx) {
               id: 'settle-' + Date.now().toString(36),
               role: 'user',
               regexPlacement: 2,
-              content: [{ type: 'text', text: settleUserText(snapshot) }],
+              content: [{ type: 'text', text: settleUserText(snapshot, backgroundTasksSettings.posture) }],
               source: { kind: 'plugin', plugin: 'dsh-tavern' }
             }],
             system: [
-              runtimePrompt('posture-settlement'),
-              '若发现重要人物需要建立、补全或修订长期设计，在当前后台 Agent 内调用 skill 加载 tavern-character-design，并按 Skill 读取或保存人物档案；无需也不得创建另一个 Agent。',
-              '人物设计保存独立于姿势结算；完成设计后继续当前任务。',
-              'posture_submit 是本任务最后一步。'
+              backgroundTasksSettings.posture ? runtimePrompt('posture-settlement') : '本轮只处理人物设计，不生成或提交姿势。完成必要的档案操作后简短回复完成。',
+              ...(backgroundTasksSettings.characterDesign ? ['若发现重要人物需要建立、补全或修订长期设计，在当前后台 Agent 内调用 skill 加载 tavern-character-design，并按 Skill 读取或保存人物档案；无需也不得创建另一个 Agent。',
+              '人物设计保存独立于姿势结算；完成设计后继续当前任务。'] : ['本轮人物设计已关闭，不调用人物设计 Skill 或生成档案。']),
+              backgroundTasksSettings.posture ? 'posture_submit 是本任务最后一步。' : ''
             ].join('\n\n'),
-            turnContext: '【人物设计（按需）】\n普通卡与 MVU 卡均可使用人物设计 Skill；不需要设计时直接跳过。',
-            tools: [POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL],
+            tools: [...(backgroundTasksSettings.posture ? [POSTURE_SUBMIT_TOOL] : []), ...(backgroundTasksSettings.characterDesign ? [CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL] : [])],
             maxToolCalls: 12,
             temperature: 0.2,
             sessionId: snapshot.sessionId,
@@ -1783,10 +1787,11 @@ export async function apply(ctx) {
             onToolCall(call) {
               const pending = settlementToolTail.then(async function () {
                 if (call && (call.name === CHARACTER_DESIGN_READ_TOOL.name || call.name === CHARACTER_DESIGN_SAVE_TOOL.name)) {
+                  if (!backgroundTasksSettings.characterDesign) return JSON.stringify({ ok: false, error: '人物设计已关闭' })
                   if (submittedPosture !== null) return JSON.stringify({ ok: false, retryable: false, error: '姿势已经提交，本轮后台任务已结束' })
                   return await characterDesignDocuments.execute(snapshot.id, call)
                 }
-                if (!call || call.name !== POSTURE_SUBMIT_TOOL_NAME) {
+                if (!backgroundTasksSettings.posture || !call || call.name !== POSTURE_SUBMIT_TOOL_NAME) {
                   return JSON.stringify({ ok: false, retryable: true, error: '当前任务只允许调用人物设计工具和 posture_submit' })
                 }
                 try {
@@ -1804,8 +1809,8 @@ export async function apply(ctx) {
             }
           })
           await settlementToolTail
-          if (submittedPosture === null) throw new Error('后台 Agent 未调用 posture_submit 提交有效姿势')
-          result = submittedPosture
+          if (backgroundTasksSettings.posture && submittedPosture === null) throw new Error('后台 Agent 未调用 posture_submit 提交有效姿势')
+          result = submittedPosture || {}
           text = str(run.text) || JSON.stringify(result)
           backgroundSessionId = str(run.traceSessionId)
           backgroundBoundary = Number.isSafeInteger(run.traceBoundary) ? run.traceBoundary : null

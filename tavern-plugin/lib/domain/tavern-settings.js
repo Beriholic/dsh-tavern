@@ -9,9 +9,17 @@ function promptOverride(document, name) {
   return typeof value === 'string' && value.trim() !== '' ? value : null
 }
 
+export function normalizeBackgroundTasks(value) {
+  const tasks = object(value)
+  return { posture: tasks.posture !== false, characterDesign: tasks.characterDesign === true }
+}
+
 export function applyTavernSettingsPatch(current, patch) {
   const next = Object.assign({}, object(current))
   const input = object(patch)
+  if (Object.prototype.hasOwnProperty.call(input, 'backgroundTasks')) {
+    next.backgroundTasks = normalizeBackgroundTasks({ ...normalizeBackgroundTasks(next.backgroundTasks), ...object(input.backgroundTasks) })
+  }
   if (Object.prototype.hasOwnProperty.call(input, 'compatibilityMode')) next.compatibilityMode = input.compatibilityMode === true
   if (Object.prototype.hasOwnProperty.call(input, 'webSearchEnabled')) next.webSearchEnabled = input.webSearchEnabled === true
   if (Object.prototype.hasOwnProperty.call(input, 'backgroundModel')) {
@@ -68,6 +76,7 @@ export function presentTavernSettings(document, defaults) {
     compatibilityMode: true,
     webSearchEnabled: object(document).webSearchEnabled === true,
     backgroundModel: normalizeBackgroundModel(object(document).backgroundModel),
+    backgroundTasks: normalizeBackgroundTasks(object(document).backgroundTasks),
     // Card rendering uses a fixed trusted policy; legacy preferences are no longer applied.
     trustedCardMode: true,
     systemPrompts: prompts,
