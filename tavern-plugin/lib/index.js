@@ -1,3 +1,4 @@
+import { createOpeningPreparation } from './domain/opening-preparation.js'
 import { createChatHistoryImportService } from './domain/chat-history-import-service.js'
 import { createImportContextPreparation, needsImportContextPreparation } from './domain/import-context-preparation.js'
 import { sessionEvents } from './domain/session-events.js'
@@ -142,7 +143,7 @@ export async function apply(ctx) {
   async function captureSceneWorldbook(chat, card, preparedBook) {
     if (sceneWorldbooks === null) return null
     try {
-      const worldBook = preparedBook === undefined ? await worldBooks.bound(chat.cardPath, card) : preparedBook
+      const worldBook = preparedBook === undefined ? await worldBooks.bound(chat.cardPath, card, chat) : preparedBook
       return await sceneWorldbooks.capture({ worldBook, chat, card })
     } catch (_error) {
       console.warn('dsh-tavern: 场景世界书快照保存失败，正文继续；不会用后来的世界书补历史。')
@@ -710,6 +711,7 @@ export async function apply(ctx) {
       diagnostics: await resourceDiagnosticProjection(chat)
     })
   }
+  const openingPreparation = createOpeningPreparation({ readCard, worldBooks })
   async function getCardOpenings(cardPath, userName, requestMode) {
     const card = await readCard(cardPath)
     if (card === undefined) throw new Error('人物卡不存在: ' + cardPath)
@@ -724,7 +726,18 @@ export async function apply(ctx) {
       userName,
       presetRegexScripts: Array.isArray(preset && preset.regexScripts) ? preset.regexScripts : []
     })
+    const interactive = previews.openings.some(opening => /<script\b/i.test(opening.projection.text))
+    const preparation = interactive ? await openingPreparation.create(cardPath) : null
+    if (preparation) {
+      const swipes = [str(card.first_mes)].concat(Array.isArray(card.alternate_greetings) ? card.alternate_greetings : [])
+      const openingIds = swipes.map((text, index) => str(text).trim() ? (index === 0 ? 'primary' : 'alternate:' + (index - 1)) : null)
+      for (const opening of previews.openings) if (!opening.openingPreview && /<script\b/i.test(opening.projection.text)) {
+        opening.openingPreview = { swipes, openingIds, selectedIndex: openingIds.indexOf(opening.id),
+          preparationId: preparation.id, worldbook: preparation.worldbook, characterName: card.name }
+      }
+    }
     return {
+      preparationId: preparation?.id || '',
       openings: previews.openings,
       diagnostics: previews.diagnostics,
       trustedCardMode: settings.trustedCardMode
@@ -1081,7 +1094,7 @@ export async function apply(ctx) {
     let helperWorldbook = null
     if (helperEnabled && str(chat.cardPath) !== '') {
       try {
-        const record = await worldBooks.bound(chat.cardPath, card)
+        const record = await worldBooks.bound(chat.cardPath, card, chat)
         if (record !== null) helperWorldbook = projectTavernHelperWorldbook(record.view)
       } catch (error) {
         helperRuntime.diagnostics.push({ scriptId: '', name: '世界书', status: 'unavailable', message: str(error && error.message || error) })
@@ -1223,8 +1236,9 @@ export async function apply(ctx) {
     })
     return result.sort(function (left, right) { return Number(left.turn) - Number(right.turn) })
   }
-  async function startChat(cardPath, sessionId, mode, openingId, userName, requestMode) {
-    return await conversationInitialization.start({ cardPath, sessionId, mode, openingId, userName, requestMode })
+  async function startChat(cardPath, sessionId, mode, openingId, userName, requestMode, preparationId) {
+    const preparation = preparationId ? openingPreparation.resolve(preparationId, cardPath, openingId) : undefined
+    return await conversationInitialization.start({ cardPath, sessionId, mode, openingId, userName, requestMode, preparation })
   }
 
   async function scriptPreviewOf(chat) {
@@ -1444,7 +1458,7 @@ export async function apply(ctx) {
   async function nativeWorldBookTemplateContext(chat, card) {
     let worldBook
     try {
-      worldBook = await worldBooks.bound(chat.cardPath, card)
+      worldBook = await worldBooks.bound(chat.cardPath, card, chat)
     } catch (error) {
       console.warn('dsh-tavern: 动态世界书读取失败，已跳过:', str(error && error.message || error))
       return { context: '', refs: [], diagnostics: [{ kind: 'worldbook-template', code: 'worldbook-read-failed' }] }
@@ -1617,7 +1631,7 @@ export async function apply(ctx) {
   }
   async function mvuUpdateRules(chat, card) {
     try {
-      const worldBook = await worldBooks.bound(chat.cardPath, card)
+      const worldBook = await worldBooks.bound(chat.cardPath, card, chat)
       return mvuUpdateRulesFromWorldBook(worldBook).map(function (rule) {
         return projectAgentContent(rule, { charName: card && card.name, macroState: chat.macroState }).agentText
       })
@@ -1633,7 +1647,7 @@ export async function apply(ctx) {
     let error = null
     try {
       const card = await readChatCard(snapshot)
-      const worldBook = await worldBooks.bound(snapshot.cardPath, card)
+      const worldBook = await worldBooks.bound(snapshot.cardPath, card, snapshot)
       prepared = prepareWorldBookRecall({ turn, chat: snapshot, card, worldBook })
     } catch (caught) {
       error = str(caught && caught.message || caught)
@@ -2106,6 +2120,10 @@ export async function apply(ctx) {
       case 'getUpdateStatus': return { status: await applicationUpdater.status() }
       case 'checkUpdate': return { status: await applicationUpdater.check() }
       case 'startUpdate': return { status: await applicationUpdater.start() }
+      case 'saveOpeningSelection': return openingPreparation.select(args && args.id, args && args.openingId)
+      case 'createOpeningPreparation': return await openingPreparation.create(args && args.path)
+      case 'getOpeningPreparation': return openingPreparation.get(args && args.id)
+      case 'replaceOpeningWorldbook': return await openingPreparation.replaceWorldbook(args && args.id, args && args.entries, args && args.expectedEntries)
       case 'getCardOpenings': return await getCardOpenings(args && args.path, args && args.userName, args && args.requestMode)
       case 'preparePlayStart': {
         await runtimePresets.prepareFullSnapshot()
@@ -2308,7 +2326,7 @@ export async function apply(ctx) {
       case 'importChatHistory': return await chatHistoryImporter.import(args || {})
       case 'startChat': {
         try {
-          return { view: await startChat(args && args.path, args && args.sessionId, args && args.mode, args && args.openingId, args && args.userName, args && args.requestMode) }
+          return { view: await startChat(args && args.path, args && args.sessionId, args && args.mode, args && args.openingId, args && args.userName, args && args.requestMode, args && args.preparationId) }
         } catch (error) {
           console.error('dsh-tavern: 创建对话失败', {
             cardPath: str(args && args.path),
@@ -2671,7 +2689,7 @@ export async function apply(ctx) {
 
   async function compatibilityWorldInfo(chat, card, input) {
     let worldBook = null
-    try { worldBook = await worldBooks.bound(chat.cardPath, card) } catch {}
+    try { worldBook = await worldBooks.bound(chat.cardPath, card, chat) } catch {}
     const entries = Array.isArray(worldBook && worldBook.view && worldBook.view.entries) ? worldBook.view.entries : []
     const scan = (chat.messages || []).map(function (item) { return str(item.sourceText || item.text) }).concat([str(input)]).join('\n')
     function promptTemplateSpecial(entry) {
@@ -3503,7 +3521,7 @@ export async function apply(ctx) {
           record = await worldBooks.get(kind === 'card' ? { kind: 'card', cardPath: normalized } : { kind: 'standalone', path: normalized })
         } else {
           if (str(chat.cardPath) === '') return { found: false, message: '当前工作台尚未引用世界书。', name: '', total: 0, entries: [] }
-          record = await worldBooks.bound(chat.cardPath, await readChatCard(chat))
+          record = await worldBooks.bound(chat.cardPath, await readChatCard(chat), chat)
           if (record === null) return { found: false, message: '当前人物卡没有世界书。', name: '', total: 0, entries: [] }
         }
         const allEntries = Array.isArray(record.view.entries) ? record.view.entries : []

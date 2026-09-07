@@ -4,6 +4,55 @@ function installOpeningPreviewBridge(token, preview) {
   let selected = preview.selectedIndex;
   let nextId = 0;
   const pending = new Map();
+  let worldbook = preview.worldbook ? JSON.parse(JSON.stringify(preview.worldbook)) : null;
+  function copy(value) { return JSON.parse(JSON.stringify(value)); }
+  function request(type, payload) {
+    const requestId = String(++nextId);
+    return new Promise(function (resolve, reject) {
+      const timer = setTimeout(function () { pending.delete(requestId); reject(new Error('开场操作超时，请重试')); }, 10000);
+      pending.set(requestId, { resolve, reject, timer });
+      parent.postMessage(Object.assign({ type, token, requestId }, payload), '*');
+    });
+  }
+  window.getCharWorldbookNames = function () { return { primary: worldbook ? worldbook.name : null, additional: [] }; };
+  window.getWorldbook = async function (name) {
+    if (preview.preparationId) {
+      const result = await request('dsh-tavern-opening-read', {});
+      worldbook = result.worldbook;
+    }
+    if (!worldbook || name !== worldbook.name) throw new Error('开场准备只能访问绑定的世界书');
+    return copy(worldbook.entries);
+  };
+  window.updateWorldbookWith = async function (name, updater) {
+    const previous = await window.getWorldbook(name);
+    const draft = copy(previous);
+    const updated = await updater(draft);
+    const entries = updated === undefined ? draft : updated;
+    const result = await request('dsh-tavern-opening-worldbook', { entries, expectedEntries: previous });
+    worldbook = copy(result.worldbook);
+    return copy(worldbook.entries);
+  };
+  window.TavernHelper = { getCharWorldbookNames: window.getCharWorldbookNames,
+    getWorldbook: window.getWorldbook, updateWorldbookWith: window.updateWorldbookWith };
+  const chat = [{ is_user: false, name: preview.characterName || '', mes: swipes[selected], swipe_id: selected, swipes: swipes.slice() }];
+  let savedIndex = selected;
+  window.SillyTavern = {
+    chat,
+    getContext: function () { return { chat, extensionSettings: {} }; },
+    saveChat: async function () {
+      const message = chat[0];
+      const index = Number(message && message.swipe_id);
+      if (chat.length !== 1 || !Number.isInteger(index) || !preview.openingIds[index] || message.mes !== swipes[index]) {
+        throw new Error('开场准备只能选择人物卡已有开场');
+      }
+      // Persist selection before acknowledging save, without unmounting its caller.
+      await request('dsh-tavern-opening-save', { swipeId: index });
+      savedIndex = index;
+    },
+    reloadCurrentChat: async function () {
+      await window.setChatMessages([{ message_id: 0, swipe_id: savedIndex }]);
+    }
+  };
   window.getCurrentMessageId = window.getLastMessageId = function () { return 0; };
   window.getChatMessages = function (id, options) {
     if (Number(id) !== 0 || (options && options.role && !['all', 'assistant'].includes(options.role))) return [];
@@ -11,7 +60,8 @@ function installOpeningPreviewBridge(token, preview) {
   };
   // Some chooser pages await this gate without reading MVU. No game state exists yet.
   window.waitGlobalInitialized = async function (name) {
-    if (name === 'Mvu') return undefined;
+    if (name === 'Mvu' && !preview.preparationId) return undefined;
+    if (window[name] !== undefined) return window[name];
     throw new Error('开场预览尚未初始化 ' + name);
   };
   window.errorCatched = function (callback) {
@@ -26,12 +76,7 @@ function installOpeningPreviewBridge(token, preview) {
         (patch.message !== undefined && patch.message !== swipes[index])) {
       throw new Error('开场预览只支持选择人物卡已有开场，不能修改正文或变量');
     }
-    const requestId = String(++nextId);
-    await new Promise(function (resolve, reject) {
-      const timer = setTimeout(function () { pending.delete(requestId); reject(new Error('开场选择超时，请使用开场切换按钮')); }, 10000);
-      pending.set(requestId, { resolve, reject, timer });
-      parent.postMessage({ type: 'dsh-tavern-opening-select', token, requestId, swipeId: index }, '*');
-    });
+    await request('dsh-tavern-opening-select', { swipeId: index });
     selected = index;
   };
   window.setChatMessage = function (message, messageId, options) {
@@ -43,7 +88,7 @@ function installOpeningPreviewBridge(token, preview) {
     const task = pending.get(data.requestId);
     if (!task) return;
     pending.delete(data.requestId); clearTimeout(task.timer);
-    if (data.ok) task.resolve(); else task.reject(new Error(data.error || '开场选择失败'));
+    if (data.ok) task.resolve(data.result); else task.reject(new Error(data.error || '开场选择失败'));
   });
 }
 

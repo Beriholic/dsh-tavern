@@ -353,3 +353,14 @@ test('recovery refuses to fill an opening after another operation has interleave
   assert.deepEqual(h.session().events, before)
   assert.notEqual([...h.saved.values()][0].nativeOpeningAppended, true)
 })
+
+
+test('开局草稿世界书在第一次保存前固化，再次打开不覆盖本局配置', async () => {
+  const h = initializationFixture()
+  const snapshot = { version: 1, source: null, document: null }
+  const chat = await h.make().start({ ...h.input, preparation: { worldbookSnapshot: snapshot } })
+  assert.deepEqual(chat.openingWorldbookSnapshot, snapshot)
+  assert.deepEqual(h.writes[0].chat.openingWorldbookSnapshot, snapshot)
+  const reopened = await h.make().start({ ...h.input, preparation: { worldbookSnapshot: { version: 99 } } })
+  assert.deepEqual(reopened.openingWorldbookSnapshot, snapshot)
+})

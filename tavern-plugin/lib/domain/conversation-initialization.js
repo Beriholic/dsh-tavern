@@ -78,7 +78,7 @@ export function createConversationInitialization(options) {
     return prepared === undefined ? await presets.fullSnapshot() : prepared
   }
 
-  async function initialize({ cardPath, sessionId, mode, openingId, userName, requestMode, importDraft = false }) {
+  async function initialize({ cardPath, sessionId, mode, openingId, userName, requestMode, preparation, importDraft = false }) {
     const currentSettings = await settings()
     const effectiveRequestMode = requestMode === 'sillytavern' ? 'sillytavern' : 'dsh'
     const requestedMode = mode === 'card' || mode === 'revision' || mode === 'extract' ? 'card' : (mode === 'script' ? 'script' : (mode === 'story' ? 'story' : null))
@@ -135,6 +135,7 @@ export function createConversationInitialization(options) {
     chat.runtimePresetSnapshot = runtimePresetSnapshot
     chat.runtimePresetPath = str(runtimePresetSnapshot && runtimePresetSnapshot.presetPath)
     chat.macroState = macroState
+    if (preparation && groupOfMode(chatMode) === 'play') chat.openingWorldbookSnapshot = structuredClone(preparation.worldbookSnapshot)
     // The sidebar setting is the sole opt-in; opening previews and legacy clients cannot override it.
     const profile = groupOfMode(chat.mode) === 'play' && options.userPreferenceProfile
       ? await options.userPreferenceProfile.read()

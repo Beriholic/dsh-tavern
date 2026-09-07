@@ -10,14 +10,14 @@ export function createPlayCardSnapshots({ worldBooks, planner, readCard, writeCh
   const pending = new Map()
 
   async function constantContext(chat, card) {
-    try { return constantWorldBookContext({ worldBook: await worldBooks.bound(chat.cardPath, card) }).context }
+    try { return constantWorldBookContext({ worldBook: await worldBooks.bound(chat.cardPath, card, chat) }).context }
     catch (error) { logger.warn('dsh-tavern: 常驻世界书读取失败，已跳过:', str(error && error.message || error)) }
     return ''
   }
 
   async function build(chat, card) {
     let worldBook = null
-    try { worldBook = await worldBooks.bound(chat.cardPath, card) }
+    try { worldBook = await worldBooks.bound(chat.cardPath, card, chat) }
     catch (error) { logger.warn('dsh-tavern: 常驻世界书读取失败，已跳过:', str(error && error.message || error)) }
     const worldBookContext = constantWorldBookContext({ worldBook }).context
     const planned = sanitizeAgentProjectionText((await planner.plan({ purpose: 'play-card-snapshot', card, chat, worldBookContext, worldBookLabel: '常驻世界书' })).text)

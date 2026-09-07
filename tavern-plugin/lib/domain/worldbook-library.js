@@ -160,7 +160,13 @@ export function createWorldBookLibrary(options = {}) {
     return { source, cards: cardRows, boundCards, conflict: boundCards.length > 1 }
   }
 
-  async function bound(cardPath, card) {
+  async function bound(cardPath, card, chat) {
+    if (chat?.openingWorldbookSnapshot?.version === 1) {
+      const snapshot = chat.openingWorldbookSnapshot
+      if (snapshot.document === null) return null
+      return { source: clone(snapshot.source), document: clone(snapshot.document),
+        localChatId: chat.id, view: inspectWorldBookDocument(snapshot.document) }
+    }
     const current = await binding(cardPath)
     if (current.kind === 'none') return null
     if (current.available !== true) throw new Error('绑定的世界书不存在，请重新绑定或解绑')

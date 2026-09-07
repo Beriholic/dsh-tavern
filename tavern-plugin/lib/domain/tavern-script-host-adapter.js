@@ -1,3 +1,4 @@
+import { exportSillyTavernWorldBook, inspectWorldBookDocument, updateWorldBookDocument } from './worldbook-resource.js'
 import { isDeepStrictEqual } from 'node:util'
 import { applyChatPluginData, validateChatPluginRequest } from './tavern-chat-plugin-data.js'
 import {
@@ -184,7 +185,7 @@ export function createTavernScriptHostAdapter(options = {}) {
     const chat = await resolveChat(sessionId)
     await assertScriptEnabled(chat)
     const card = await options.readCard(chat)
-    const record = await options.worldBooks.bound(chat.cardPath, card)
+    const record = await options.worldBooks.bound(chat.cardPath, card, chat)
     if (record === null) throw new Error('当前人物卡没有绑定世界书')
     const name = str(requestedName).trim()
     if (name !== '' && name !== 'current' && name !== str(record.view.displayName)) {
@@ -220,18 +221,46 @@ export function createTavernScriptHostAdapter(options = {}) {
       if (transaction && operations.length > 0) throw new Error('MVU 结算事务不能修改跨存储的世界书')
       const updated = operations.length === 0
         ? resolved.record
-        : await options.worldBooks.update(resolved.record.source, { operations })
+        : await updateBoundWorldbook(resolved, { operations })
       return { updated: operations.length > 0, worldbook: projectTavernHelperWorldbook(updated.view) }
     })
   }
 
+  async function updateBoundWorldbook(resolved, request, nativeDocument) {
+    if (!resolved.record.localChatId) return nativeDocument === undefined
+      ? await options.worldBooks.update(resolved.record.source, request)
+      : await options.worldBooks.replaceNative(resolved.record.source, nativeDocument)
+    if (nativeDocument !== undefined) {
+      if (!nativeDocument || typeof nativeDocument !== 'object' || !nativeDocument.entries ||
+          typeof nativeDocument.entries !== 'object' || Array.isArray(nativeDocument.entries)) throw new Error('原生世界书需要 entries 对象')
+      for (const [key, entry] of Object.entries(nativeDocument.entries)) {
+        if (!entry || !Number.isSafeInteger(entry.uid) || entry.uid < 0 || String(entry.uid) !== key) throw new Error('世界书条目编号无效或重复')
+      }
+    }
+    const document = nativeDocument === undefined
+      ? updateWorldBookDocument(resolved.record.document, request).document
+      : structuredClone(nativeDocument)
+    // Reuse native worldbook validation before publishing the chat-local version.
+    const view = inspectWorldBookDocument(document)
+    replaceTavernHelperWorldbookOperations(view, projectTavernHelperWorldbook(view).entries)
+    resolved.chat.openingWorldbookSnapshot.document = document
+    await options.writeChat(resolved.chat, { source: 'tavern-helper.local-worldbook' })
+    return { ...resolved.record, document, view }
+  }
+
+  async function exportBoundWorldbook(record) {
+    return record.localChatId ? exportSillyTavernWorldBook(record.document)
+      : (await options.worldBooks.export(record.source)).document
+  }
+
   function worldbookKey(record) {
+    if (record.localChatId) return 'chat:' + record.localChatId
     return record.source.kind === 'card' ? 'card:' + record.source.cardPath : 'standalone:' + record.source.path
   }
 
   async function loadWorldInfo(sessionId, name) {
     const resolved = await worldbookRecord(sessionId, name)
-    return { worldInfo: (await options.worldBooks.export(resolved.record.source)).document }
+    return { worldInfo: await exportBoundWorldbook(resolved.record) }
   }
 
   async function saveWorldInfo(sessionId, name, worldInfo, expectedWorldInfo) {
@@ -240,12 +269,12 @@ export function createTavernScriptHostAdapter(options = {}) {
     return await serializeWorldbook(worldbookKey(initial.record), async function () {
       const resolved = await worldbookRecord(sessionId, name)
       if (worldbookKey(resolved.record) !== worldbookKey(initial.record)) throw new Error('世界书绑定已变化，请重新读取后重试')
-      const current = (await options.worldBooks.export(resolved.record.source)).document
+      const current = await exportBoundWorldbook(resolved.record)
       if (!isDeepStrictEqual(current, expectedWorldInfo)) throw new Error('世界书已被其他操作修改，请重新读取后重试')
       const transaction = settlementTransactions.get(str(sessionId))
       if (transaction) throw new Error('MVU 结算事务不能修改跨存储的世界书')
-      const updated = await options.worldBooks.replaceNative(resolved.record.source, worldInfo)
-      return { updated: true, worldbook: projectTavernHelperWorldbook(updated.view), worldInfo: (await options.worldBooks.export(resolved.record.source)).document }
+      const updated = await updateBoundWorldbook(resolved, {}, worldInfo)
+      return { updated: true, worldbook: projectTavernHelperWorldbook(updated.view), worldInfo: await exportBoundWorldbook(updated) }
     })
   }
 

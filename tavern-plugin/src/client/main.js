@@ -3623,7 +3623,27 @@ window.__ModuleLoader__.load({
 						const runtime = pendingRuntime; pendingRuntime = null;
 						if (current()) invoke("captureDisplayRuntime", { turn: requestProps.turn, partIndex: requestProps.partIndex, runtime: runtime }, requestProps.sessionId).catch(function () {});
 					}, 1000);
-				} else if (data.type === "dsh-tavern-opening-select" && !props.sessionId && props.openingPreview) {
+				} else if ((data.type === "dsh-tavern-opening-worldbook" || data.type === "dsh-tavern-opening-save" || data.type === "dsh-tavern-opening-read") && !props.sessionId && props.openingPreview) {
+                    void (async function () {
+                    try {
+                        if (sourceDocument !== visible || sourceDocument.key !== desired.key) throw new Error("开场预览已失效");
+                        const preview = props.openingPreview;
+                        let result;
+                        if (data.type === "dsh-tavern-opening-read") {
+                            result = await invoke("getOpeningPreparation", { id: preview.preparationId });
+                        } else if (data.type === "dsh-tavern-opening-worldbook") {
+                            if (!preview.preparationId) throw new Error("开局草稿不存在");
+                            result = await invoke("replaceOpeningWorldbook", { id: preview.preparationId, entries: data.entries, expectedEntries: data.expectedEntries });
+                        } else {
+                            openingPreviewSelection(preview, data.swipeId);
+                            result = preview.preparationId ? await invoke("saveOpeningSelection", { id: preview.preparationId, openingId: openingPreviewSelection(preview, data.swipeId) }) : { saved: true };
+                        }
+                        event.source.postMessage({ type: "dsh-tavern-opening-response", token: data.token, requestId: data.requestId, ok: true, result }, "*");
+                    } catch (error) {
+                        event.source.postMessage({ type: "dsh-tavern-opening-response", token: data.token, requestId: data.requestId, ok: false, error: String(error.message || error) }, "*");
+                    }
+                    })();
+                } else if (data.type === "dsh-tavern-opening-select" && !props.sessionId && props.openingPreview) {
 					try {
 						const openingId = openingPreviewSelection(props.openingPreview, data.swipeId);
 						if (sourceDocument !== visible || sourceDocument.key !== desired.key || typeof props.onSelectOpening !== "function") throw new Error("开场预览已失效");
@@ -4566,6 +4586,7 @@ window.__ModuleLoader__.load({
 						sessionId: sessionId,
 						mode: request.targetMode,
 						openingId: request.openingId || "",
+						preparationId: request.preparationId || "",
 						userName: request.userName || "你",
 						requestMode: compatibilityAvailable && request.requestMode === "sillytavern" ? "sillytavern" : "dsh"
 					});
@@ -4627,7 +4648,7 @@ window.__ModuleLoader__.load({
 					let preparedSessionId = "";
 					try { preparedSessionId = await playPrewarmRef.current.claim(card && card.path); }
 					catch (prewarmError) { console.warn("dsh-tavern: 预热 Session 不可用，改为正常创建", prewarmError); }
-					await conversationLifecycle.start({ kind: "play", targetMode: targetMode, card: card, openingId: openingId || "", userName: resolvedUserName, requestMode: compatibilityAvailable && requestMode === "sillytavern" ? "sillytavern" : "dsh", preparedSessionId: preparedSessionId });
+					await conversationLifecycle.start({ kind: "play", targetMode: targetMode, card: card, preparationId: previousOpeningPicker && previousOpeningPicker.preparationId || "", openingId: openingId || "", userName: resolvedUserName, requestMode: compatibilityAvailable && requestMode === "sillytavern" ? "sillytavern" : "dsh", preparedSessionId: preparedSessionId });
 					if (targetMode !== "card") window.localStorage.setItem("dsh-tavern-player-name", resolvedUserName);
 					console.info("dsh-tavern: 开始游戏完成", (Date.now() - startedAt) + "ms", preparedSessionId ? "预热命中" : "即时创建");
 				} catch (err) { setOpeningPicker(previousOpeningPicker); setError(String(err && err.phase || "创建对话") + "失败：" + String(err && err.message || err)); }
@@ -4640,7 +4661,7 @@ window.__ModuleLoader__.load({
 					const userName = window.localStorage.getItem("dsh-tavern-player-name") || "你";
 					const response = await call("getCardOpenings", { path: card.path, userName: userName, requestMode: compatibilityAvailable && requestMode === "sillytavern" ? "sillytavern" : "dsh" });
 					const openings = response.openings || [];
-					setOpeningPicker({ card: card, openings: openings, index: 0, userName: userName, trustedCardMode: response.trustedCardMode });
+					setOpeningPicker({ card: card, preparationId: response.preparationId || "", openings: openings, index: 0, userName: userName, trustedCardMode: response.trustedCardMode });
 				} catch (err) { playPrewarmRef.current.cancel(); setError(String(err && err.message || err)); }
 				finally { setBusy(false); }
 			}
