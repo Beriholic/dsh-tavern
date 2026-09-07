@@ -711,12 +711,13 @@ export async function apply(ctx) {
       diagnostics: await resourceDiagnosticProjection(chat)
     })
   }
-  const openingPreparation = createOpeningPreparation({ readCard, worldBooks })
+  const openingPreparation = createOpeningPreparation({ readCard, worldBooks, templateRuntime: promptTemplateRuntime })
   async function getCardOpenings(cardPath, userName, requestMode) {
     const card = await readCard(cardPath)
     if (card === undefined) throw new Error('人物卡不存在: ' + cardPath)
     const settings = await readTavernSettings()
-    const extensions = await readCardExtensions(cardPath)
+    const cardExtensions = await readCardExtensions(cardPath)
+    const extensions = { ...cardExtensions, ...await tavernRemoteAssets.pinExtensions(cardExtensions) }
     const preset = settings.compatibilityMode && requestMode === 'sillytavern'
       ? await runtimePresets.fullSnapshot()
       : null
@@ -727,13 +728,13 @@ export async function apply(ctx) {
       presetRegexScripts: Array.isArray(preset && preset.regexScripts) ? preset.regexScripts : []
     })
     const interactive = previews.openings.some(opening => /<script\b/i.test(opening.projection.text))
-    const preparation = interactive ? await openingPreparation.create(cardPath) : null
+    const preparation = interactive ? await openingPreparation.create(cardPath, { runtime: (extensions.mvuResources || []).some(item => item.enabled !== false), userName }) : null
     if (preparation) {
       const swipes = [str(card.first_mes)].concat(Array.isArray(card.alternate_greetings) ? card.alternate_greetings : [])
       const openingIds = swipes.map((text, index) => str(text).trim() ? (index === 0 ? 'primary' : 'alternate:' + (index - 1)) : null)
       for (const opening of previews.openings) if (!opening.openingPreview && /<script\b/i.test(opening.projection.text)) {
         opening.openingPreview = { swipes, openingIds, selectedIndex: openingIds.indexOf(opening.id),
-          preparationId: preparation.id, worldbook: preparation.worldbook, characterName: card.name }
+          preparationId: preparation.id, worldbook: preparation.worldbook, characterName: card.name, runtime: preparation.runtime }
       }
     }
     return {
@@ -1128,7 +1129,7 @@ export async function apply(ctx) {
       replyProjections: replyDisplay.projections,
       tavernStatusView: replyDisplay.statusView || null,
       mvuReceipts: mvuReceiptsOf(chat),
-      tavernHelper: helperEnabled ? { ...projectTavernHelperContext(chat), globalVariables: await readPromptTemplateGlobalVariables(), characterVariables: cardExtensions.variables || {}, compatibilityCapabilities: TAVERN_COMPATIBILITY_CAPABILITIES, extensionSettings: await tavernExtensionSettings.read(), regexScripts: { global: cardExtensions.globalRegexScripts || [], character: cardExtensions.characterRegexScripts || [] } } : null,
+      tavernHelper: helperEnabled ? { ...projectTavernHelperContext(chat), worldbook: helperWorldbook, globalVariables: await readPromptTemplateGlobalVariables(), characterVariables: cardExtensions.variables || {}, compatibilityCapabilities: TAVERN_COMPATIBILITY_CAPABILITIES, extensionSettings: await tavernExtensionSettings.read(), regexScripts: { global: cardExtensions.globalRegexScripts || [], character: cardExtensions.characterRegexScripts || [] } } : null,
       tavernMvuRuntime: chat.mvu && chat.mvu.enabled === true ? {
         owner: chat.mvu.owner === 'official' ? 'official' : 'legacy',
         commit: OFFICIAL_MVU_VERSION.commit,
@@ -2120,6 +2121,7 @@ export async function apply(ctx) {
       case 'getUpdateStatus': return { status: await applicationUpdater.status() }
       case 'checkUpdate': return { status: await applicationUpdater.check() }
       case 'startUpdate': return { status: await applicationUpdater.start() }
+      case 'callOpeningRuntime': return await openingPreparation.callRuntime(args && args.id, args && args.method, args && args.args)
       case 'saveOpeningSelection': return openingPreparation.select(args && args.id, args && args.openingId)
       case 'createOpeningPreparation': return await openingPreparation.create(args && args.path)
       case 'getOpeningPreparation': return openingPreparation.get(args && args.id)

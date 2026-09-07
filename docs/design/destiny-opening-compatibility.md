@@ -6,7 +6,7 @@
 
 已修复预览缺少 jQuery、正式对话因 Git 引用解析失败而禁用正则两个问题。真实浏览器中，预览和正式对话都能显示首页，但“继续”被环境检查禁用，不能视为完成兼容。
 
-首页同步调用 `getTavernHelperVersion()`，要求版本至少 4.8.19；通过 `window.top.SillyTavern.getContext().extensionSettings.EjsTemplate` 检查 EJS；通过 `waitGlobalInitialized('Mvu')` 检查 MVU。当前报错为 `getTavernHelperVersion is not defined`。现有脚本运行时另有异步版本接口，不能直接满足这个同步调用。
+首页同步调用 `getTavernHelperVersion()`，要求版本至少 4.8.19；通过 `window.top.SillyTavern.getContext().extensionSettings.EjsTemplate` 检查 EJS；通过 `waitGlobalInitialized('Mvu')` 检查 MVU。最初报错为 `getTavernHelperVersion is not defined`。现有脚本运行时另有异步版本接口，不能直接满足这个同步调用。
 
 首页后续通过 `window.top.TavernHelper.getWorldbook/updateWorldbookWith` 读取并启停世界书条目，直接改写 `SillyTavern.chat[0].swipe_id/mes`，调用 `saveChat()`、`reloadCurrentChat()` 来切换开场。DSH 明确将 `reloadCurrentChat` 标为未支持。
 
@@ -49,9 +49,39 @@
 
 后续仍需完成，不能将第一阶段视为卡片兼容修复完成：
 
-- 在准备页实际启动变量运行时与模板初始化，按实际就绪状态提供同步宿主查询。
-- 将脚本中的顶层宿主对象访问接入隔离兼容环境；不能解除 iframe 隔离。
 - 验证命定之诗原始环境检查、协议确认、设置选择与实际开场的完整 UI 路径。
 - 已有占位首页会话返回准备页的入口。
 
 当前不会伪造 MVU 已初始化。原有简单开场选择器仍沿用既有桥接，避免改变其行为。
+
+
+## 第二阶段：环境检查（2026-09-07）
+
+按用户最新要求，本阶段以环境检查接通为范围，后续模板行为差异留待实际使用时处理。
+
+准备页复用现有宿主 bootstrap 和 MVU bundle loader，加载真实 MVU 模块；模板引擎通过现有 QuickJS/EJS 路径初始化初始变量。脚本变量与插件设置保存在草稿中，不写全局资源。页面同步版本接口返回兼容标识 `4.8.19`，不是实际安装了 Tavern Helper，也不代表完整实现了该版本所有接口。
+
+远程/内嵌开场脚本通过 AST 将已知的顶层 `SillyTavern`、`TavernHelper` 对象访问映射到本地宿主。字符串、注释、局部绑定和其他顶层访问不改动；iframe 隔离保持不变。远程入口 URL 增加投影版本，避免浏览器继续使用编译前的不可变缓存。
+
+真实 Chrome 准备页已看到三项绿色：酒馆助手正常、EJS 存在且已启用、MVU 正常；本次页面无新增脚本错误。仅验证到环境检查，未将协议按钮、最终建局或模板全文行为视为完成验收。
+
+已记录的模板缺口：这张卡使用 `_.omit`、`_.pick`、`_.chain` 等现有模板沙箱没有完整实现的 Lodash 接口；部分可选条目还使用 `matchChatMessages` 等接口。用空状态运行当前启用条目时，`variables` 和 `[长途移动与地理参考]` 返回 runtime-error；实际剧情状态下仍需另行验证。环境“存在且已启用”只说明宿主入口与现有引擎可用。
+
+### 正式会话复测发现（2026-09-07）
+
+环境检查通过不代表正式开局完成。真实页面随后暴露两处不同缺口：
+
+- 正式消息 iframe 只提供世界书全局函数，未提供 `TavernHelper` 命名空间及绑定世界书名称。首页调用 `TavernHelper.getCharWorldbookNames('current')` 因而抛错，核心/DLC 列表为空。现已补齐别名并把实际绑定世界书投影传入消息上下文；读写复用原有宿主 RPC，不改共享资源。回归测试复现原异常后通过，完整页面仍需复测。
+- `Automated-script-for-destined-journey@3.4.5/dist/index.js` 在 MVU 回调中调用 `uninjectPrompts` / `injectPrompts`，现有宿主未实现，导致变量保存之前抛出 ReferenceError。不是官方 MVU 重复加载，也不是刷新能解决的问题。本次没有用空函数吞掉错误。
+
+#### 待确认：脚本提示词注册表
+
+这属于新增宿主能力，尚未实现。拟议边界：
+
+1. 外部脚本沿用原 API，DSH 维护会话内按 ID 替换/删除的提示词注册表。
+2. `position: none, should_scan: true` 仅参与世界书扫描；有正文位置的提示进入本轮原生请求构造路径，不改已保存的历史 Frame。
+3. 注册表写入与 MVU 变量结算使用同一事务，失败不留下半套状态；回退、重新生成、切换会话沿用现有 lifecycle revision，阻止旧脚本写回。
+4. 准备页使用临时注册表，正式会话隔离；重载和脚本销毁清理规则需对照上游 API 契约，不把临时提示错误地永久累积。
+5. 必须验证真实初始化保存成功、扫描能激活对应世界书、下一次模型请求能收到指定提示，以及删除/回退后不再注入。仅环境检查绿色不算完成。
+
+此前仅要求先通过环境检查，本项涉及请求与状态生命周期，实施前单独确认。完整 EJS、最终自定义开局写入等既有待办仍未被本次测试证明完成。

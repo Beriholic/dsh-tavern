@@ -88,3 +88,21 @@ test('原样宿主调用：更新世界书、保存 swipe、重新加载，实�
   assert.equal(service.resolve(draft.id, 'card', 'alternate:0').worldbookSnapshot.document.entries[0].enabled, true)
   await assert.rejects(host.waitGlobalInitialized('Mvu'), /尚未初始化/, 'must not claim an unloaded MVU is ready')
 })
+
+import { TavernPromptTemplateRuntime } from '../tavern-plugin/lib/domain/tavern-prompt-template-runtime.js'
+test('准备页加载真实模板引擎，运行时变量和插件设置均隔离保存', async () => {
+  const { record } = fixture()
+  const service = createOpeningPreparation({ readCard: async () => card, worldBooks: { bound: async () => record }, templateRuntime: () => TavernPromptTemplateRuntime.create() })
+  const draft = await service.create('card', { runtime: true })
+  assert.equal(draft.runtime.context.extensionSettings.EjsTemplate.enabled, true)
+  assert.equal(draft.runtime.scripts[0].system, 'official-mvu')
+  assert.match(draft.runtime.scripts[0].assetUrl, /vendor\/magvarupdate\/bundle.js$/)
+  const result = await service.callRuntime(draft.id, 'updateTavernHelperVariables', { option: { type: 'message', message_id: 0 }, variables: { stat_data: { hp: 10 }, schema: {} } })
+  assert.equal(result.context.messages[0].variables.stat_data.hp, 10)
+  const settings = { ...draft.runtime.context.extensionSettings, mvu: { enabled: true } }
+  const saved = await service.callRuntime(draft.id, 'saveTavernExtensionSettings', { settings, expectedSettings: draft.runtime.context.extensionSettings })
+  assert.deepEqual(saved.extensionSettings, settings)
+  const second = await service.create('card', { runtime: true })
+  assert.equal(second.runtime.context.extensionSettings.mvu, undefined)
+  await assert.rejects(service.callRuntime(draft.id, 'updateTavernHelperMessages', { messages: [{ message_id: 0, message: '改写剧情' }] }), /只能更新开场变量/)
+})

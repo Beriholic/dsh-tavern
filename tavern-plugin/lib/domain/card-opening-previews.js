@@ -1,3 +1,4 @@
+import { projectTavernHostHtml } from './tavern-host-script-projection.js'
 import { cardOpeningChoices } from './card-openings.js'
 import { projectOpeningPreview } from './runtime-content-projection.js'
 
@@ -51,9 +52,9 @@ export async function projectCardOpeningPreviews(input = {}) {
         projection: {
           version: 2,
           turn: 1,
-          text: projection.displayText,
+          text: projectTavernHostHtml(projection.displayText),
           mode: projection.displayMode,
-          parts: projection.displayParts,
+          parts: projection.displayParts.map(part => part.kind === 'html' ? { ...part, content: projectTavernHostHtml(part.content) } : part),
           warnings: projection.warnings
         },
         openingPreview: isOpeningChooser(projection.displayText) ? {

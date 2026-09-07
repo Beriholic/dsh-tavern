@@ -1,5 +1,10 @@
 // The pre-game iframe can select a card greeting, but cannot write Session history.
 function installOpeningPreviewBridge(token, preview) {
+  const original = preview.runtime ? {
+    host: window.SillyTavern, helper: window.TavernHelper,
+    getChatMessages: window.getChatMessages, setChatMessages: window.setChatMessages,
+    waitGlobalInitialized: window.waitGlobalInitialized
+  } : null;
   const swipes = preview.swipes.slice();
   let selected = preview.selectedIndex;
   let nextId = 0;
@@ -32,13 +37,13 @@ function installOpeningPreviewBridge(token, preview) {
     worldbook = copy(result.worldbook);
     return copy(worldbook.entries);
   };
-  window.TavernHelper = { getCharWorldbookNames: window.getCharWorldbookNames,
-    getWorldbook: window.getWorldbook, updateWorldbookWith: window.updateWorldbookWith };
+  window.TavernHelper = Object.assign({}, original && original.helper, { getCharWorldbookNames: window.getCharWorldbookNames,
+    getWorldbook: window.getWorldbook, updateWorldbookWith: window.updateWorldbookWith });
   const chat = [{ is_user: false, name: preview.characterName || '', mes: swipes[selected], swipe_id: selected, swipes: swipes.slice() }];
   let savedIndex = selected;
-  window.SillyTavern = {
+  window.SillyTavern = Object.assign({}, original && original.host, {
     chat,
-    getContext: function () { return { chat, extensionSettings: {} }; },
+    getContext: function () { return Object.assign({}, original && original.host.getContext(), { chat, extensionSettings: original ? original.host.getContext().extensionSettings : {} }); },
     saveChat: async function () {
       const message = chat[0];
       const index = Number(message && message.swipe_id);
@@ -52,14 +57,20 @@ function installOpeningPreviewBridge(token, preview) {
     reloadCurrentChat: async function () {
       await window.setChatMessages([{ message_id: 0, swipe_id: savedIndex }]);
     }
-  };
+  });
+  if (original) {
+    window.getTavernHelperVersion = function () { return "4.8.19"; };
+    window.TavernHelper.getTavernHelperVersion = window.getTavernHelperVersion;
+  }
   window.getCurrentMessageId = window.getLastMessageId = function () { return 0; };
   window.getChatMessages = function (id, options) {
+    if (original) return original.getChatMessages(id, options);
     if (Number(id) !== 0 || (options && options.role && !['all', 'assistant'].includes(options.role))) return [];
     return [{ message_id: 0, role: 'assistant', message: swipes[selected], swipe_id: selected, swipes: swipes.slice() }];
   };
   // Some chooser pages await this gate without reading MVU. No game state exists yet.
   window.waitGlobalInitialized = async function (name) {
+    if (original) return original.waitGlobalInitialized(name);
     if (name === 'Mvu' && !preview.preparationId) return undefined;
     if (window[name] !== undefined) return window[name];
     throw new Error('开场预览尚未初始化 ' + name);
@@ -68,6 +79,7 @@ function installOpeningPreviewBridge(token, preview) {
     return function () { return Promise.resolve().then(() => callback.apply(this, arguments)).catch(console.error); };
   };
   window.setChatMessages = async function (patches) {
+    if (original && Array.isArray(patches) && patches.every(patch => patch.swipe_id === undefined && patch.message === undefined)) return original.setChatMessages(patches);
     if (!Array.isArray(patches) || patches.length !== 1) throw new Error('开场预览只能选择一条开场');
     const patch = patches[0];
     const index = Number(patch && patch.swipe_id);

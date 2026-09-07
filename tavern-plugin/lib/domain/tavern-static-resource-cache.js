@@ -1,3 +1,4 @@
+import { projectTavernHostScript } from './tavern-host-script-projection.js'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, stat, unlink, utimes, writeFile } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
@@ -74,7 +75,7 @@ export function rewriteCachedModuleImports(source, baseUrl) {
     const absolute = new URL(specifier, baseUrl).href
     return prefix + quote + localResourceUrl(absolute) + quote
   }
-  return str(source)
+  return projectTavernHostScript(str(source))
     .replace(/(\bfrom\s*|\bimport\s*)(["'])(\/[^"']+|https:\/\/[^"']+)\2/g, rewrite)
     .replace(/(\bimport\s*\(\s*)(["'])(\/[^"']+|https:\/\/[^"']+)\2/g, rewrite)
 }
