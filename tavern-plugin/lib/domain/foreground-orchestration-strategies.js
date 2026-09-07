@@ -92,40 +92,6 @@ function isNativeStablePrefix(message) {
     && (source.form === 'snapshot' || source.form === 'session-prefix')
 }
 
-function isNativeForegroundFrame(message) {
-  const source = message && message.source
-  return message && message.role === 'user' && source && source.kind === 'plugin'
-    && source.plugin === 'dsh-tavern' && source.form === 'foreground-frame'
-}
-
-/** Promote only the stable opening context; per-turn instructions remain user input. */
-export function projectNativeContextAsSystem(messages) {
-  let changed = false
-  const projected = (Array.isArray(messages) ? messages : []).map(function (message) {
-    if (!isNativeStablePrefix(message)) return message
-    changed = true
-    return Object.assign({}, message, { role: 'system' })
-  })
-  return changed ? projected : messages
-}
-
-function projectLegacyTemplatePrefix(messages, text) {
-  const replacement = str(text).trim()
-  if (replacement === '' || !Array.isArray(messages)) return messages
-  let changed = false
-  const projected = messages.map(function (message) {
-    const source = message && message.source
-    const current = contentText(message)
-    if (!source || source.kind !== 'plugin' || source.plugin !== 'dsh-tavern' || source.form !== 'snapshot' || !/<%[=_-]?[\s\S]*?%>/.test(current)) return message
-    changed = true
-    return Object.assign({}, message, {
-      content: [{ type: 'text', text: replacement }],
-      source: Object.assign({}, source, { sections: [{ name: 'tavern:session-context', text: replacement }] })
-    })
-  })
-  return changed ? projected : messages
-}
-
 function projectLegacyOpeningSources(messages) {
   let changed = false
   const projected = (Array.isArray(messages) ? messages : []).map(function (message) {
@@ -272,17 +238,13 @@ export function createNativePlayOrchestrationStrategy(options) {
       if (Number(payload.step) === 1 && typeof options.synchronizeTail === 'function') {
         await options.synchronizeTail({ sessionId, chat: input.chat, payload })
       }
-      // ensureSessionPrefix writes the fixed context directly to the DSH
-      // Session surface. Returning it in this incoming batch would make the
-      // Agent loop append the same message ID a second time and break Chat's
-      // node index; request derivation reads the newly written surface itself.
-      const stablePrefix = typeof options.ensureSessionPrefix === 'function' ? await options.ensureSessionPrefix(input) : null
+      // Persist/migrate the fixed system snapshot before native request assembly.
+      if (typeof options.ensureSessionPrefix === 'function') await options.ensureSessionPrefix(input)
       stagedRequests.set(sessionId, {
         turn: Math.max(0, Number(payload.turn) || 0),
         step: Math.max(1, Number(payload.step) || 1),
         scope: 'foreground',
-        snapshot: snapshot || null,
-        stablePrefixText: str(stablePrefix && stablePrefix.projectedText)
+        snapshot: snapshot || null
       })
     }
     if (Number(payload.step) === 1) {
@@ -305,7 +267,7 @@ export function createNativePlayOrchestrationStrategy(options) {
     const staged = stagedRequests.get(sessionId)
     if (optionsValue === null || typeof optionsValue !== 'object' || optionsValue.purpose !== undefined || staged === undefined || redispatches.has(optionsValue)) return null
     const regeneratedMessages = projectRegenerationRequestMessages(optionsValue.messages)
-    const nativeMessages = projectNativeContextAsSystem(regeneratedMessages)
+    const nativeMessages = regeneratedMessages.some(isNativeStablePrefix) ? regeneratedMessages.filter(message => !isNativeStablePrefix(message)) : regeneratedMessages
     const baseRequest = nativeMessages === optionsValue.messages
       ? optionsValue : Object.assign({}, optionsValue, { messages: nativeMessages })
     let request = projectRuntimePresetRequest(baseRequest, staged.snapshot, {
@@ -313,8 +275,6 @@ export function createNativePlayOrchestrationStrategy(options) {
       turn: staged.turn,
       step: staged.step
     })
-    const projectedMessages = projectLegacyTemplatePrefix(request.messages, staged.stablePrefixText)
-    if (projectedMessages !== request.messages) request = Object.assign({}, request, { messages: projectedMessages })
     const openingMessages = projectLegacyOpeningSources(request.messages)
     if (openingMessages !== request.messages) request = Object.assign({}, request, { messages: openingMessages })
     const replayMessages = projectLegacyDeepSeekReasoningReplay(request.messages, request)
@@ -347,7 +307,7 @@ export function createNativePlayOrchestrationStrategy(options) {
     const visible = new Set(await options.visibleTools(input.sessionId))
     // Play rules arrive in the foreground frame. Still replace the inherited
     // sections explicitly so removing play-mode cannot restore DSH's persona.
-    const sections = []
+    const sections = mode === 'card' ? [] : (input.fixedSystemSections || []).slice()
     if (mode === 'card') {
       sections.push({ name: 'tavern:mode-persona', text: options.modePrompt(mode) })
       const workspace = options.workspaceContext(input.cwd, input.workspaceProjection)

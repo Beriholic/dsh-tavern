@@ -59,7 +59,9 @@ test('native Session and disk Chat journal recover a failed marker once, then ac
   await h.continueWithAgent()
   assert.equal(h.requests.length, 1)
   const messages = h.requests[0].messages
-  assert.match(JSON.stringify(messages[0]), /不可丢失的固定背景/)
+  assert.match(h.requests[0].system, /不可丢失的固定背景/)
+  assert.ok(messages.every(message => !JSON.stringify(message.content).includes('不可丢失的固定背景')))
+  assert.equal(h.target.session.requestHeader().system, h.requests[0].system)
   assert.equal(messages.filter(m => m.role === 'assistant' && JSON.stringify(m.content).includes('玩家，你好。')).length, 1)
   assert.deepEqual(sessionEvents(h.target.session).filter(e => e.type === 'turn/start').map(e => e.data.turn), [1, 2])
   assert.equal(sessionEvents(h.target.session).at(-1).type, 'turn/end')
@@ -118,7 +120,7 @@ test('failed native flush restores only durable events and finishes the publishe
  assert.doesNotMatch(JSON.stringify(actual),/玩家，你好。/)
  for (const phrase of ['不可丢失的固定背景', 'Fixture constant worldbook', 'Fixture recalled worldbook',
    'Fixture card special instruction', 'Fixture card writing constraint']) {
-   assert.ok(actual.some(text => text.includes(phrase)), phrase + ' must reach the model adapter')
+   assert.ok([h.requests[0].system, ...actual].some(text => text?.includes(phrase)), phrase + ' must reach the model adapter')
  }
  assert.equal(sessionEvents(h.target.session).filter(e=>e.type==='turn\/start').at(-1).data.turn,4)
  })

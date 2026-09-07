@@ -15,7 +15,7 @@ import { legacyImageConfigurationReader } from './domain/image-generation-host.j
 import { createSceneWorldbooks, sceneWorldbookBinding } from './domain/scene-worldbook.js'
 import { createSceneImageDiagnostics } from './domain/scene-image-diagnostics.js'
 import { TAVERN_RELEASE_CAPABILITIES } from './domain/release-capabilities.js'
-import { createSessionStablePrefixStorage, ensureSessionStablePrefix, readSessionStablePrefix } from './domain/session-stable-prefix.js'
+import { createSessionStablePrefixStorage, ensureSessionStablePrefix, readSessionStablePrefix, sessionStablePrefixSections } from './domain/session-stable-prefix.js'
 import { waitForWritableSession } from './domain/agent-readiness.js'
 import { createCardDeletion } from './domain/card-deletion.js'
 import { orderCardsByNewestImport } from './domain/card-list-order.js'
@@ -1297,6 +1297,13 @@ export async function apply(ctx) {
   const contextPlanner = createContextPlanner({ prompt: runtimePrompt, callModel: callModel, now: Date.now, logger: console })
   const playCardSnapshots = createPlayCardSnapshots({ worldBooks, planner: contextPlanner, readCard: readChatCard, writeChat, captureSceneWorldbook, userPreferenceProfile })
   const ensurePlayCardSnapshot = playCardSnapshots.ensure
+  async function ensureNativeSystemPrefix(session, chat) {
+    const before = readSessionStablePrefix(session)
+    const text = before?.version === 3 ? '' : await ensurePlayCardSnapshot(chat)
+    const prefix = await ensureSessionStablePrefix(session, text, stablePrefixStorage)
+    if (prefix && prefix.event !== before?.event) await sessionStore.flush(session)
+    return prefix
+  }
   const conversationInitialization = createConversationInitialization({
     cards: { read: readCard, readChat: readChatCard, script: readScript, extensions: readCardExtensions },
     chats: { resolve: chatForSession, publish: conversationRegistry.publish, write: writeChat },
@@ -2953,13 +2960,7 @@ export async function apply(ctx) {
       modePrompt: function () { return runtimePrompt('card-mode') },
       workspaceContext: resourceWorkspaceContext,
       ensureSessionPrefix: async function (input) {
-        const session = input.payload.agent.session
-        const projectedText = await ensurePlayCardSnapshot(input.chat)
-        const existing = readSessionStablePrefix(session)
-        if (existing) return Object.assign({}, existing, { projectedText })
-        const fixed = await ensureSessionStablePrefix(session, projectedText, stablePrefixStorage)
-        await sessionStore.flush(session)
-        return fixed === null ? null : Object.assign({}, fixed, { projectedText })
+        return await ensureNativeSystemPrefix(input.payload.agent.session, input.chat)
       },
       controlledToolNames
     }
@@ -3119,6 +3120,9 @@ export async function apply(ctx) {
     if (agent === undefined || agent.session === undefined) return assembly
     if (backgroundAgentRunner.owns(agent.session.id)) return assembly
     const chat = await chatForSession(agent.session.id)
+    if (chat && chat.requestMode !== 'sillytavern' && ['story', 'script'].includes(await turnOrchestrator.modeFor(agent.session.id))) {
+      await ensureNativeSystemPrefix(agent.session, chat)
+    }
     let workspaceProjection = null
     try { workspaceProjection = await publishResourceWorkspace(agent.session.id, chat) }
     catch { console.error('dsh-tavern: 资源工作区投影刷新失败，继续使用现有资源文件') }
@@ -3126,7 +3130,8 @@ export async function apply(ctx) {
       sessionId: agent.session.id,
       chat,
       cwd: agent.session.header && agent.session.header.cwd,
-      workspaceProjection
+      workspaceProjection,
+      fixedSystemSections: sessionStablePrefixSections(agent.session)
     })
   })
 

@@ -15,7 +15,7 @@ import { createTavernConversationRegistry } from '../../tavern-plugin/lib/domain
 import { createChatPersistence } from '../../tavern-plugin/lib/domain/chat-persistence.js'
 import { createChatJournalStore } from '../../tavern-plugin/lib/domain/chat-journal-store.js'
 import { createProfileDataStore } from '../../tavern-plugin/lib/profile-data-store.js'
-import { createSessionStablePrefixStorage, ensureSessionStablePrefix } from '../../tavern-plugin/lib/domain/session-stable-prefix.js'
+import { createSessionStablePrefixStorage, ensureSessionStablePrefix, sessionStablePrefixSections } from '../../tavern-plugin/lib/domain/session-stable-prefix.js'
 import { createStoryTimeline } from '../../tavern-plugin/lib/domain/story-timeline.js'
 
 export async function createInitializationNative(bootPath) {
@@ -28,6 +28,11 @@ export async function createInitializationNative(bootPath) {
   const packages = ['dsh-system-prompt', 'dsh-tools', 'dsh-agent', 'dsh-llm', 'dsh-session', 'dsh-session-projection', 'dsh-token-meter', 'dsh-agent-loop']
   await writeFile(config, packages.map(name => '- id: ' + name + '\n  name: ' + new URL('../../' + name + '/lib/index.js', bootUrl).href + '\n').join(''))
   const ctx = await boot('initialization-native-test', config)
+  ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+    const assembly = await next()
+    assembly.sections = sessionStablePrefixSections(context.agent.session)
+    return assembly
+  })
   ctx.baseUrl = bootUrl.href
   const requests = [], state = { failMarker: false, failFlush: false }, handles = new Set()
   const selection = { provider: 'initialization-fixture', model: 'text' }
@@ -112,7 +117,7 @@ export async function createInitializationNative(bootPath) {
       const chatId = (await data.readJson('sessions.json'))[sessionId]
       const session = target.session
       session.append('request/header', { header: { config: selection }, reason: 'initial' })
-      const request = { ...selection, sessionId, maxTokens: 256, messages: session.deriveMessages() }
+      const request = { ...selection, sessionId, system: sessionStablePrefixSections(session).map(s => s.text).join('\n'), maxTokens: 256, messages: session.deriveMessages() }
       const prepare = createImportContextPreparation({
         readChat: () => persistence.read(chatId), updateChat: persistence.update, getSession: () => session, flush,
         modelInfo: r => ctx.llm.resolveModelInfo(r.provider, r.model), estimateMessage: m => ctx.tokenMeter.estimateMessage(m)

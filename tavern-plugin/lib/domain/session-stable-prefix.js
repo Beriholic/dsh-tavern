@@ -32,13 +32,13 @@ export function createSessionStablePrefixStorage(directory) {
   }
 }
 
-function messageRecord(session, event) {
+function messageRecord(event) {
   const message = event && event.type === 'user/message' ? event.data : null
-  if (message?.id !== 'tavern-session-prefix:' + session.id || message.role !== 'user' || message.source?.kind !== 'plugin' ||
+  if (!str(message?.id).startsWith('tavern-session-prefix:') || message.role !== 'user' || message.source?.kind !== 'plugin' ||
       message.source?.plugin !== 'dsh-tavern' || ![MESSAGE_FORM, LEGACY_MESSAGE_FORM].includes(message.source?.form) || !Array.isArray(message.content)) return null
-  const text = message.content.filter(block => block?.type === 'text').map(block => str(block.text)).join('').trim()
+  const text = typeof message.source.fixedSystemText === 'string' ? message.source.fixedSystemText : message.content.filter(block => block?.type === 'text').map(block => str(block.text)).join('').trim()
   if (text === '') return null
-  return { version: 2, id: message.id, text, message, event }
+  return { version: typeof message.source.fixedSystemText === 'string' ? 3 : 2, id: message.id, text, message, event }
 }
 
 function sourceSections(text) {
@@ -63,14 +63,17 @@ function sourceSections(text) {
   return sections
 }
 
-/** Read the one standard DSH surface message that owns this Session's fixed Tavern context. */
+/** Read the immutable snapshot from original events, even after its Surface node was compacted. */
 export function readSessionStablePrefix(session) {
   if (!session) return null
+  let legacy = null
   for (const event of sessionEvents(session)) {
-    const record = messageRecord(session, event)
-    if (record !== null) return record
+    const record = messageRecord(event)
+    if (!record) continue
+    if (typeof record.message.source.fixedSystemText === 'string') return record
+    legacy ||= record
   }
-  return null
+  return legacy
 }
 
 function legacyEventText(session) {
@@ -82,20 +85,35 @@ function fixedContextMessage(session, text) {
   return {
     id: 'tavern-session-prefix:' + session.id,
     role: 'user',
-    content: [{ type: 'text', text }],
+    content: [],
     source: {
       kind: 'plugin',
       plugin: 'dsh-tavern',
       form: MESSAGE_FORM,
+      fixedSystemText: text,
       sections: sourceSections(text)
     }
   }
 }
 
-/** Ensure fixed card/worldbook context is model-visible because it is Session-recorded. */
+/** Persist fixed system text in native snapshot metadata; empty content cannot become summary material. */
 export async function ensureSessionStablePrefix(session, text, storage) {
   const existing = readSessionStablePrefix(session)
-  if (existing) return existing
+  if (existing) {
+    const activeLegacy = sessionEvents(session).find(event => messageRecord(event)?.message.content.length && session.surface?.nodes.includes(event.seq))
+    const needsSnapshot = typeof existing.message.source.fixedSystemText !== 'string'
+    if (needsSnapshot || activeLegacy) {
+      // Old EJS prefixes used the saved play-card snapshot at the request boundary.
+      // Freeze that same evaluated snapshot once when migrating, never reevaluate per turn.
+      const context = needsSnapshot && /<%[\s\S]*?%>/.test(existing.text) && str(text).trim() ? str(text).trim() : existing.text
+      const message = { ...fixedContextMessage(session, context), id: 'tavern-session-prefix:' + session.id + ':system-migration' }
+      const event = session.append('user/message', message, activeLegacy ? {
+        surfaceOp: { op: 'replace', start: activeLegacy.seq, end: activeLegacy.seq }, sourceEventSeqs: [activeLegacy.seq]
+      } : { surfaceOp: 'append' })
+      return messageRecord(event)
+    }
+    return existing
+  }
   if (!session || typeof session.append !== 'function') throw new Error('无法写入 Session 固定背景')
   if (pending.has(session)) return pending.get(session)
   const operation = (async function () {
@@ -104,8 +122,14 @@ export async function ensureSessionStablePrefix(session, text, storage) {
     if (context === '') return null
     const message = fixedContextMessage(session, context)
     const event = session.append('user/message', message, { surfaceOp: 'append' })
-    return { version: 2, id: message.id, text: context, message: event.data, event }
+    return messageRecord(event)
   })()
   pending.set(session, operation)
   try { return await operation } finally { pending.delete(session) }
+}
+
+/** Native system assembly is the only model-visible owner of fixed background. */
+export function sessionStablePrefixSections(session) {
+  const prefix = readSessionStablePrefix(session)
+  return prefix ? sourceSections(prefix.text) : []
 }

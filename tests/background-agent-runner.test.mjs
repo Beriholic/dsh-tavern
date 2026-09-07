@@ -331,7 +331,7 @@ test('变量工具返回失败后仍可修正，成功或耗尽次数后撤下�
   }
 })
 
-test('后台固定背景只保存一次，连续候选、结算和恢复均从 Session 开头复用而非 system', async () => {
+test('后台固定背景只保存一次，连续候选、结算和恢复均进入固定 system 而非剧情历史', async () => {
   const packets = []
   const events = []
   const history = []
@@ -350,20 +350,22 @@ test('后台固定背景只保存一次，连续候选、结算和恢复均从 S
     } }
     const variables = new Map()
     const sections = []
+    let assemble, pending
     await options.setup({
       systemPrompt: { variable(name, value) { variables.set(name, value) }, section(value) { sections.push(value) }, suppressRuntimeContext() {} },
-      tools: { restrict() {}, register() {} }, on() {}
+      tools: { restrict() {}, register() {} }, on(name, fn) { if (name === 'system-prompt/assemble') assemble = fn }
     })
     return {
       agent: {
         session,
-        followup(message) {
-          const system = sections.map(section => section.text.replace(/\{\{([^}]+)\}\}/g, (_, name) => variables.get(name)())).join('\n')
+        followup(message) { pending = (async () => {
+          const assembly = await assemble(null, { agent: { session } }, async () => ({ sections, tools: [] }))
+          const system = assembly.sections.map(section => section.text.replace(/\{\{([^}]+)\}\}/g, (_, name) => variables.get(name)())).join('\n')
           history.push(message)
           const request = { sessionId: 'background', system, messages: history.slice() }
           packets.push({ system: request.system, messages: request.messages, text: message.content[0].text })
           events.push({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '{"choices":[]}' }] } } })
-        }, async whenIdle() {}
+        })() }, async whenIdle() { await pending }
       }, async dispose() {}
     }
   }
@@ -396,10 +398,11 @@ test('后台固定背景只保存一次，连续候选、结算和恢复均从 S
     assert.equal(packet.system, stableSystem, '后台 system 必须跨轮次逐字稳定')
     assert.doesNotMatch(packet.system, /候选JSON规则/)
     assert.equal(packet.text.split('候选JSON规则').length - 1, 1, '完整任务协议只在本轮末尾追加一次')
-    assert.doesNotMatch(packet.system, /固定背景|固定世界设定|固定性格|固定场景|固定示例/)
+    assert.match(packet.system, /固定背景A/)
+    assert.match(packet.system, /固定世界设定/)
     const texts = packet.messages.map(message => message.content.map(block => block.text).join('')).join('\n')
-    assert.equal(texts.split('固定背景A').length - 1, 1)
-    assert.equal(texts.split('固定世界设定').length - 1, 1)
+    assert.equal(texts.split('固定背景A').length - 1, 0)
+    assert.equal(texts.split('固定世界设定').length - 1, 0)
     assert.equal(packet.messages[0].source.form, 'snapshot')
     assert.doesNotMatch(texts, /固定背景B/)
     assert.doesNotMatch(packet.system, /每轮系统要求|每轮末尾要求|修改后的末尾要求|最新Guide|最新姿势/)
@@ -414,8 +417,8 @@ test('后台固定背景只保存一次，连续候选、结算和恢复均从 S
   await runner.run({ sessionId: 'parent', persistent: true, persistentSessionId: 'background', task: 'settlement', selection: { provider: 'test', model: 'fake' }, system: '结算规则', messages: [], backgroundContext: '不应带入的候选背景', systemPromptText: '不应带入的系统要求', postHistoryText: '不应带入的末尾要求' })
   assert.equal(packets.at(-1).system, stableSystem, '结算与候选切换不得改写 system 前缀')
   assert.equal(packets.at(-1).text.split('结算规则').length - 1, 1)
-  assert.doesNotMatch(packets.at(-1).system, /不应带入|固定背景|每轮系统要求/)
-  assert.match(packets.at(-1).messages[0].content[0].text, /固定背景A/)
+  assert.doesNotMatch(packets.at(-1).system, /不应带入|每轮系统要求/)
+  assert.match(packets.at(-1).system, /固定背景A/)
   assert.equal(events.filter(event => event.type === 'dsh-tavern/stable-prefix').length, 0)
   assert.equal(events.filter(event => event.type === 'user/message' && event.data.id === 'tavern-session-prefix:background').length, 1)
   assert.equal(savedPrefixes.size, 0)

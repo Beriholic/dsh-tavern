@@ -98,3 +98,40 @@ test('原生手动压缩可处理种子和后台替换，压缩后仍能计量�
   }
   assert.equal(calls, 2)
 })
+
+test('前后台固定系统背景连续压缩三次仍不变，原事件和恢复后的背景完整', native, async t => {
+  const { ctx, Session } = await harness(t)
+  const { ensureSessionStablePrefix, sessionStablePrefixSections } = await import('../tavern-plugin/lib/domain/session-stable-prefix.js')
+  const { BasicCompactionEngine } = await import(new URL('../../dsh-compaction-basic/lib/index.js', pathToFileURL(process.env.DSH_BOOT_MODULE)))
+  const fixed = '人物卡：固定人物形象。常驻世界书：固定世界规则。'
+  let calls = 0
+  class FixtureCompaction extends BasicCompactionEngine {
+    async summarize(input) {
+      calls++
+      assert.equal(input.system, fixed)
+      assert.ok(input.messages.every(message => !JSON.stringify(message.content).includes('固定人物形象')))
+      return { summary: [{ type: 'text', text: '剧情摘要。' }], provider: 'fixture', model: 'summary', maxTokens: 128 }
+    }
+  }
+  const engine = new FixtureCompaction(ctx, { auto: false })
+  for (const preset of ['tavern', 'tavern-background']) {
+    const session = ctx.sessions.create('fixed-' + preset, { meta: { agentPreset: preset } })
+    await ensureSessionStablePrefix(session, fixed)
+    const system = sessionStablePrefixSections(session).map(s => s.text).join('\n')
+    session.append('request/header', { header: { config: { provider: 'fixture', model: 'summary' }, system }, reason: 'initial' })
+    for (let n = 0; n < 3; n++) {
+      session.append('user/message', { id: 'history-' + n, role: 'user', content: [{ type: 'text', text: '剧情进展。'.repeat(500) }], source: { kind: 'user' } }, { surfaceOp: 'append' })
+      session.append('user/message', { id: 'tail-' + n, role: 'user', content: [{ type: 'text', text: '最新剧情' }], source: { kind: 'user' } }, { surfaceOp: 'append' })
+      const original = session.snapshotEvents()
+      const signal = new AbortController().signal
+      assert.ok(await engine.compactNow({ session, options: {}, runMaintenance: fn => fn(signal) }, signal))
+      assert.equal(session.requestHeader().system, fixed)
+      assert.deepEqual(session.snapshotEvents().slice(0, original.length), original)
+      const restored = Session.create(session.id, session.snapshotEvents(), session.header)
+      assert.equal(sessionStablePrefixSections(restored).map(s => s.text).join('\n'), fixed)
+      await ensureSessionStablePrefix(restored, '修改后的卡片不影响旧局')
+      assert.equal(sessionStablePrefixSections(restored).map(s => s.text).join('\n'), fixed)
+    }
+  }
+  assert.equal(calls, 6)
+})

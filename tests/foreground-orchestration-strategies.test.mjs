@@ -4,7 +4,7 @@ import test from 'node:test'
 import { Session } from './fixtures/dsh-session-host.mjs'
 import { sessionEvents } from '../tavern-plugin/lib/domain/session-events.js'
 import { createForegroundOrchestrationStrategies, createNativePlayOrchestrationStrategy, createCompatibilityOrchestrationStrategy, projectRegenerationRequestMessages } from '../tavern-plugin/lib/domain/foreground-orchestration-strategies.js'
-import { ensureSessionStablePrefix } from '../tavern-plugin/lib/domain/session-stable-prefix.js'
+import { ensureSessionStablePrefix, sessionStablePrefixSections } from '../tavern-plugin/lib/domain/session-stable-prefix.js'
 import { ensureSessionSeedTrajectory } from '../tavern-plugin/lib/domain/session-seed-trajectory.js'
 
 function userMessage(text) {
@@ -64,7 +64,7 @@ test('正式编排为兼容对话选择 SillyTavern 编译策略', async () => {
   ])
 })
 
-test('游玩请求把 Tavern 固定背景与本轮编排固化为 system，Session 仍保持追加式 user 消息', async () => {
+test('游玩固定背景来自原生系统装配，预设前后段保持顺序，快照不重复发送', async () => {
   const session = Session.create('native')
   const savedPrefixes = new Map()
   const storage = { async read(id) { return savedPrefixes.get(id) }, async write(id, value) { savedPrefixes.set(id, value) } }
@@ -87,9 +87,9 @@ test('游玩请求把 Tavern 固定背景与本轮编排固化为 system，Sessi
   for (const turn of [2, 3]) {
     const incoming = [userMessage('新输入')]
     const prepared = await run.value.prepareStep({ sessionId: 'native', payload: { turn, step: 1, messages: incoming }, decision: { kind: 'enter', messages: incoming }, chat: run.chats.get('native') })
-    const assembly = await run.value.assembleSystemPrompt({ sections: [], tools: [] }, { sessionId: 'native', chat: run.chats.get('native') })
+    const assembly = await run.value.assembleSystemPrompt({ sections: [], tools: [] }, { sessionId: 'native', chat: run.chats.get('native'), fixedSystemSections: sessionStablePrefixSections(session) })
     const system = assembly.sections.map(section => section.text).join('\n')
-    assert.doesNotMatch(system, /人物卡固定基本信息|常驻世界书/)
+    assert.match(system, /人物卡固定基本信息/ )
     assert.deepEqual(prepared.messages.map(message => message.content[0].text), ['本轮玩家输入', '本轮动态指令'])
     assert.equal(prepared.messages.some(message => message.id === 'tavern-session-prefix:native'), false)
     const modelMessages = session.deriveMessages().concat(prepared.messages)
@@ -98,7 +98,7 @@ test('游玩请求把 Tavern 固定背景与本轮编排固化为 system，Sessi
     assert.equal(modelMessages[0].role, 'user', 'Session 权威历史保持原样')
     const request = run.value.projectRequest({ sessionId: 'native', system, messages: modelMessages })
     assert.deepEqual(request.messages.map(message => message.role), ['system', 'user', 'assistant', 'user'])
-    assert.equal(request.messages[0].role, 'system', '仅在游玩请求边界把人物卡前缀投影为 system')
+    assert.equal(request.messages[0].role, 'system', '预设前段与固定系统上下文按原顺序合并')
     assert.match(request.messages[0].content[0].text, /^预设前置指令\n\n人物卡固定基本信息/)
     assert.equal(request.messages.at(-1).role, 'user', '本轮指令和预设后段保持 user 语义')
     assert.match(request.messages.at(-1).content[0].text, /本轮动态指令\n\n预设后置指令$/)
@@ -134,7 +134,7 @@ test('旧会话在 pre-step 提升外部背景后，不把已记录消息再次�
   assert.equal(session.deriveMessages().filter(message => message.id === fixed.id).length, 1)
 })
 
-test('旧原生 Session 的稳定前缀含 EJS 时仅在请求投影中换成新静态快照', async () => {
+test('旧原生 Session 前缀不再重复进入请求历史', async () => {
   const oldPrefix = {
     id: 'tavern-session-prefix:native', role: 'user',
     content: [{ type: 'text', text: '人物卡\n@@preprocessing\n<% print(await getwi("资料")) %>' }],
@@ -157,8 +157,7 @@ test('旧原生 Session 的稳定前缀含 EJS 时仅在请求投影中换成新
 
   const projected = run.value.projectRequest(original)
 
-  assert.equal(projected.messages[0].content[0].text, '人物卡\n真正静态的常驻规则')
-  assert.doesNotMatch(projected.messages[0].content[0].text, /<%|getwi|@@preprocessing/)
+  assert.deepEqual(projected.messages, [])
   assert.match(original.messages[0].content[0].text, /getwi/)
 })
 

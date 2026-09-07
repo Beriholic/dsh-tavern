@@ -8,7 +8,7 @@ import {
 } from './domain/character-design-stage.js'
 import { imageToolCall } from './domain/scene-plan-draft.js'
 import { runtimePresetPhaseMessages } from './domain/runtime-preset-lifecycle.js'
-import { ensureSessionStablePrefix, readSessionStablePrefix } from './domain/session-stable-prefix.js'
+import { ensureSessionStablePrefix, readSessionStablePrefix, sessionStablePrefixSections } from './domain/session-stable-prefix.js'
 
 function str(value) {
   return typeof value === 'string' ? value : (value === undefined || value === null ? '' : String(value))
@@ -194,6 +194,7 @@ export function createBackgroundAgentTask(options) {
       childCtx.tools.restrict({ allow: state.input.task === 'image' || state.input.task === 'phone' ? [] : ['skill', 'web_search'] })
       childCtx.on('system-prompt/assemble', async function (_assembly, _context, next) {
         const assembly = await next()
+        assembly.sections = [...(assembly.sections || []), ...sessionStablePrefixSections(_context?.agent?.session)]
         if (state.input.task === 'phone') {
           assembly.sections = (assembly.sections || []).filter(function (section) {
             return !section || typeof section.name !== 'string' || !section.name.startsWith('tool:')
@@ -349,11 +350,12 @@ export function createBackgroundAgentTask(options) {
         if (typeof options.flushSession === 'function') await options.flushSession(agent.session)
         await input.onPersistentSessionReady(traceSessionId)
       }
-      if (!readSessionStablePrefix(agent.session)) {
-        const background = typeof options.resolveStablePrefix === 'function'
+      {
+        const existing = readSessionStablePrefix(agent.session)
+        const background = existing ? existing.text : typeof options.resolveStablePrefix === 'function'
           ? await options.resolveStablePrefix(input) : input.backgroundContext
         const prefix = await ensureSessionStablePrefix(agent.session, background, options.stablePrefixStorage)
-        if (prefix && typeof options.flushSession === 'function') await options.flushSession(agent.session)
+        if (prefix && prefix.event !== existing?.event && typeof options.flushSession === 'function') await options.flushSession(agent.session)
       }
       const eventStart = sessionEvents(agent.session).length
       agent.followup({
