@@ -1,3 +1,4 @@
+import { sessionOpeningDescriptor, prepareSessionOpening } from './domain/session-opening.js'
 import { scriptPromptScanText } from './domain/tavern-script-prompts.js'
 import { createOpeningPreparation } from './domain/opening-preparation.js'
 import { createChatHistoryImportService } from './domain/chat-history-import-service.js'
@@ -1130,7 +1131,7 @@ export async function apply(ctx) {
       replyProjections: replyDisplay.projections,
       tavernStatusView: replyDisplay.statusView || null,
       mvuReceipts: mvuReceiptsOf(chat),
-      tavernHelper: helperEnabled ? { ...projectTavernHelperContext(chat), worldbook: helperWorldbook, globalVariables: await readPromptTemplateGlobalVariables(), characterVariables: cardExtensions.variables || {}, compatibilityCapabilities: TAVERN_COMPATIBILITY_CAPABILITIES, extensionSettings: await tavernExtensionSettings.read(), regexScripts: { global: cardExtensions.globalRegexScripts || [], character: cardExtensions.characterRegexScripts || [] } } : null,
+      tavernHelper: helperEnabled ? { ...projectTavernHelperContext(chat), openingHost: sessionOpeningDescriptor(chat, card), worldbook: helperWorldbook, globalVariables: await readPromptTemplateGlobalVariables(), characterVariables: cardExtensions.variables || {}, compatibilityCapabilities: TAVERN_COMPATIBILITY_CAPABILITIES, extensionSettings: await tavernExtensionSettings.read(), regexScripts: { global: cardExtensions.globalRegexScripts || [], character: cardExtensions.characterRegexScripts || [] } } : null,
       tavernMvuRuntime: chat.mvu && chat.mvu.enabled === true ? {
         owner: chat.mvu.owner === 'official' ? 'official' : 'legacy',
         commit: OFFICIAL_MVU_VERSION.commit,
@@ -1240,6 +1241,10 @@ export async function apply(ctx) {
   }
   async function startChat(cardPath, sessionId, mode, openingId, userName, requestMode, preparationId) {
     const preparation = preparationId ? openingPreparation.resolve(preparationId, cardPath, openingId) : undefined
+    if (preparation?.sourceSessionId) {
+      const source = await chatForSession(preparation.sourceSessionId)
+      if (!source || !sessionOpeningDescriptor(source, await readChatCard(source)) || Number(source.tavernHelperLifecycleRevision || 0) !== preparation.sourceLifecycleRevision) throw new Error('原对话已变化，请重新选择开场')
+    }
     return await conversationInitialization.start({ cardPath, sessionId, mode, openingId, userName, requestMode, preparation })
   }
 
@@ -2128,6 +2133,11 @@ export async function apply(ctx) {
       case 'getUpdateStatus': return { status: await applicationUpdater.status() }
       case 'checkUpdate': return { status: await applicationUpdater.check() }
       case 'startUpdate': return { status: await applicationUpdater.start() }
+      case 'prepareSessionOpening': {
+        const chat = await chatForSession(args && args.sessionId)
+        if (!chat) throw new Error('找不到原对话')
+        return await prepareSessionOpening({ chat, card: await readChatCard(chat), swipeId: args.swipeId, message: args.message, preparation: openingPreparation })
+      }
       case 'callOpeningRuntime': return await openingPreparation.callRuntime(args && args.id, args && args.method, args && args.args)
       case 'saveOpeningSelection': return openingPreparation.select(args && args.id, args && args.openingId)
       case 'createOpeningPreparation': return await openingPreparation.create(args && args.path)

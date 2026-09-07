@@ -102,3 +102,13 @@
 参考上游接口契约： https://github.com/N0VI028/JS-Slash-Runner/blob/main/%40types/function/inject.d.ts 。这是原生 Frame 适配，不是完整酒馆请求排列的复制。
 
 验证：新增测试覆盖实际原生 prepare -> Frame -> Session adapter，扫描与直接提示分流、一次性消费及重复准备、ID 替换删除、无效批次、过期写入、原生回退、MVU effect 原子携带提示，以及并发宿主事件的写入编号。真实页面复测曾发现事件编号串用，已据此补串行处理与测试；修正后的最后一次浏览器认证页面被工具策略阻止，尚不能据此承诺这张卡的完整开局成功。
+
+### 正式首页的“开始旅程”（2026-09-07）
+
+用户确认是在已经创建的对话内点击。该页依次修改世界书、设置 `SillyTavern.chat[0].swipe_id/mes`、调用 `saveChat()` 和 `reloadCurrentChat()`；正式消息 iframe 缺少 `SillyTavern`，卡片自身返回 false 且只写 console，表现为无反应。
+
+现为仅含一条原始 greeting、尚无剧情和运行中操作的会话提供受限开场宿主。保存时校验目标为人物卡现有开场，把当前绑定的本局世界书复制到准备草稿；重新加载映射为现有 Conversation Lifecycle 的新开局流程。目标 Session 使用选定开场和世界书设置。原 Session 保留，不对其 Event Log 或正文做原地替换。
+
+准备 ticket 绑定原 Session 与 lifecycle revision，创建前重新检查源仍处于开场阶段。前端只接受同一消息 iframe 已保存的 ticket，重复开始调用共用 Promise。保存/创建失败上报可见错误。没有给普通正式消息开放任意 saveChat 正文改写。
+
+新增集成测试执行生成消息 iframe 的真实开场桥、准备草稿及原生 Conversation Lifecycle，验证新 Session 打开、世界书选项携带、原历史未改、重复点击、已有剧情拒绝与伪造开场拒绝。完整实机页面仍需用户刷新后确认；浏览器认证页面此前被工具安全策略拒绝，未绕过该限制。

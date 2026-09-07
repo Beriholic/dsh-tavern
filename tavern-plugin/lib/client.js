@@ -1633,6 +1633,47 @@ window.__ModuleLoader__.load({
 		  return preview.openingIds[swipeId];
 		}
 
+		// A legacy home already saved as a greeting can finish setup via the native
+		// new-game coordinator. It never edits the source session's event history.
+		function installSessionOpeningBridge(token, descriptor) {
+		  const swipes = descriptor.swipes.slice();
+		  const chat = [{ is_user: false, name: descriptor.characterName, mes: swipes[descriptor.selectedIndex], swipe_id: descriptor.selectedIndex, swipes }];
+		  const pending = new Map();
+		  let sequence = 0, saved = null, starting = null;
+		  function call(method, args) {
+		    const requestId = 'opening-session:' + (++sequence);
+		    return new Promise(function (resolve, reject) {
+		      const timer = setTimeout(function () { pending.delete(requestId); reject(new Error('开始旅程超时，请检查左侧错误提示')); }, 120000);
+		      pending.set(requestId, { resolve, reject, timer });
+		      parent.postMessage({ type: 'dsh-tavern-helper-call', token, requestId, method, args }, '*');
+		    });
+		  }
+		  addEventListener('message', function (event) {
+		    const data = event.data;
+		    if (event.source !== parent || !data || data.token !== token || data.type !== 'dsh-tavern-helper-response') return;
+		    const task = pending.get(data.requestId);
+		    if (!task) return;
+		    pending.delete(data.requestId); clearTimeout(task.timer);
+		    if (data.ok) task.resolve(data.result); else task.reject(new Error(data.error || '开始旅程失败'));
+		  });
+		  window.SillyTavern = Object.assign({}, window.SillyTavern, {
+		    extensionSettings: descriptor.extensionSettings || {},
+		    TavernHelper: window.TavernHelper,
+		    chat,
+		    getContext: function () { return window.SillyTavern; },
+		    saveChat: async function () {
+		      const row = chat[0], index = row && row.swipe_id;
+		      if (chat.length !== 1 || !Number.isInteger(index) || !descriptor.openingIds[index] || row.mes !== swipes[index]) throw new Error('只能选择人物卡已有开场');
+		      saved = await call('prepareSessionOpening', { swipeId: index, message: row.mes });
+		    },
+		    reloadCurrentChat: function () {
+		      if (!saved) return Promise.reject(new Error('请先保存开场选择'));
+		      if (!starting) starting = call('startSessionOpening', { preparationId: saved.preparationId }).catch(function (error) { starting = null; throw error; });
+		      return starting;
+		    }
+		  });
+		}
+
 		function buildTavernFrameDocument(input) {
 			const html = rewriteTavernStaticMarkup(String(input && (input.content !== undefined ? input.content : input.html) || ""));
 			const token = JSON.stringify(String(input && input.token || "")).replace(/</g, "\\u003c");
@@ -1656,6 +1697,7 @@ window.__ModuleLoader__.load({
 				+ '<meta name="referrer" content="no-referrer">'
 				+ '<meta http-equiv="Content-Security-Policy" content="default-src https: http: data: blob:; img-src https: http: data: blob:; media-src https: http: data: blob:; font-src https: http: data:; style-src \'unsafe-inline\' https: http:; script-src \'unsafe-inline\' \'unsafe-eval\' https: http: data: blob:; connect-src https: http: wss: data: blob:; frame-src https: http: data: blob:; object-src \'none\'; base-uri \'none\'; form-action \'none\'">'
 				+ '<style>:root{color-scheme:light dark}html,body{box-sizing:border-box;margin:0;min-height:0;background:transparent;color:CanvasText;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:16px;line-height:1.75}body{padding:0 1px;overflow-wrap:anywhere;white-space:pre-wrap}body>*{white-space:normal}maintext{display:block;white-space:pre-wrap;overflow-wrap:anywhere}.dsh-tavern-plain-text{white-space:pre-wrap;overflow-wrap:anywhere}*,*:before,*:after{box-sizing:border-box}img,video,svg,canvas{max-width:100%;height:auto}pre{max-width:100%;overflow:auto;white-space:pre-wrap}table{max-width:100%;border-collapse:collapse}a{color:LinkText}</style>' + (preparationRuntime ? preparationRuntime.head : helperDependencies) + tavernStaticAssetShim() + storageShim + helperShim + interactiveHelperShim + mvuViewObservationShim + cleanRuntimeReporter
+				+ (input && input.helperContext && input.helperContext.openingHost ? '<script data-dsh-tavern-session-opening>(' + installSessionOpeningBridge.toString() + ')(' + token + ',' + JSON.stringify(Object.assign({}, input.helperContext.openingHost, { extensionSettings: input.helperContext.extensionSettings || {} })).replace(/</g, '\\u003c') + ');<\/script>' : '')
 				+ (input && input.helperContext ? '<script data-dsh-tavern-frame-variable-aliases>(' + installTavernFrameVariableAliases.toString() + ')();<\/script>' : '')
 				+ (input && input.helperContext && input.persistent === true ? '<script data-dsh-tavern-status-refresh>(' + installTavernStatusRefresh.toString() + ')(' + token + ');<\/script>' : '')
 				+ (input && input.openingPreview ? '<script data-dsh-tavern-opening-preview>(' + installOpeningPreviewBridge.toString() + ')(' + token + ',' + JSON.stringify(input.openingPreview).replace(/</g, '\\u003c') + ');<\/script>' : '')
@@ -4062,7 +4104,27 @@ window.__ModuleLoader__.load({
 						if (current()) event.source.postMessage({ type: "dsh-tavern-helper-response", token: data.token, requestId: data.requestId, ok: false, error: String(error.message || error) }, "*");
 					});
 				} else if (data.type === "dsh-tavern-helper-call" && props.sessionId) {
-					const allowedMethods = new Set(["updateTavernHelperPrompts", "updateTavernHelperVariables", "updateTavernHelperMessages", "getTavernHelperWorldbook", "replaceTavernHelperWorldbook"]);
+					const allowedMethods = new Set(["prepareSessionOpening", "updateTavernHelperPrompts", "updateTavernHelperVariables", "updateTavernHelperMessages", "getTavernHelperWorldbook", "replaceTavernHelperWorldbook"]);
+					if (data.method === "startSessionOpening") {
+						const request = sourceDocument.openingRequest;
+						const start = async function () {
+							if (!current() || !request || request.preparationId !== (data.args && data.args.preparationId)) throw new Error("请先保存开场选择");
+							if (!sourceDocument.openingStart) sourceDocument.openingStart = new Promise(function (resolve, reject) {
+								const detail = { request: request, sourceSessionId: props.sessionId, resolve: resolve, reject: reject, handled: false };
+								hostWindow.dispatchEvent(new CustomEvent("dsh-tavern-start-session-opening", { detail: detail }));
+								if (!detail.handled) reject(new Error("开局入口尚未就绪，请刷新页面"));
+							}).catch(function (error) { sourceDocument.openingStart = null; throw error; });
+							return sourceDocument.openingStart;
+						};
+						start().then(function (result) {
+							if (current()) event.source.postMessage({ type: "dsh-tavern-helper-response", token: data.token, requestId: data.requestId, ok: true, result: result }, "*");
+						}, function (error) {
+							tavernErrorHub.report("开始旅程", error);
+							if (current()) event.source.postMessage({ type: "dsh-tavern-helper-response", token: data.token, requestId: data.requestId, ok: false, error: String(error.message || error) }, "*");
+						});
+						return;
+					}
+
 					if (data.method === "triggerTavernSlash") {
 						const executeSlash = configuredSlashExecutor || requestProps.executeSlash;
 						if (typeof executeSlash !== "function") return;
@@ -4082,8 +4144,10 @@ window.__ModuleLoader__.load({
 					if (!allowedMethods.has(data.method)) return;
 					const args = Object.assign({}, data.args || {}, { sessionId: props.sessionId, expectedLifecycleRevision: Math.max(0, Number(helperContext && helperContext.lifecycleRevision) || 0) });
 					invoke(data.method, args, props.sessionId).then(function (result) {
+						if (current() && data.method === "prepareSessionOpening") sourceDocument.openingRequest = result;
 						if (current()) event.source.postMessage({ type: "dsh-tavern-helper-response", token: data.token, requestId: data.requestId, ok: true, result: result }, "*");
 					}, function (error) {
+						if (data.method === "prepareSessionOpening") tavernErrorHub.report("开始旅程", error);
 						if (current()) event.source.postMessage({ type: "dsh-tavern-helper-response", token: data.token, requestId: data.requestId, ok: false, error: String(error && error.message || error) }, "*");
 					});
 				}
@@ -5003,6 +5067,20 @@ window.__ModuleLoader__.load({
 				rememberPending: setPendingOpen,
 				finishOpen: finishPendingOpen
 			});
+			React.useEffect(function () {
+				function onStartSessionOpening(event) {
+					const detail = event.detail;
+					if (!detail || detail.handled || detail.sourceSessionId !== current) return;
+					detail.handled = true;
+					if (busy) { detail.reject(new Error("正在处理其他操作，请稍后重试")); return; }
+					setBusy(true); setError("");
+					conversationLifecycle.start(Object.assign({ kind: "play" }, detail.request)).then(detail.resolve, function (error) {
+						setError("开始旅程失败：" + String(error.message || error)); detail.reject(error);
+					}).finally(function () { setBusy(false); });
+				}
+				window.addEventListener("dsh-tavern-start-session-opening", onStartSessionOpening);
+				return function () { window.removeEventListener("dsh-tavern-start-session-opening", onStartSessionOpening); };
+			}, [current, busy, conversationLifecycle]);
 			async function retryPendingOpen() {
 				if (!pendingOpen) return;
 				setBusy(true); setError("");

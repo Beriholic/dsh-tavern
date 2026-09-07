@@ -39,9 +39,11 @@ export function createOpeningPreparation({ readCard, worldBooks, templateRuntime
       if (drafts.size >= 64) throw new Error('打开的游戏准备页过多，请稍后重试')
       const card = await readCard(cardPath)
       if (!card) throw new Error('人物卡不存在')
-      const record = await worldBooks.bound(cardPath, card)
+      const record = await worldBooks.bound(cardPath, card, settings.sourceChat)
       const draft = { id: randomUUID(), cardPath, openings: cardOpeningChoices(card),
         document: record ? copy(record.view.raw) : null, source: record ? copy(record.source) : null, touchedAt: now() }
+      draft.sourceSessionId = settings.sourceChat?.sessionId || ''
+      draft.sourceLifecycleRevision = Number(settings.sourceChat?.tavernHelperLifecycleRevision) || 0
       draft.card = copy(card)
       draft.userName = settings.userName || '你'
       const swipes = [card.first_mes || ''].concat(card.alternate_greetings || [])
@@ -116,7 +118,7 @@ export function createOpeningPreparation({ readCard, worldBooks, templateRuntime
       if (draft.cardPath !== cardPath) throw new Error('开局草稿与人物卡不匹配')
       const selected = openingId || 'primary'
       if (!draft.openings.some(opening => opening.id === selected)) throw new Error('人物卡开场白不存在')
-      return copy({ openingId: selected, worldbookSnapshot: { version: 1, source: draft.source, document: draft.document } })
+      return copy({ openingId: selected, sourceSessionId: draft.sourceSessionId, sourceLifecycleRevision: draft.sourceLifecycleRevision, worldbookSnapshot: { version: 1, source: draft.source, document: draft.document } })
     }
   }
 }

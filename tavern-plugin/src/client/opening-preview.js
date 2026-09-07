@@ -108,3 +108,44 @@ function openingPreviewSelection(preview, swipeId) {
   if (!preview || !Number.isInteger(swipeId) || swipeId < 0 || !preview.openingIds[swipeId]) throw new Error('人物卡开场白不存在');
   return preview.openingIds[swipeId];
 }
+
+// A legacy home already saved as a greeting can finish setup via the native
+// new-game coordinator. It never edits the source session's event history.
+function installSessionOpeningBridge(token, descriptor) {
+  const swipes = descriptor.swipes.slice();
+  const chat = [{ is_user: false, name: descriptor.characterName, mes: swipes[descriptor.selectedIndex], swipe_id: descriptor.selectedIndex, swipes }];
+  const pending = new Map();
+  let sequence = 0, saved = null, starting = null;
+  function call(method, args) {
+    const requestId = 'opening-session:' + (++sequence);
+    return new Promise(function (resolve, reject) {
+      const timer = setTimeout(function () { pending.delete(requestId); reject(new Error('开始旅程超时，请检查左侧错误提示')); }, 120000);
+      pending.set(requestId, { resolve, reject, timer });
+      parent.postMessage({ type: 'dsh-tavern-helper-call', token, requestId, method, args }, '*');
+    });
+  }
+  addEventListener('message', function (event) {
+    const data = event.data;
+    if (event.source !== parent || !data || data.token !== token || data.type !== 'dsh-tavern-helper-response') return;
+    const task = pending.get(data.requestId);
+    if (!task) return;
+    pending.delete(data.requestId); clearTimeout(task.timer);
+    if (data.ok) task.resolve(data.result); else task.reject(new Error(data.error || '开始旅程失败'));
+  });
+  window.SillyTavern = Object.assign({}, window.SillyTavern, {
+    extensionSettings: descriptor.extensionSettings || {},
+    TavernHelper: window.TavernHelper,
+    chat,
+    getContext: function () { return window.SillyTavern; },
+    saveChat: async function () {
+      const row = chat[0], index = row && row.swipe_id;
+      if (chat.length !== 1 || !Number.isInteger(index) || !descriptor.openingIds[index] || row.mes !== swipes[index]) throw new Error('只能选择人物卡已有开场');
+      saved = await call('prepareSessionOpening', { swipeId: index, message: row.mes });
+    },
+    reloadCurrentChat: function () {
+      if (!saved) return Promise.reject(new Error('请先保存开场选择'));
+      if (!starting) starting = call('startSessionOpening', { preparationId: saved.preparationId }).catch(function (error) { starting = null; throw error; });
+      return starting;
+    }
+  });
+}
