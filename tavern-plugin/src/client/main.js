@@ -5457,11 +5457,11 @@ window.__ModuleLoader__.load({
 		}
 
 		function TavernSettingsSection() {
-			const [state, setState] = React.useState({ loading: true, busy: false, webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: false, variables: true }, modelCatalog: [], sceneImages: false, error: "" });
+			const [state, setState] = React.useState({ loading: true, busy: false, webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: true, variables: true }, modelCatalog: [], sceneImages: false, error: "" });
 			React.useEffect(function () {
 				let active = true;
 				rpc("getTavernSettings").then(function (result) {
-					if (active) setState({ loading: false, busy: false, webSearchEnabled: Boolean(result.settings && result.settings.webSearchEnabled), backgroundModel: result.settings && result.settings.backgroundModel || null, backgroundTasks: result.settings && result.settings.backgroundTasks || { posture: true, characterDesign: false, variables: true }, modelCatalog: Array.isArray(result.modelCatalog) ? result.modelCatalog : [], sceneImages: Boolean(result.releaseCapabilities && result.releaseCapabilities.sceneImages), error: "" });
+					if (active) setState({ loading: false, busy: false, webSearchEnabled: Boolean(result.settings && result.settings.webSearchEnabled), backgroundModel: result.settings && result.settings.backgroundModel || null, backgroundTasks: result.settings && result.settings.backgroundTasks || { posture: true, characterDesign: true, variables: true }, modelCatalog: Array.isArray(result.modelCatalog) ? result.modelCatalog : [], sceneImages: Boolean(result.releaseCapabilities && result.releaseCapabilities.sceneImages), error: "" });
 				}, function (error) {
 					if (active) setState(function (current) { return Object.assign({}, current, { loading: false, busy: false, error: String(error && error.message || error) }); });
 				});
