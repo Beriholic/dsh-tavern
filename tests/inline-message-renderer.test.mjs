@@ -1645,3 +1645,36 @@ test('开场选择经过当前 iframe 来源校验，不调用 Session RPC，卸
   receive({ source: frame.contentWindow, data }); assert.equal(chosen.length, 1, '旧预览不能切换新卡的开场')
   stop(); assert.equal(listeners.has('message'), false)
 })
+
+test('音视频源绕过整文件静态缓存，封面和图片继续缓存', () => {
+  const html = '<video src="https://media.example/large.mp4" poster="https://media.example/cover.jpg"></video><audio src=https://media.example/bgm.mp3></audio><video><source src="https://media.example/stream?id=1"></video>'
+  for (const doc of [client.buildOpeningPreviewDocument(html), client.buildTavernFrameDocument({ content: html })]) {
+    assert.match(doc, /src="https:\/\/media.example\/large.mp4"/)
+    assert.match(doc, /src="https:\/\/media.example\/bgm.mp3"/)
+    assert.match(doc, /src="https:\/\/media.example\/stream\?id=1"/)
+    assert.ok(doc.includes('/api/dsh-tavern/static-assets?url=' + encodeURIComponent('https://media.example/cover.jpg')))
+  }
+})
+
+test('动态媒体 src 和属性观察器不重新代理，图片仍走缓存', () => {
+  const document = client.buildTavernFrameDocument({ content: '<div>media</div>' })
+  const script = document.match(/<script data-dsh-tavern-static-cache>([\s\S]*?)<\/script>/)[1]
+  let observe
+  class Element {
+    constructor(tag) { this.tagName = tag; this.nodeType = 1; this.attrs = {} }
+    setAttribute(k, v) { this.attrs[k] = v }
+    getAttribute(k) { return this.attrs[k] }
+  }
+  class Video extends Element {}
+  Object.defineProperty(Video.prototype, 'src', { configurable: true, get() { return this.attrs.src }, set(v) { this.attrs.src = v } })
+  vm.runInNewContext(script, { window: { HTMLVideoElement: Video }, Element, document: { documentElement: {} }, MutationObserver: class { constructor(fn) { observe = fn } observe() {} } })
+  const video = new Video('VIDEO'); video.src = 'https://media.example/movie.mp4'
+  const audio = new Element('AUDIO'); audio.setAttribute('src', 'https://media.example/bgm.mp3')
+  const source = new Element('SOURCE'); source.setAttribute('src', 'https://media.example/live')
+  const image = new Element('IMG'); image.setAttribute('src', 'https://media.example/image.png')
+  observe([video, audio, source, image].map(target => ({ target })))
+  assert.equal(video.src, 'https://media.example/movie.mp4')
+  assert.equal(audio.getAttribute('src'), 'https://media.example/bgm.mp3')
+  assert.equal(source.getAttribute('src'), 'https://media.example/live')
+  assert.match(image.getAttribute('src'), /^\/api\/dsh-tavern\/static-assets/)
+})

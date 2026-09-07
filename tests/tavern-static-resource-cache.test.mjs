@@ -137,3 +137,11 @@ test('下载前校验每一跳主机且只接受有限 HTTPS 重定向', async f
   assert.equal((await cache.get('https://assets.example.test/start')).finalUrl, 'https://cdn.example.test/final.png')
   assert.deepEqual(verified, ['https://assets.example.test/start', 'https://cdn.example.test/final.png'])
 })
+
+test('缓存 HTML 中的媒体保留原生远端地址，支持相对视频源', () => {
+  const html = projectCachedResourceBody({ url: 'https://cards.example/ui/home.html', mediaType: 'text/html', body: Buffer.from('<video src="/movie.mp4" poster="/cover.png"><source src="https://media.example/live"></video><audio src="https://media.example/bgm.mp3"></audio>') }).toString()
+  assert.match(html, /src="https:\/\/cards.example\/movie.mp4"/)
+  assert.match(html, /src="https:\/\/media.example\/live"/)
+  assert.match(html, /src="https:\/\/media.example\/bgm.mp3"/)
+  assert.ok(html.includes('/api/dsh-tavern/static-assets?url=' + encodeURIComponent('https://cards.example/cover.png')))
+})

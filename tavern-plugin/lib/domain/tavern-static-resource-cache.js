@@ -91,7 +91,7 @@ function rewriteStylesheetUrls(source, baseUrl) {
 }
 
 function rewriteHtmlResourceAttributes(source, baseUrl) {
-  return str(source)
+  const rewritten = str(source)
     .replace(/(\b(?:src|poster)\s*=\s*)(["'])(\/[^"']+|https:\/\/[^"']+)\2/gi, function (_match, prefix, quote, specifier) {
       return prefix + quote + absoluteCacheUrl(specifier, baseUrl) + quote
     })
@@ -104,6 +104,11 @@ function rewriteHtmlResourceAttributes(source, baseUrl) {
     .replace(/(<link\b[^>]*\shref\s*=\s*)(\/[^\s"'`<>]+|https:\/\/[^\s"'`<>]+)/gi, function (_match, prefix, specifier) {
       return prefix + '"' + absoluteCacheUrl(specifier, baseUrl) + '"'
     })
+  return rewritten.replace(/<(?:video|audio|source)\b[^>]*>/gi, function (tag) {
+    return tag.replace(/(\ssrc\s*=\s*)(["'])(\/api\/dsh-tavern\/static-assets\?url=([^"']+))\2/gi, function (_match, prefix, quote, proxy, url) {
+      return prefix + quote + decodeURIComponent(url) + quote
+    })
+  })
 }
 
 function rewriteHtmlStyles(source, baseUrl) {
