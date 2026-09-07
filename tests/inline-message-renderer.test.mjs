@@ -1689,3 +1689,28 @@ test('plain scripted card frames load jQuery before remote-home loaders without 
   assert.ok(document.indexOf('runtime-assets/jquery/jquery.min.js') < document.indexOf("$('body').load"))
   assert.ok(!document.includes('data-dsh-tavern-opening-preview'))
 })
+
+test('收起的 details 隐藏内容不撑高 iframe，展开后恢复测高', () => {
+  const html = client.buildTavernFrameDocument({ content: '<details><summary>变量更新情况</summary><pre>数据</pre></details>', token: 'details-height' })
+  const reporter = Array.from(html.matchAll(/<script data-dsh-tavern-frame>([\s\S]*?)<\/script>/g)).at(-1)[1]
+  const style = { position: 'static', overflow: 'visible', marginBottom: '0' }
+  const root = {}
+  const node = (bottom, parentElement) => ({ parentElement, style, getBoundingClientRect: () => ({ top: 0, bottom, width: 100, height: bottom }) })
+  const body = node(24, root); body.scrollHeight = 24
+  const details = node(24, body); details.tagName = 'DETAILS'; details.open = false
+  const summary = node(24, details); summary.contains = n => n === summary
+  details.querySelector = () => summary
+  const hidden = node(3656, details)
+  body.querySelectorAll = () => [details, summary, hidden]
+  let height = 0
+  const run = () => vm.runInNewContext(reporter, {
+    document: { body, documentElement: root }, window: { scrollY: 0 },
+    parent: { postMessage: message => { height = message.height } },
+    getComputedStyle: n => n.style || style,
+    ResizeObserver: class { observe() {} }, MutationObserver: class { observe() {} },
+    requestAnimationFrame: callback => callback(), addEventListener() {},
+  })
+  run(); assert.equal(height, 48)
+  details.open = true
+  run(); assert.equal(height, 3656)
+})
