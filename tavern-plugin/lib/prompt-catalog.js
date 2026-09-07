@@ -6,7 +6,7 @@ export const SYSTEM_PROMPT_DEFINITIONS = Object.freeze([
   ['candidate-story', '普通剧情候选项', '控制普通剧情候选项的数量、类型和输出格式。'],
   ['candidate-script', '剧本候选项', '控制剧本模式候选项及剧本推进规则。'],
   ['posture-settlement', '姿势状态结算', '控制后台姿势结算的工具提交。'],
-  ['story-compaction', '剧情记录压缩', '控制长对话压缩成剧情检查点的方式。'],
+  ['story-compaction', '前台上下文压缩', '用于前台手动和自动压缩：保留续玩要点，细节按需通过 recall 检索。修改后下次压缩生效；后台仍使用 DSH 内置压缩提示词。'],
   ['card-mode', '卡片工作台 Agent', '控制卡片工作台 Agent 的权限、工具与工作规则。'],
   ['card-mode-greeting', '卡片工作台欢迎语', '控制新建卡片工作台对话的开场内容。'],
   ['card-task-edit', '人物卡编辑任务', '控制“修改人物卡”任务的起始要求。'],
