@@ -1678,3 +1678,12 @@ test('动态媒体 src 和属性观察器不重新代理，图片仍走缓存', 
   assert.equal(source.getAttribute('src'), 'https://media.example/live')
   assert.match(image.getAttribute('src'), /^\/api\/dsh-tavern\/static-assets/)
 })
+
+
+test('plain scripted card frames load jQuery before remote-home loaders without a game helper context', () => {
+  const html = "<body><script>$('body').load('https://example.com/home.html')</script></body>"
+  const document = client.buildTavernFrameDocument({content:html})
+  assert.ok(document.includes('runtime-assets/jquery/jquery.min.js'))
+  assert.ok(document.indexOf('runtime-assets/jquery/jquery.min.js') < document.indexOf("$('body').load"))
+  assert.ok(!document.includes('data-dsh-tavern-opening-preview'))
+})
