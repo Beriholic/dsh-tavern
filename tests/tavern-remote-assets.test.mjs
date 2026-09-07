@@ -140,3 +140,28 @@ test('重启且断网时复用已验证内容，缓存缺失则明确诊断', as
   assert.equal(failed.regexScripts[0].enabled, false)
   assert.match(failed.diagnostics[0].message, /缓存.*offline/)
 })
+
+test('missing Git tag still renders a homepage from a durable content snapshot', async () => {
+  const { projectRuntimeReplyHistory } = await import('../tavern-plugin/lib/domain/runtime-content-projection.js')
+  let saved
+  const url = 'https://testingcf.jsdelivr.net/gh/example/home@1.9.16/dist/home/index.html'
+  const regex = { name: '首页', enabled: true, findRegex: '【首页】', placement: [2], markdownOnly: true,
+    replaceString: "```\n<body><script>$('body').load('" + url + "')</script></body>\n```" }
+  const store = createTavernRemoteAssetPinStore({
+    readJson: async () => saved,
+    updateJson: async (_path, update) => { saved = update(saved) },
+    fetch: async requested => String(requested).startsWith('https://api.github.com/')
+      ? {ok:false,status:422} : textResponse('<h1>Homepage</h1>', 'text/html'),
+    resolveGitRef: async () => { throw Error('tag missing') }
+  })
+  const pinned = await store.pinExtensions({regexScripts:[regex]})
+  assert.equal(pinned.regexScripts[0].enabled, true)
+  assert.equal(pinned.diagnostics.length, 0)
+  assert.match(pinned.regexScripts[0].replaceString, /\/api\/dsh-tavern\/remote-assets\/[a-f0-9]{64}\/index.html/)
+  const result = projectRuntimeReplyHistory([{role:'assistant',text:'【首页】',sourceText:'【首页】',turn:1}],
+    {regexScripts:pinned.regexScripts,placement:2,isMarkdown:true,depth:0})
+  assert.equal(result.projections[0].parts[0].kind, 'html')
+  const offline = createTavernRemoteAssetPinStore({readJson:async()=>saved,fetch:async()=>{throw Error('must use saved bytes')},resolveGitRef:async()=>{throw Error('must not resolve again')}})
+  assert.deepEqual(await offline.pinExtensions({regexScripts:[regex]}), pinned)
+  assert.equal((await offline.readCached(Object.values(saved.assets)[0].hash)).content, '<h1>Homepage</h1>')
+})

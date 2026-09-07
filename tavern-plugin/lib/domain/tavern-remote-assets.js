@@ -180,9 +180,16 @@ export function createTavernRemoteAssetPinStore(options = {}) {
 
   async function pinText(text) {
     const source = str(text)
-    const references = inspectMutableJsDelivrUrls(source)
-    if (references.length === 0) return { text: source, pins: [], diagnostics: [] }
+    const originalReferences = inspectMutableJsDelivrUrls(source)
+    if (originalReferences.length === 0) return { text: source, pins: [], diagnostics: [] }
+    await load()
     let result = source
+    // A content-pinned fallback remains authoritative even if the tag later changes.
+    for (const reference of originalReferences) {
+      const asset = assetsByUrl.get(reference.url)
+      if (asset) result = result.split(reference.url).join(cachedPath(asset))
+    }
+    const references = inspectMutableJsDelivrUrls(result)
     const pins = []
     const diagnostics = []
     const unique = new Map(references.map(function (item) { return [item.owner + '/' + item.repo + '@' + item.ref, item] }))
@@ -194,7 +201,17 @@ export function createTavernRemoteAssetPinStore(options = {}) {
         result = result.split(mutable).join(fixed)
         pins.push(clone(pin))
       } catch (error) {
-        diagnostics.push({ status: 'unresolved-remote-asset', url: reference.url, message: str(error && error.message || error) })
+        // CDN tags can remain available after the Git tag disappears. Freeze
+        // the actual bytes locally instead of disabling the entire display rule.
+        for (const entry of references.filter(item => item.owner === reference.owner && item.repo === reference.repo && item.ref === reference.ref)) {
+          try {
+            const asset = await cacheFixed(entry)
+            result = result.split(entry.url).join(cachedPath(asset))
+          } catch (cacheError) {
+            diagnostics.push({ status: 'unresolved-remote-asset', url: entry.url,
+              message: str(error && error.message || error) + '；内容快照失败（' + str(cacheError && cacheError.message || cacheError) + '）' })
+          }
+        }
       }
     }
     const fixedReferences = new Map(inspectFixedJsDelivrUrls(result).map(function (item) { return [item.url, item] }))
