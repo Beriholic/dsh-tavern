@@ -171,7 +171,7 @@ test('新开游玩在创建 Session 前完成游戏准备，创建后不提供�
   assert.match(sidebar, /getCardOpenings/)
   assert.match(sidebar, /上一条开场白/)
   assert.match(sidebar, /下一条开场白/)
-  assert.match(sidebar, /以此开场/)
+  assert.match(sidebar, /开始新游戏/)
   assert.match(sidebar, /游戏准备/)
 	  assert.match(sidebar, /故事中的玩家称呼（可选）/)
 	  assert.match(sidebar, /selectedOpening && selectedOpening\.usesUser/)
