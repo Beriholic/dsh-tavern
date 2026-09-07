@@ -1,3 +1,4 @@
+import { scriptPromptFrameInputs, consumeScriptPrompts } from './tavern-script-prompts.js'
 import { rememberTavernResources } from './workspace-resources.js'
 import { projectBackgroundInput } from './runtime-content-projection.js'
 import { lastTavernHelperVariables } from './tavern-helper-context.js'
@@ -178,7 +179,7 @@ export function foregroundFrameInputs(plan, sourceText, projectedText, presetSna
       source: { stage: 'mvu-background-owner' }
     })
   }
-  return inputs.concat(presetMiddleInstructions(presetSnapshot))
+  return inputs.concat(presetMiddleInstructions(presetSnapshot), scriptPromptFrameInputs(chat))
 }
 
 function frameSource(chat, card, operation) {
@@ -339,11 +340,15 @@ export function createTurnOrchestrator(options) {
 
     // 世界书关键词匹配在上一轮正文提交后本地完成。正文准备只读取已经
     // 保存好的下一轮上下文，玩家输入和候选项选择都不能在此重新触发匹配。
+    // 脚本显式提供的扫描文本单独复用同一匹配器，不把玩家输入混入扫描。
     const templateWorldBook = await projectWorldBookTemplates({ chat, card, turn, userText: runtimeUserText })
-    const worldBookContext = [str(chat.preparedWorldBookContext).trim(), str(templateWorldBook && templateWorldBook.context).trim()].filter(Boolean).join('\n\n')
+    const scriptWorldBook = typeof options.projectScriptPromptWorldbook === 'function' ? await options.projectScriptPromptWorldbook({ chat, card, turn }) : null
+    const worldBookContext = [str(chat.preparedWorldBookContext).trim(), str(scriptWorldBook && scriptWorldBook.context).trim(), str(templateWorldBook && templateWorldBook.context).trim()].filter(Boolean).join('\n\n')
     const sceneWorldbook = typeof options.captureSceneWorldbook === 'function' ? await options.captureSceneWorldbook(chat, card) : null
     const plan = await planner.plan({ purpose: 'body', card, chat, userText: runtimeUserText, sessionId: input.sessionId, nativeTurn: turn, scriptReference, worldBookContext })
     const source = frameSource(chat, card, foregroundOperation)
+    source.worldBook.scriptPromptRefs = Array.isArray(scriptWorldBook && scriptWorldBook.refs) ? clone(scriptWorldBook.refs) : []
+    if (scriptWorldBook && typeof scriptWorldBook.recordReads === 'function') chat.worldBookReads = scriptWorldBook.recordReads(chat.worldBookReads)
     source.worldBook.templateRefs = Array.isArray(templateWorldBook && templateWorldBook.refs) ? clone(templateWorldBook.refs) : []
     source.worldBook.templateDiagnostics = Array.isArray(templateWorldBook && templateWorldBook.diagnostics) ? clone(templateWorldBook.diagnostics) : []
     const frame = frameBuilder.build({
@@ -355,6 +360,7 @@ export function createTurnOrchestrator(options) {
       inputs: foregroundFrameInputs(plan, userText, runtimeUserText, chat.runtimePresetSnapshot, chat),
       source: { ...source, ...(sceneWorldbook ? { sceneWorldbook } : {}) }
     })
+    consumeScriptPrompts(chat)
     rememberFrame(chat, frame)
     chatChanged = true
     if (chatChanged) await store.writeChat(chat, { source: 'foreground.prepare' })

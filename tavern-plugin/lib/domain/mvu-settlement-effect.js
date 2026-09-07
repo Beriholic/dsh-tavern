@@ -4,7 +4,7 @@ function str(value) {
   return typeof value === 'string' ? value : (value === undefined || value === null ? '' : String(value))
 }
 
-const ALLOWED_ROOTS = new Set(['messages', 'variables', 'mvu'])
+const ALLOWED_ROOTS = new Set(['messages', 'variables', 'mvu', 'tavernScriptPrompts'])
 
 function assertIdentity(chat, effect) {
   if (!effect || effect.version !== 1 || str(effect.operationId) === '') throw new Error('MVU Settlement Effect 不合法')

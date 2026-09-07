@@ -129,6 +129,7 @@ function harness(mode, options = {}) {
     resolvePresetRegexScripts: options.resolvePresetRegexScripts,
     projectReply: projectReplyPresentation,
     projectWorldBookTemplates: options.projectWorldBookTemplates,
+    projectScriptPromptWorldbook: options.projectScriptPromptWorldbook,
     shellToolName: options.shellToolName,
     now: () => 2000
   })
@@ -724,4 +725,25 @@ test('旧会话已有完整临时设定时，再次确认也会落成正式人�
   assert.equal(saved.changed, true)
   assert.equal(run.chat().cardPath, 'cards/阿芙拉.json')
   assert.equal(run.createdCards.length, 1)
+})
+
+
+test('脚本提示实际走本轮准备、Frame 与一次性消费，重复准备不丢失', async () => {
+  const run = harness('story', {
+    planner: createContextPlanner({ prompt: () => '写作规则' }),
+    projectScriptPromptWorldbook: async ({ chat }) => ({ context: chat.tavernScriptPrompts.some(p => p.content === '王都') ? '王都的城门设定' : '' })
+  })
+  const state = run.chat()
+  state.tavernScriptPrompts = [
+    { id: 'place', content: '王都', position: 'none', role: 'system', depth: 0, should_scan: true, once: true },
+    { id: 'event', content: '本轮事件要求', position: 'in_chat', role: 'system', depth: 0, should_scan: false, once: true }
+  ]
+  run.replaceChat(state)
+  const input = { sessionId: 'session-1', turn: 1, userText: '继续' }
+  const first = await run.orchestrator.prepare(input)
+  assert.match(foregroundFrameText(first.frame), /王都的城门设定/)
+  assert.match(foregroundFrameText(first.frame), /本轮事件要求/)
+  assert.deepEqual(run.chat().tavernScriptPrompts, [])
+  const repeated = await run.orchestrator.prepare(input)
+  assert.deepEqual(repeated.frame, first.frame)
 })

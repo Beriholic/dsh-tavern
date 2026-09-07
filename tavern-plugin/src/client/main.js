@@ -1658,7 +1658,7 @@ window.__ModuleLoader__.load({
 			}
 			// Both entry points reference the same functions; plugin wrappers stay visible to each other.
 			const helper = {};
-			const helperNames = ["getScriptId", "getScriptName", "getScriptInfo", "replaceScriptInfo", "getScriptButtons", "replaceScriptButtons", "updateScriptButtonsWith", "appendInexistentScriptButtons", "getButtonEvent", "getCharData", "getCurrentMessageId", "getLastMessageId", "getChatMessages", "setChatMessages", "createChatMessages", "getVariables", "getAllVariables", "replaceVariables", "insertOrAssignVariables", "insertVariables", "updateVariablesWith", "deleteVariable", "getTavernRegexes", "replaceTavernRegexes", "updateTavernRegexesWith", "importRawTavernRegex", "replaceWorldbook", "createWorldbookEntries", "deleteWorldbookEntries", "setLorebookEntries", "createLorebookEntries", "deleteLorebookEntries", "getLorebooks", "getWorldbookNames", "getCharWorldbookNames", "getWorldbook", "getLorebookEntries", "getCharLorebooks", "getCurrentCharPrimaryLorebook", "getLorebookSettings", "setLorebookSettings", "updateWorldbookWith", "getTavernHelperVersion", "substitudeMacros"];
+			const helperNames = ["injectPrompts", "uninjectPrompts", "getScriptId", "getScriptName", "getScriptInfo", "replaceScriptInfo", "getScriptButtons", "replaceScriptButtons", "updateScriptButtonsWith", "appendInexistentScriptButtons", "getButtonEvent", "getCharData", "getCurrentMessageId", "getLastMessageId", "getChatMessages", "setChatMessages", "createChatMessages", "getVariables", "getAllVariables", "replaceVariables", "insertOrAssignVariables", "insertVariables", "updateVariablesWith", "deleteVariable", "getTavernRegexes", "replaceTavernRegexes", "updateTavernRegexesWith", "importRawTavernRegex", "replaceWorldbook", "createWorldbookEntries", "deleteWorldbookEntries", "setLorebookEntries", "createLorebookEntries", "deleteLorebookEntries", "getLorebooks", "getWorldbookNames", "getCharWorldbookNames", "getWorldbook", "getLorebookEntries", "getCharLorebooks", "getCurrentCharPrimaryLorebook", "getLorebookSettings", "setLorebookSettings", "updateWorldbookWith", "getTavernHelperVersion", "substitudeMacros"];
 			for (const name of helperNames) Object.defineProperty(helper, name, { enumerable: true, configurable: true, get: function () { return window[name]; }, set: function (value) { window[name] = value; } });
 			window.TavernHelper = helper;
 			const eventSource = { on: window.eventOn, once: window.eventOnce, off: window.eventOff, removeListener: window.eventOff, makeFirst: window.eventMakeFirst, makeLast: window.eventMakeLast, emit: window.eventEmit };
@@ -1761,9 +1761,10 @@ window.__ModuleLoader__.load({
 			for (const script of scriptList) scriptsById[script.id] = script;
 			let currentScriptId = scriptList[0] ? scriptList[0].id : "";
 			let activeHostEventId = "";
+			let hostEventTail = Promise.resolve();
 			let facade;
 			const transport = modules.createTransport({ parent: parent, token: token, copy: copy,
-				identity: function () { return { eventId: activeHostEventId, scriptId: currentScript().id }; },
+				identity: function () { return { eventId: activeHostEventId, scriptId: currentScript().id, lifecycleRevision: Number(state.lifecycleRevision) || 0 }; },
 				listen: function (receive) { addEventListener("message", receive); },
 				onContext: function (result, method) {
 					const incoming = result.context;
@@ -1778,7 +1779,7 @@ window.__ModuleLoader__.load({
 				onEvent: function (data) {
 					diagnosticCount = 0;
 					const suppliedArgs = copy(data.args || []);
-					const task = (async function () {
+					const task = hostEventTail.catch(function () {}).then(async function () {
 						const previousEventId = activeHostEventId;
 						activeHostEventId = String(data.eventId || "");
 						try {
@@ -1796,7 +1797,8 @@ window.__ModuleLoader__.load({
 							await events.emitHost(data.eventId, data.name, suppliedArgs);
 							return suppliedArgs;
 						} finally { activeHostEventId = previousEventId; }
-					})();
+					});
+					hostEventTail = task;
 					task.then(function (args) {
 						if (data.eventId) parent.postMessage({ type: "dsh-tavern-helper-event-complete", token: token, eventId: data.eventId, args: copy(args || []) }, "*");
 					}).catch(function (error) {
@@ -1806,6 +1808,29 @@ window.__ModuleLoader__.load({
 				}
 			});
 			const call = transport.request;
+			const promptWrites = new Set();
+			let promptFailure = null;
+			function writePrompts(operation) {
+				const task = call("updateTavernHelperPrompts", { operation: operation }).then(function (result) {
+					if (result && result.stale) throw new Error("聊天已变化，提示词未保存");
+				});
+				promptWrites.add(task);
+				task.then(function () { promptWrites.delete(task); }, function (error) { promptWrites.delete(task); promptFailure = error; console.error(error); });
+			}
+			async function drainPromptWrites() {
+				try { while (promptWrites.size) await Promise.all(Array.from(promptWrites)); }
+				catch (error) { promptFailure = null; throw error; }
+				if (promptFailure) { const error = promptFailure; promptFailure = null; throw error; }
+			}
+			window.injectPrompts = function (prompts, options) {
+				if (!Array.isArray(prompts)) throw new TypeError("提示词必须是数组");
+				if (prompts.some(function (prompt) { return prompt && prompt.filter !== undefined; })) throw new Error("DSH 暂不支持提示词 filter 回调");
+				const ids = prompts.map(function (prompt) { return prompt.id; });
+				writePrompts({ kind: "inject", prompts: copy(prompts), once: !!(options && options.once) });
+				return { uninject: function () { window.uninjectPrompts(ids); } };
+			};
+			window.uninjectPrompts = function (ids) { writePrompts({ kind: "remove", ids: copy(ids) }); };
+
 			const events = modules.createEvents({ currentScript: currentScript, withScript: withScript,
 				reportSubscriptions: reportSubscriptions, post: transport.post, document: window.document });
 			function copy(value) {
@@ -1816,7 +1841,7 @@ window.__ModuleLoader__.load({
 			async function withScript(scriptId, factory) {
 				const previous = currentScriptId;
 				currentScriptId = String(scriptId || previous || "");
-				try { return await factory(); }
+				try { const result = await factory(); await drainPromptWrites(); return result; }
 				finally { currentScriptId = previous; }
 			}
 			function stringHash(value, seed) {
@@ -2551,7 +2576,7 @@ window.__ModuleLoader__.load({
 			const closedEventIds = new Set();
 			const closedEventOrder = [];
 			const reportedEventTimeouts = new Set();
-			const allowedMethods = new Set(["updateTavernHelperVariables", "updateTavernHelperMessages", "createTavernHelperMessages", "getTavernHelperWorldbook", "replaceTavernHelperWorldbook", "saveTavernExtensionSettings", "loadTavernWorldInfo", "saveTavernWorldInfo", "saveTavernChatData"]);
+			const allowedMethods = new Set(["updateTavernHelperPrompts", "updateTavernHelperVariables", "updateTavernHelperMessages", "createTavernHelperMessages", "getTavernHelperWorldbook", "replaceTavernHelperWorldbook", "saveTavernExtensionSettings", "loadTavernWorldInfo", "saveTavernWorldInfo", "saveTavernChatData"]);
 			let activeSessionId = "";
 			let root = null;
 			let previous = null;
@@ -3018,13 +3043,18 @@ window.__ModuleLoader__.load({
 					return;
 				}
 					let mutationArgs = data.args || {};
-					if (data.method === "updateTavernHelperVariables" || data.method === "updateTavernHelperMessages" || data.method === "createTavernHelperMessages") {
+					if (data.method === "updateTavernHelperPrompts" || data.method === "updateTavernHelperVariables" || data.method === "updateTavernHelperMessages" || data.method === "createTavernHelperMessages") {
 						mutationArgs = Object.assign({}, mutationArgs, {
 							eventId: String(data.eventId || ""),
-							expectedLifecycleRevision: Math.max(0, Number(record.context && record.context.lifecycleRevision) || 0)
+							expectedLifecycleRevision: Math.max(0, Number(data.lifecycleRevision !== undefined ? data.lifecycleRevision : record.context && record.context.lifecycleRevision) || 0)
 						});
 				}
-				invoke(data.method, mutationArgs, record.sessionId).then(function (result) {
+				const rpcTask = (record.rpcTail || Promise.resolve()).catch(function () {}).then(function () {
+					if (records.get(record.id) !== record) throw new Error("脚本运行时已失效");
+					return invoke(data.method, mutationArgs, record.sessionId);
+				});
+				record.rpcTail = rpcTask;
+				rpcTask.then(function (result) {
 					// Readiness follows acknowledged persistence, not an iframe's speculative variables.
 					if (result && result.updated === true && !result.stale && !result.transactional && result.context && records.get(record.id) === record
 						&& result.context.chatId === record.context.chatId
@@ -3034,7 +3064,7 @@ window.__ModuleLoader__.load({
 						syncMvuDataReadiness(record);
 					}
 					post(record, { type: "dsh-tavern-helper-response", requestId: data.requestId, ok: true, result: result });
-					if ((data.method === "updateTavernHelperVariables" || data.method === "updateTavernHelperMessages" || data.method === "createTavernHelperMessages" || data.method === "replaceTavernHelperWorldbook" || data.method === "saveTavernExtensionSettings" || data.method === "saveTavernWorldInfo" || data.method === "saveTavernChatData") && result && result.updated !== false && result.stale !== true && records.get(record.id) === record) reportMutation(record.sessionId, data.method, result);
+					if ((data.method === "updateTavernHelperPrompts" || data.method === "updateTavernHelperVariables" || data.method === "updateTavernHelperMessages" || data.method === "createTavernHelperMessages" || data.method === "replaceTavernHelperWorldbook" || data.method === "saveTavernExtensionSettings" || data.method === "saveTavernWorldInfo" || data.method === "saveTavernChatData") && result && result.updated !== false && result.stale !== true && records.get(record.id) === record) reportMutation(record.sessionId, data.method, result);
 				}, function (error) {
 					post(record, { type: "dsh-tavern-helper-response", requestId: data.requestId, ok: false, error: String(error && error.message || error) });
 				});
@@ -3668,7 +3698,7 @@ window.__ModuleLoader__.load({
 						if (current()) event.source.postMessage({ type: "dsh-tavern-helper-response", token: data.token, requestId: data.requestId, ok: false, error: String(error.message || error) }, "*");
 					});
 				} else if (data.type === "dsh-tavern-helper-call" && props.sessionId) {
-					const allowedMethods = new Set(["updateTavernHelperVariables", "updateTavernHelperMessages", "getTavernHelperWorldbook", "replaceTavernHelperWorldbook"]);
+					const allowedMethods = new Set(["updateTavernHelperPrompts", "updateTavernHelperVariables", "updateTavernHelperMessages", "getTavernHelperWorldbook", "replaceTavernHelperWorldbook"]);
 					if (data.method === "triggerTavernSlash") {
 						const executeSlash = configuredSlashExecutor || requestProps.executeSlash;
 						if (typeof executeSlash !== "function") return;

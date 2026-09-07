@@ -72,6 +72,7 @@ test('后台 MVU 命令只在隔离草稿执行并原子提交，协议不进入
     scriptDispatch: {
       async dispatch(_sessionId, _name, _args, context, work) {
         assert.match(context.messages[0].message, /<UpdateVariable>/)
+        await adapter.updatePrompts('session-1', { kind: 'inject', prompts: [{ id: 'event', content: '当前事件', position: 'in_chat', depth: 0, role: 'system' }] }, 2, work.eventId)
         await adapter.updateMessages('session-1', [{
           message_id: 0,
           message: context.messages[0].message,
@@ -93,9 +94,11 @@ test('后台 MVU 命令只在隔离草稿执行并原子提交，协议不进入
   })
 
   assert.equal(result.updated, true)
-  assert.equal(result.mutations, 1)
+  assert.equal(result.mutations, 2)
   assert.equal(writes.length, 0)
+  assert.equal(value.tavernScriptPrompts, undefined)
   applyMvuSettlementEffect(value, result.effect)
+  assert.equal(value.tavernScriptPrompts[0].content, '当前事件')
   assert.equal(value.messages[0].text, '旧正文')
   assert.equal(value.messages[0].swipes[0], '旧正文')
   assert.doesNotMatch(JSON.stringify(value.messages[0]), /UpdateVariable/)

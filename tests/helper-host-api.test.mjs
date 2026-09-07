@@ -39,7 +39,7 @@ test('createChatMessages 追加楼层并等待宿主确认后更新同步上下�
     method: 'createTavernHelperMessages', args: {
       messages: [{ role: 'assistant', message: '<chat_history target="楚青妤">回复</chat_history>', is_hidden: false, data: { phone: true } }],
       option: {}
-    }, eventId: '', scriptId: 'a'
+    }, eventId: '', scriptId: 'a', lifecycleRevision: 0
   })
   run.reply(run.calls()[0], {
     updated: true,

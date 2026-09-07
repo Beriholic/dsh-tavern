@@ -74,9 +74,9 @@
 - 正式消息 iframe 只提供世界书全局函数，未提供 `TavernHelper` 命名空间及绑定世界书名称。首页调用 `TavernHelper.getCharWorldbookNames('current')` 因而抛错，核心/DLC 列表为空。现已补齐别名并把实际绑定世界书投影传入消息上下文；读写复用原有宿主 RPC，不改共享资源。回归测试复现原异常后通过，完整页面仍需复测。
 - `Automated-script-for-destined-journey@3.4.5/dist/index.js` 在 MVU 回调中调用 `uninjectPrompts` / `injectPrompts`，现有宿主未实现，导致变量保存之前抛出 ReferenceError。不是官方 MVU 重复加载，也不是刷新能解决的问题。本次没有用空函数吞掉错误。
 
-#### 待确认：脚本提示词注册表
+#### 当时待确认的方案：脚本提示词注册表
 
-这属于新增宿主能力，尚未实现。拟议边界：
+以下为当时的拟议边界；后续用户已确认并简化为原生 Frame，实施情况见第三阶段。
 
 1. 外部脚本沿用原 API，DSH 维护会话内按 ID 替换/删除的提示词注册表。
 2. `position: none, should_scan: true` 仅参与世界书扫描；有正文位置的提示进入本轮原生请求构造路径，不改已保存的历史 Frame。
@@ -85,3 +85,20 @@
 5. 必须验证真实初始化保存成功、扫描能激活对应世界书、下一次模型请求能收到指定提示，以及删除/回退后不再注入。仅环境检查绿色不算完成。
 
 此前仅要求先通过环境检查，本项涉及请求与状态生命周期，实施前单独确认。完整 EJS、最终自定义开局写入等既有待办仍未被本次测试证明完成。
+
+### 第三阶段：脚本提示进入原生 Frame（2026-09-07）
+
+用户已确认采用原生 Frame：扫描信息触发世界书，匹配正文和直接要求进入本轮；不修改世界书，也不修改旧 Frame。
+
+实现：
+
+- 暴露同步 `injectPrompts` / `uninjectPrompts`，按会话内 ID 替换或删除，`injectPrompts` 返回 `{ uninject }`。准备页操作保留在临时 draft。
+- `none` 不直接进入 Frame；`should_scan` 默认开启。原生回合准备通过现有 `prepareWorldBookRecall` 执行关键词匹配，沿用条目上限与冷却，记录命中来源。
+- `in_chat` 正文作为本轮 Guide contribution 进入原生 Frame。`role`、`depth` 保留为来源信息；按本项目约定不模拟酒馆按 depth 改写历史排列。旧 Frame 仍留在原生历史，删除只影响后续 Frame。
+- `once` 在第一次成功保存本轮准备结果时消费，重复 prepare 复用已保存 Frame。未实现可执行 `filter` 回调，明确报错，不静默忽略。
+- 提示词注册表进入 Story Timeline 快照及 MVU settlement effect，复用回退、分叉与过期 lifecycle 检查。正式 MVU 结算草稿中的提示与变量一起生效，结算失败不提交提示。
+- 同一脚本 runtime 的 RPC 顺序执行；宿主事件串行，等待未显式 await 的提示词写入确认后才完成事件，防止串事件或迟到写入。
+
+参考上游接口契约： https://github.com/N0VI028/JS-Slash-Runner/blob/main/%40types/function/inject.d.ts 。这是原生 Frame 适配，不是完整酒馆请求排列的复制。
+
+验证：新增测试覆盖实际原生 prepare -> Frame -> Session adapter，扫描与直接提示分流、一次性消费及重复准备、ID 替换删除、无效批次、过期写入、原生回退、MVU effect 原子携带提示，以及并发宿主事件的写入编号。真实页面复测曾发现事件编号串用，已据此补串行处理与测试；修正后的最后一次浏览器认证页面被工具策略阻止，尚不能据此承诺这张卡的完整开局成功。

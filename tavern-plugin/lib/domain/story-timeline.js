@@ -107,6 +107,7 @@ export function createStoryTimeline(options = {}) {
       presentation: chat.presentation === undefined ? null : chat.presentation,
       presentationWarnings: Array.isArray(chat.presentationWarnings) ? chat.presentationWarnings : [],
       macroState: chat.macroState === undefined ? null : chat.macroState,
+      tavernScriptPrompts: chat.tavernScriptPrompts || [],
       runtimeInputs: chat.runtimeInputs === undefined ? null : chat.runtimeInputs,
       posture: str(chat.posture),
       scriptState: chat.scriptState === undefined ? null : chat.scriptState,
@@ -128,6 +129,7 @@ export function createStoryTimeline(options = {}) {
     chat.presentationWarnings = clone(Array.isArray(source.presentationWarnings) ? source.presentationWarnings : [])
     if (Object.hasOwn(source, 'macroState')) chat.macroState = clone(source.macroState)
     if (Object.hasOwn(source, 'runtimeInputs')) chat.runtimeInputs = clone(source.runtimeInputs)
+    chat.tavernScriptPrompts = clone(source.tavernScriptPrompts || [])
     chat.posture = str(source.posture)
     chat.scriptState = clone(source.scriptState === undefined ? null : source.scriptState)
     chat.candidates = clone(source.candidates === undefined ? null : source.candidates)

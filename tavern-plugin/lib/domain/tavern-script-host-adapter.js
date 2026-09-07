@@ -1,3 +1,4 @@
+import { mutateScriptPrompts } from './tavern-script-prompts.js'
 import { exportSillyTavernWorldBook, inspectWorldBookDocument, updateWorldBookDocument } from './worldbook-resource.js'
 import { isDeepStrictEqual } from 'node:util'
 import { applyChatPluginData, validateChatPluginRequest } from './tavern-chat-plugin-data.js'
@@ -91,6 +92,19 @@ export function createTavernScriptHostAdapter(options = {}) {
       ...(multiple ? { targets: target } : { target }),
       context: projectTavernHelperContext(transaction.draft)
     }
+  }
+
+  async function updatePrompts(sessionId, operation, expectedLifecycleRevision, eventId) {
+    return serializeWorldbook('script-prompts:' + sessionId, async function () {
+      const chat = await mutationChat(sessionId, eventId)
+      await assertScriptEnabled(chat)
+      if (!mutationIsCurrent(chat, expectedLifecycleRevision)) return staleMutation(chat)
+      mutateScriptPrompts(chat, operation)
+      const transactional = transactionResult(sessionId, { type: 'prompts' })
+      if (transactional !== null) return transactional
+      await options.writeChat(chat, { source: 'tavern-helper.prompts' })
+      return { updated: true, context: projectTavernHelperContext(chat) }
+    })
   }
 
   async function updateVariables(sessionId, option, variables, expectedLifecycleRevision, eventId) {
@@ -461,6 +475,7 @@ export function createTavernScriptHostAdapter(options = {}) {
     context,
     dispatchEvent,
     settleMvuUpdate,
+    updatePrompts,
     updateVariables,
     updateMessages,
     createMessages,

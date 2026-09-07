@@ -78,6 +78,7 @@ export function projectTavernHelperContext(chat) {
   return {
     version: 1,
     chatId: str(chat && chat.id),
+    scriptPrompts: clone(chat && chat.tavernScriptPrompts || []),
     chatMetadata: clone(chat && chat.tavernPluginMetadata || {}),
     mvuEnabled: chat?.mvu?.enabled === true,
     stateRevision: Math.max(0, Number(chat && chat._storageRevision) || 0),

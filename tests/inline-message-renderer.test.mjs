@@ -1517,6 +1517,7 @@ test('持久 Helper Host 复用同一脚本 iframe、发送生命周期事件并
     data: { type: 'dsh-tavern-helper-call', token: 'runtime-token', requestId: '1', method: 'getTavernHelperWorldbook', args: { name: '灯火阑珊' } }
   })
   await Promise.resolve()
+  await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual(calls, [{ method: 'getTavernHelperWorldbook', args: { name: '灯火阑珊' }, sessionId: 'session-1' }])
   assert.equal(frames[0].contentWindow.messages.at(-1).type, 'dsh-tavern-helper-response')
 	assert.deepEqual(mutations, [])
@@ -1526,6 +1527,7 @@ test('持久 Helper Host 复用同一脚本 iframe、发送生命周期事件并
 		data: { type: 'dsh-tavern-helper-call', token: 'runtime-token', requestId: '2', method: 'updateTavernHelperMessages', args: { messages: [{ message_id: 0, swipe_id: 1 }] } }
 	})
 	await Promise.resolve()
+	await new Promise(resolve => setImmediate(resolve))
 	assert.deepEqual(mutations, [{ sessionId: 'session-1', method: 'updateTavernHelperMessages' }])
 
   const emitted = runtime.emit('COMMAND_PARSED', [{ stat_data: {} }, [{ type: 'set' }]], { messages: [] })

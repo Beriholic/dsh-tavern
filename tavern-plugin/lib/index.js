@@ -1,3 +1,4 @@
+import { scriptPromptScanText } from './domain/tavern-script-prompts.js'
 import { createOpeningPreparation } from './domain/opening-preparation.js'
 import { createChatHistoryImportService } from './domain/chat-history-import-service.js'
 import { createImportContextPreparation, needsImportContextPreparation } from './domain/import-context-preparation.js'
@@ -2057,6 +2058,12 @@ export async function apply(ctx) {
     },
     projectReply: projectRuntimeReply,
     projectWorldBookTemplates: nativeWorldBookTemplateContext,
+    projectScriptPromptWorldbook: async function ({ chat, card, turn }) {
+      const text = scriptPromptScanText(chat)
+      if (!text.trim()) return null
+      const worldBook = await worldBooks.bound(chat.cardPath, card, chat)
+      return prepareWorldBookRecall({ chat, card, turn, worldBook, latestBody: text })
+    },
     resolvePresetRegexScripts: async function (chat) {
       if (!chat || groupOfMode(chat.mode) !== 'play') return []
       const snapshot = chat.runtimePresetSnapshot && typeof chat.runtimePresetSnapshot === 'object' ? chat.runtimePresetSnapshot : null
@@ -2310,6 +2317,7 @@ export async function apply(ctx) {
       }
       case 'attachPlayChatDebug': return { reference: await attachPlayChatDebug(args && args.targetSessionId, args && args.sourceSessionId, args && args.turn) }
       case 'captureDisplayRuntime': return await captureDisplayRuntime(args && args.sessionId, args && args.turn, args && args.partIndex, args && args.runtime)
+	      case 'updateTavernHelperPrompts': return await tavernScriptHostAdapter.updatePrompts(args && args.sessionId, args && args.operation, args && args.expectedLifecycleRevision, args && args.eventId)
 	      case 'updateTavernHelperVariables': return await tavernScriptHostAdapter.updateVariables(args && args.sessionId, args && args.option, args && args.variables, args && args.expectedLifecycleRevision, args && args.eventId)
 	      case 'updateTavernHelperMessages': return await tavernScriptHostAdapter.updateMessages(args && args.sessionId, args && args.messages, args && args.expectedLifecycleRevision, args && args.eventId)
 	      case 'createTavernHelperMessages': return await tavernScriptHostAdapter.createMessages(args && args.sessionId, args && args.messages, args && args.option, args && args.expectedLifecycleRevision, args && args.eventId)

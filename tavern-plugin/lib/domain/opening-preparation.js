@@ -1,3 +1,4 @@
+import { mutateScriptPrompts } from './tavern-script-prompts.js'
 import { projectTavernHelperContext, replaceTavernHelperVariables, replaceTavernHelperMessages } from './tavern-helper-context.js'
 import { OFFICIAL_MVU_VERSION } from './official-mvu-assets.js'
 import { randomUUID } from 'node:crypto'
@@ -68,7 +69,9 @@ export function createOpeningPreparation({ readCard, worldBooks, templateRuntime
         const result = await this.replaceWorldbook(id, args.entries, args.expectedEntries)
         return { updated: true, worldbook: result.worldbook }
       }
-      if (method === 'updateTavernHelperVariables') {
+      if (method === 'updateTavernHelperPrompts') {
+        mutateScriptPrompts(draft.chat, args.operation)
+      } else if (method === 'updateTavernHelperVariables') {
         const type = args.option?.type
         if (type === 'global') draft.globalVariables = copy(args.variables)
         else if (type === 'character') draft.characterVariables = copy(args.variables)
