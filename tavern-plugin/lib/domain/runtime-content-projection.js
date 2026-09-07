@@ -1,4 +1,4 @@
-import { projectDisplayParts, projectReplyHistory, projectReplyLayers } from './reply-presentation.js'
+import { projectDisplayParts, projectReplyHistory, projectReplyLayers, resolveDisplayIdentityMacros } from './reply-presentation.js'
 import { renderTavernMacros } from './tavern-macro-engine.js'
 import { applyTavernRegexText, renderTavernRegexDisplay } from './tavern-regex-display.js'
 
@@ -42,6 +42,8 @@ function contentProjection(value, options, preview, sanitizeForAgent) {
   const rendered = macroProjection(value, options)
   const renderedText = sanitizeForAgent ? sanitizeAgentProjectionText(rendered.text) : rendered.text
   const layers = projectReplyLayers(renderedText, {
+    charName: options && options.charName,
+    macroState: options && options.macroState,
     regexScripts: options && options.regexScripts,
     placement: options && options.regexPlacement,
     isEdit: options && options.isEdit,
@@ -110,8 +112,8 @@ export function projectOpeningPreview(value, options = {}) {
 
   const parts = []
   // Preserve body HTML while keeping regex-generated UI in a separate frame.
-  if (display.bodyText.trim()) parts.push(...openingPreviewParts(display.bodyText))
-  parts.push(...openingPreviewParts(display.presentationText))
+  if (display.bodyText.trim()) parts.push(...openingPreviewParts(resolveDisplayIdentityMacros(display.bodyText, options)))
+  parts.push(...openingPreviewParts(resolveDisplayIdentityMacros(display.presentationText, options)))
   return Object.assign({}, projection, { displayParts: parts })
 }
 

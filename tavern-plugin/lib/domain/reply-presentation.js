@@ -5,6 +5,14 @@ function str(value) {
   return typeof value === 'string' ? value : (value === undefined || value === null ? '' : String(value))
 }
 
+/** Display refreshes resolve identity only; never replay stateful/random macros. */
+export function resolveDisplayIdentityMacros(value, options = {}) {
+  return str(value).replace(/\{\{\s*(user|char)\s*\}\}/gi, (token, name) => {
+    if (name.toLowerCase() === 'user') return str(options.macroState?.userName) || '你'
+    return str(options.charName) || token
+  })
+}
+
 function isHtmlSource(value, info = '') {
   const content = str(value)
   const language = str(info).trim().split(/\s+/, 1)[0].toLowerCase()
@@ -205,6 +213,7 @@ export function projectReplyLayers(value, options = {}) {
   const scripts = Array.isArray(options.regexScripts) ? options.regexScripts : []
   const session = applyTavernRegexText(projectionText, scripts, targetOptions(options, false))
   const display = applyTavernRegexText(projectionText, scripts, targetOptions(options, true))
+  display.text = resolveDisplayIdentityMacros(display.text, options)
   const displayProjection = projectDisplayParts(display.text)
   const displayMode = displayProjection.parts.some(part => part.kind === 'html') ? 'html' : 'markdown'
 

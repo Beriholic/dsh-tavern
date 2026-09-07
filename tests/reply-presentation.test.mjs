@@ -321,3 +321,17 @@ test('命定之诗 gametxt 正文标记不创建 iframe，后续状态面板仍�
   assert.doesNotMatch(result.displayParts[0].text, /gametxt/)
   assert.doesNotMatch(result.displayParts[1].content, /第一段|第二段/)
 })
+
+test('正则生成的状态栏展开本局名称宏，保留原始记录及其他模板语法', () => {
+  const source = '正文\n[状态]'
+  const macros = { userName: '测试玩家', local: { count: 1 } }
+  const options = { charName: '测试卡', macroState: macros, regexScripts: [script('状态栏', '\\[状态\\]', '<div>主角：{{user}}；角色：{{ CHAR }}；{{value}}；{{incvar::count}}</div>', { markdownOnly: true })] }
+  const result = projectReplyLayers(source, options)
+  assert.equal(result.sessionText, source)
+  assert.equal(result.sourceText, source)
+  assert.match(result.displayText, /主角：测试玩家；角色：测试卡/)
+  assert.match(result.displayText, /\{\{value\}\}；\{\{incvar::count\}\}/)
+  assert.equal(macros.local.count, 1)
+  const history = projectReplyHistory([{ role: 'assistant', turn: 1, text: source, sourceText: source }], options)
+  assert.match(history.projections[0].parts.find(p => p.kind === 'html').content, /主角：测试玩家/)
+})

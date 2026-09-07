@@ -1059,6 +1059,8 @@ export async function apply(ctx) {
       })
       const presetRegexScripts = Array.isArray(activePresetSnapshot && activePresetSnapshot.regexScripts) ? activePresetSnapshot.regexScripts : []
       replyDisplay = projectRuntimeReplyHistory(chat.messages, {
+        charName: chat.cardName,
+        macroState: chat.macroState,
         regexScripts: (Array.isArray(cardExtensions.regexScripts) ? cardExtensions.regexScripts : []).concat(presetRegexScripts),
         placement: 2,
         isMarkdown: true,
@@ -3398,6 +3400,8 @@ export async function apply(ctx) {
           const extensions = await readCardExtensions(editorChat.cardPath)
           projector = function (message) {
             return projectRuntimeReply(str(message.sourceText) || str(message.text), {
+              charName: sourceChat.cardName,
+              macroState: sourceChat.macroState,
               projectionText: Object.prototype.hasOwnProperty.call(message, 'projectionText') ? str(message.projectionText) : (str(message.sourceText) || str(message.text)),
               regexScripts: Array.isArray(extensions && extensions.regexScripts) ? extensions.regexScripts : [],
               placement: 2,
