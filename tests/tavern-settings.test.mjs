@@ -203,7 +203,7 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
     compatibilityMode: true,
     webSearchEnabled: false,
     backgroundModel: null,
-    backgroundTasks: { posture: true, characterDesign: false },
+    backgroundTasks: { posture: true, characterDesign: false, variables: true },
     trustedCardMode: true,
     systemPrompts: [{ name: 'story', text: '内置正文提示词', customized: false }],
     storyPrompt: '内置正文提示词',
@@ -217,7 +217,7 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
     compatibilityMode: true,
     webSearchEnabled: false,
     backgroundModel: null,
-    backgroundTasks: { posture: true, characterDesign: false },
+    backgroundTasks: { posture: true, characterDesign: false, variables: true },
     trustedCardMode: true,
     systemPrompts: [{ name: 'story', text: '用户正文提示词', customized: true }],
     storyPrompt: '用户正文提示词',
@@ -268,11 +268,11 @@ test('单项系统提示词保存和恢复不会影响其他项', function () {
 })
 
 
-test('后台任务设置默认姿势开设计关，独立修改并持久化，变量不能关闭', async t => {
+test('后台任务设置默认姿势开设计关，独立修改并持久化，变量默认开启且允许关闭', async t => {
   const run = await settingsHarness(t)
-  assert.deepEqual((await run.read()).backgroundTasks, { posture: true, characterDesign: false })
+  assert.deepEqual((await run.read()).backgroundTasks, { posture: true, characterDesign: false, variables: true })
   await run.update({ backgroundTasks: { posture: false, variables: false } })
   await run.update({ backgroundTasks: { characterDesign: true } })
-  assert.deepEqual((await run.read()).backgroundTasks, { posture: false, characterDesign: true })
-  assert.deepEqual((await run.saved()).backgroundTasks, { posture: false, characterDesign: true })
+  assert.deepEqual((await run.read()).backgroundTasks, { posture: false, characterDesign: true, variables: false })
+  assert.deepEqual((await run.saved()).backgroundTasks, { posture: false, characterDesign: true, variables: false })
 })

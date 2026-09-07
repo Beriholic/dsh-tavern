@@ -1707,7 +1707,7 @@ export async function apply(ctx) {
         let text = ''
         let result = null
         let mvuResult = null
-        if (mvuTarget !== null) {
+        if (mvuTarget !== null && (backgroundTasksSettings.variables !== false || mvuTarget.message.mvu.pendingSubmission)) {
           const settlementInput = {
             backgroundTasks: backgroundTasksSettings,
             operationId: taskRun.operationId,
@@ -1825,6 +1825,12 @@ export async function apply(ctx) {
           apply(draft) {
             if (mvuResult && mvuResult.effect) applyMvuSettlementEffect(draft, mvuResult.effect)
             stat = applySettlement(draft, result)
+            if (mvuTarget && mvuResult === null && backgroundTasksSettings.variables === false) {
+              const target = draft.messages[mvuTarget.messageId]
+              if (target && Math.max(0, Number(target.swipeId) || 0) === mvuTarget.swipeId) {
+                target.mvu = { ...target.mvu, pending: false, receipt: { version: 1, status: 'skipped', summary: '变量结算已关闭，本轮未更新变量。', changes: [], sideEffects: [], failures: [] } }
+              }
+            }
             if (mvuResult !== null) {
               const target = draft.messages[mvuTarget.messageId]
               if (target && target.role === 'assistant' && Math.max(0, Number(target.swipeId) || 0) === mvuTarget.swipeId) {
