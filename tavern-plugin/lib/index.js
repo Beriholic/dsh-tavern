@@ -98,6 +98,7 @@ import { resolveTavernDataRoot } from './domain/tavern-data.js'
 import { createTavernSkillModule } from './domain/tavern-skills.js'
 import { createTavernConversationRegistry } from './domain/tavern-conversation-registry.js'
 import { applyTavernRegexText } from './domain/tavern-regex-display.js'
+import { installTavernTokenMeter } from './domain/tavern-token-meter.js'
 import { createTavernCompactionCoordinator } from './domain/tavern-compaction.js'
 import { cordisToolNames, createTurnOrchestrator, dshFileToolNames } from './domain/turn-orchestration.js'
 import { resourceWorkspaceContext } from './domain/workspace-resources.js'
@@ -121,6 +122,7 @@ export async function apply(ctx) {
   const llm = ctx.get('llm')
   const agentRegistry = ctx.get('agents')
   const sessionStore = ctx.get('sessions')
+  ctx.effect(() => installTavernTokenMeter(ctx.get('tokenMeter')))
   if (llm === undefined || agentRegistry === undefined || sessionStore === undefined) {
     console.error('dsh-tavern: 缺少 llm、agents 或 sessions 服务')
     return
