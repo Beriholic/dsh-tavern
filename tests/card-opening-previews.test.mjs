@@ -116,3 +116,15 @@ test('普通人物卡无需伪造 MVU Helper 上下文', async () => {
   assert.deepEqual(result.openings[0].projection.parts, [{ kind: 'markdown', text: '你好，小明。' }])
   assert.equal(result.openings[0].helperContext, null)
 })
+
+test('交互式首页保留视频和选择脚本，原始 swipe 索引映射到原生开场', async () => {
+  const card = { name: '测试首页', first_mes: 'HOME', alternate_greetings: ['', '安全的第二幕'] }
+  const extensions = { regexScripts: [{ enabled: true, findRegex: 'HOME', placement: [2], markdownOnly: true,
+    replaceString: '<video controls src="https://example.com/opening.mp4"></video><button>选择开场</button><script>async function choose(){await waitGlobalInitialized("Mvu");const messages=getChatMessages("0",{include_swipe:true});await setChatMessage(messages[0].swipes[2],0,{swipe_id:2});}</script>' }] }
+  const result = await projectCardOpeningPreviews({ card, extensions })
+  assert.match(JSON.stringify(result.openings[0].projection.parts), /<video/)
+  assert.match(JSON.stringify(result.openings[0].projection.parts), /setChatMessage/)
+  assert.deepEqual(result.openings[0].openingPreview.openingIds, ['primary', null, 'alternate:1'])
+  assert.deepEqual(result.openings[0].openingPreview.swipes, ['HOME', '', '安全的第二幕'])
+  assert.equal(result.openings[0].helperContext, null)
+})

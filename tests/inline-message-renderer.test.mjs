@@ -1602,3 +1602,46 @@ test('变量更新回执按正文轮次定位，避免展示到错误消息下�
   assert.equal(client.tavernMvuReceiptForTurn(view, 3), second)
   assert.equal(client.tavernMvuReceiptForTurn(view, 4), null)
 })
+
+test('开场 iframe 只选择现有 swipe，不伪造 MVU 或修改正式消息', async () => {
+  const preview = { swipes: ['首页', '', '海边开场'], openingIds: ['primary', null, 'alternate:1'], selectedIndex: 0 }
+  const document = client.buildTavernFrameDocument({ content: '<video controls></video>', token: 'preview-token', openingPreview: preview })
+  assert.match(document, /jquery\/jquery.min.js/)
+  const script = document.match(/<script data-dsh-tavern-opening-preview>([\s\S]*?)<\/script>/)[1]
+  const messages = [], listeners = new Map(), parent = { postMessage(data) { messages.push(data) } }
+  const window = {}
+  vm.runInNewContext(script, { window, parent, addEventListener: (name, fn) => listeners.set(name, fn), setTimeout, clearTimeout, console })
+  assert.equal(window.Mvu, undefined)
+  assert.equal(window.getChatMessages('0', { include_swipe: true })[0].swipes[2], '海边开场')
+  await assert.rejects(window.setChatMessage('篡改正文', 0, { swipe_id: 2 }), /已有开场/)
+  await assert.rejects(window.setChatMessages([{ message_id: 0, swipe_id: 1 }]), /已有开场/)
+  await assert.rejects(window.setChatMessages([{ message_id: 0, swipe_id: 2, data: { hp: 99 } }]), /已有开场/)
+  const done = window.setChatMessage('海边开场', 0, { swipe_id: 2, refresh: 'display_and_render_current' })
+  assert.equal(messages.length, 1)
+  assert.equal(messages[0].swipeId, 2)
+  listeners.get('message')({ source: parent, data: { type: 'dsh-tavern-opening-response', token: 'preview-token', requestId: messages[0].requestId, ok: true } })
+  await done
+  assert.equal(window.getChatMessages('0')[0].swipe_id, 2)
+  assert.equal(client.openingPreviewSelection(preview, 2), 'alternate:1')
+  for (const index of [-1, 1, 9, 1.5, '2']) assert.throws(() => client.openingPreviewSelection(preview, index), /不存在/)
+})
+
+test('开场选择经过当前 iframe 来源校验，不调用 Session RPC，卸载后旧页面失效', () => {
+  const listeners = new Map(), chosen = [], replies = []
+  const frame = { contentWindow: { postMessage(data) { replies.push(data) } } }
+  const host = { sessionStorage: { getItem() { return null }, setItem() {} }, document: null, setTimeout, clearTimeout,
+    addEventListener(name, fn) { listeners.set(name, fn) }, removeEventListener(name) { listeners.delete(name) } }
+  const lifecycle = client.createTavernMessageFrameLifecycle({ sessionId: '', content: '<button>选择开场</button>', turn: 1,
+    openingPreview: { swipes: ['首页', '海边'], openingIds: ['primary', 'alternate:0'], selectedIndex: 0 },
+    onSelectOpening: id => chosen.push(id)
+  }, { window: host, rpc() { throw Error('预览不得写入 Session') } })
+  const doc = lifecycle.snapshot().visibleDocument; doc.ref(frame)
+  const stop = lifecycle.start(() => {}), receive = listeners.get('message')
+  const data = { type: 'dsh-tavern-opening-select', token: doc.token, requestId: '1', swipeId: 1 }
+  receive({ source: {}, data }); assert.equal(chosen.length, 0)
+  receive({ source: frame.contentWindow, data }); assert.deepEqual(chosen, ['alternate:0'])
+  receive({ source: frame.contentWindow, data: { ...data, swipeId: 999 } }); assert.equal(replies.at(-1).ok, false)
+  lifecycle.update({ sessionId: '', content: '<button>另一张卡</button>', turn: 1, openingPreview: { swipes: ['新首页', '新开场'], openingIds: ['primary', 'alternate:0'], selectedIndex: 0 }, onSelectOpening: id => chosen.push(id) })
+  receive({ source: frame.contentWindow, data }); assert.equal(chosen.length, 1, '旧预览不能切换新卡的开场')
+  stop(); assert.equal(listeners.has('message'), false)
+})

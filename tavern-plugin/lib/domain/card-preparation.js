@@ -48,6 +48,11 @@ function rawOf(value) {
   return isWorkspace(value) ? value.raw : value
 }
 
+// Greeting positions are external script addresses, including empty and duplicate slots.
+function normalizedGreetings(value, limit) {
+  return (Array.isArray(value) ? value : []).slice(0, limit).map(str)
+}
+
 function normalizedList(value, limit) {
   const result = []
   for (const item of Array.isArray(value) ? value : []) {
@@ -229,7 +234,7 @@ function projectedCard(value) {
     mes_example: str(data.mes_example),
     system_prompt: str(data.system_prompt),
     post_history_instructions: str(data.post_history_instructions),
-    alternate_greetings: normalizedList(data.alternate_greetings, 1000),
+    alternate_greetings: normalizedGreetings(data.alternate_greetings, 1000),
     creator_notes: str(data.creator_notes),
     tags: normalizedList(data.tags, 1000),
     character_book: clone(book),
@@ -395,7 +400,7 @@ export function createCardPreparation(options = {}) {
       for (const field of TEXT_FIELDS) data[field] = str(draft[field])
       data.name = str(draft.name).trim()
       data.tags = normalizedList(draft.tags, 30)
-      data.alternate_greetings = normalizedList(draft.alternate_greetings, 20)
+      data.alternate_greetings = normalizedGreetings(draft.alternate_greetings, 20)
       if (object(draft.character_book)) data.character_book = clone(draft.character_book)
       const notes = str(data.creator_notes).trim()
       const provenance = '[卡片工作台] ' + (Array.isArray(request.sourcePaths) ? request.sourcePaths.join(',') : (Array.isArray(request.sourceIds) ? request.sourceIds.join(',') : '')) + '\n[玩家] ' + (player || '未确认（旧会话）')
@@ -443,7 +448,7 @@ export function createCardPreparation(options = {}) {
       }
       if (Object.prototype.hasOwnProperty.call(patch, 'alternate_greetings')) {
         if (!Array.isArray(patch.alternate_greetings)) throw new Error('人物卡字段 alternate_greetings 必须是数组')
-        const value = normalizedList(patch.alternate_greetings, 20)
+        const value = normalizedGreetings(patch.alternate_greetings, 20)
         if (JSON.stringify(card.alternate_greetings || []) !== JSON.stringify(value)) { card.alternate_greetings = value; changedFields.push('alternate_greetings') }
       }
       if (Object.prototype.hasOwnProperty.call(patch, 'character_book')) {
@@ -477,7 +482,7 @@ export function createCardPreparation(options = {}) {
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'alternate_greetings')) {
       if (!Array.isArray(patch.alternate_greetings)) throw new Error('人物卡字段 alternate_greetings 必须是数组')
-      const value = normalizedList(patch.alternate_greetings, 1000)
+      const value = normalizedGreetings(patch.alternate_greetings, 1000)
       if (JSON.stringify(viewBefore.alternate_greetings || []) !== JSON.stringify(value)) { data.alternate_greetings = value; changedFields.push('alternate_greetings') }
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'character_book')) {

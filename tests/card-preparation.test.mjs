@@ -395,3 +395,20 @@ test('对话投影只暴露可编辑人物卡字段', () => {
   assert.equal(editable.id, undefined)
   assert.equal(editable.importedAt, undefined)
 })
+
+test('备用开场保留空槽、重复正文和空白，以保持脚本 swipe 索引', () => {
+  const cards = moduleUnderTest()
+  const greetings = ['', ' 海边 ', ' 海边 ', '山间']
+  const card = cards.create({ kind: 'import', payload: { kind: 'text', text: JSON.stringify({ name: '开场索引', first_mes: '首页', alternate_greetings: greetings }) } })
+  assert.deepEqual(cards.project(card).alternate_greetings, greetings)
+  const updated = cards.update({ kind: 'card', card, patch: { alternate_greetings: greetings } })
+  assert.deepEqual(cards.project(updated.card).alternate_greetings, greetings)
+})
+
+
+test('迁移旧去重投影时仍保留原卡开场槽位', () => {
+  const cards = moduleUnderTest()
+  const original = { name: '旧开场卡', alternate_greetings: ['', '海边', '海边', '山间'] }
+  const migrated = cards.migrate({ working: { name: '旧开场卡', alternate_greetings: ['海边', '山间'] }, payload: { kind: 'text', text: JSON.stringify(original) } })
+  assert.deepEqual(cards.project(migrated).alternate_greetings, original.alternate_greetings)
+})
