@@ -736,7 +736,7 @@ test('消息 iframe 测高忽略被裁剪内容与固定悬浮元素', () => {
     }
   }
 
-  const root = { scrollHeight: 2304, parentElement: null }
+  const root = { toggleAttribute() {}, scrollHeight: 2304, parentElement: null }
   const body = element({ top: 0, bottom: 1761, parent: root })
   body.scrollHeight = 1761
   const clippedContainer = element({ top: 1419, bottom: 1443, overflow: 'hidden', parent: body })
@@ -771,7 +771,7 @@ test('消息 iframe 测高包含末尾折叠外边距，避免正文末尾被裁
   const reporter = reporters.at(-1)
   assert.ok(reporter)
 
-  const root = { scrollHeight: 1820, parentElement: null }
+  const root = { toggleAttribute() {}, scrollHeight: 1820, parentElement: null }
   const body = {
     parentElement: root,
     scrollHeight: 1800,
@@ -1694,7 +1694,8 @@ test('收起的 details 隐藏内容不撑高 iframe，展开后恢复测高', (
   const html = client.buildTavernFrameDocument({ content: '<details><summary>变量更新情况</summary><pre>数据</pre></details>', token: 'details-height' })
   const reporter = Array.from(html.matchAll(/<script data-dsh-tavern-frame>([\s\S]*?)<\/script>/g)).at(-1)[1]
   const style = { position: 'static', overflow: 'visible', marginBottom: '0' }
-  const root = {}
+  let scrollEnabled = false
+  const root = { toggleAttribute(name, enabled) { assert.equal(name, "data-dsh-tavern-scroll"); scrollEnabled = enabled } }
   const node = (bottom, parentElement) => ({ parentElement, style, getBoundingClientRect: () => ({ top: 0, bottom, width: 100, height: bottom }) })
   const body = node(24, root); body.scrollHeight = 24
   const details = node(24, body); details.tagName = 'DETAILS'; details.open = false
@@ -1710,7 +1711,9 @@ test('收起的 details 隐藏内容不撑高 iframe，展开后恢复测高', (
     ResizeObserver: class { observe() {} }, MutationObserver: class { observe() {} },
     requestAnimationFrame: callback => callback(), addEventListener() {},
   })
-  run(); assert.equal(height, 48)
+  run(); assert.equal(height, 48); assert.equal(scrollEnabled, false)
   details.open = true
-  run(); assert.equal(height, 3656)
+  run(); assert.equal(height, 3656); assert.equal(scrollEnabled, true)
+  assert.match(html, /html\[data-dsh-tavern-scroll\]\{overflow-y:auto!important\}/)
+  assert.match(html, /html\[data-dsh-tavern-scroll\] body\{overflow-y:visible!important\}/)
 })

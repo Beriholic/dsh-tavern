@@ -148,4 +148,13 @@ function installSessionOpeningBridge(token, descriptor) {
       return starting;
     }
   });
+  window.setChatMessage = async function (message, messageId, options) {
+    const index = options && options.swipe_id;
+    if (Number(messageId) !== 0 || !Number.isInteger(index) || message !== swipes[index]) throw new Error('只能选择人物卡已有开场');
+    chat[0].swipe_id = index;
+    chat[0].mes = message;
+    await window.SillyTavern.saveChat();
+    return window.SillyTavern.reloadCurrentChat();
+  };
+
 }

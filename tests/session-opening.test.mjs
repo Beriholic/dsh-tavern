@@ -9,7 +9,7 @@ import { inspectWorldBookDocument } from '../tavern-plugin/lib/domain/worldbook-
 const card = { name: '测试卡', first_mes: '【首页】', alternate_greetings: ['实际开场'] }
 const initial = () => ({ id: 'old-chat', sessionId: 'old-session', cardPath: 'card', mode: 'story', messages: [{ role: 'assistant', text: '【首页】', sourceText: '【首页】', greeting: true }], macroState: { userName: '玩家' } })
 
-test('正式首页的原样 saveChat/reloadCurrentChat 调用保存选项后打开原生新会话', async () => {
+for (const method of ['saveChat', 'setChatMessage']) test('正式首页开场切换进入原生新会话：' + method, async () => {
   const chat = initial(), original = structuredClone(chat)
   const sourceBook = { name: '本局世界书', entries: [{ id: 1, name: '选中的核心', content: '规则', enabled: true }] }
   const preparation = createOpeningPreparation({ readCard: async () => card, worldBooks: { bound: async (_path, _card, source) => {
@@ -37,10 +37,14 @@ test('正式首页的原样 saveChat/reloadCurrentChat 调用保存选项后打�
   assert.ok(script, '正式消息必须加载开场宿主接口')
   vm.runInNewContext(script[1], w)
   // Same host calls used by the card's StartPage.
+  if (method === 'setChatMessage') {
+    await w.setChatMessage('实际开场', 0, { swipe_id: 1, refresh: 'display_and_render_current' })
+  } else {
   w.SillyTavern.chat[0].swipe_id = 1
   w.SillyTavern.chat[0].mes = w.SillyTavern.chat[0].swipes[1]
   await w.SillyTavern.saveChat()
   await Promise.all([w.SillyTavern.reloadCurrentChat(), w.SillyTavern.reloadCurrentChat()])
+  }
   assert.equal(starts, 1)
   assert.equal(opened, 'new-session')
   assert.equal(created.preparation.openingId, 'alternate:0')
