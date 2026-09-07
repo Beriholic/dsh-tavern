@@ -115,11 +115,11 @@ test('预设库明确建议内置预设，并说明改卡、Guide 与外部预�
     appendMention() {}
   })
   const rendered = JSON.stringify(registration.component({ scope: { sessionId: 'play-session' } }))
-  assert.match(rendered, /建议保留内置预设/)
-  assert.match(rendered, /优先在卡片模式中写入人物卡，或在游玩中通过 Guide 注入要求/)
-  assert.match(rendered, /外部预设会参与前台请求并可能改变系统行为/)
+  assert.match(rendered, /一般用内置设置就够了/)
+  assert.match(rendered, /在卡片模式里让 Agent 修改人物卡/)
+  assert.match(rendered, /外部预设也会影响模型怎么写/)
   assert.match(rendered, /不使用外部预设（默认）/)
-  assert.match(rendered, /效果可能与原酒馆不同/)
+  assert.match(rendered, /用起来不一定是原来的效果/)
   assert.doesNotMatch(rendered, /实验性|除非坚持|破限效果/)
 })
 
