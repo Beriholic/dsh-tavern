@@ -4504,7 +4504,11 @@ window.__ModuleLoader__.load({
 						name: "conversation.chat.node",
 						key: "assistant-step",
 						priority: -1
-					}, function (props) { return React.createElement(TavernAssistantNodeView, Object.assign({}, props, { executeSlash: executeSlash })); }); });
+					}, function (props) {
+						// Hide only our model-facing seed; keep it in Session history and requests.
+						if (props.node.data.finalNode && /^tavern-seed-trajectory:v1:.+:2$/.test(String(props.node.data.finalNode.messageId || ""))) return null;
+						return React.createElement(TavernAssistantNodeView, Object.assign({}, props, { executeSlash: executeSlash }));
+					}); });
 				}, "dsh-tavern: inline assistant renderer");
 				input.ctx.effect(function () {
 					return input.slots.inject("conversation.chat.node", function () { return input.slots.register({

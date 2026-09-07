@@ -31,6 +31,11 @@ test('正式消息 renderer 使用原生 Markdown、完整标签参数，并只�
     else if (value && typeof value === 'object') { if (value.tag === 'MarkdownText' || value.tag === client.TavernMessageFrame) result.push(value); else leaves(value.children, result) }
     return result
   }
+  const seedProps = { ...props, node: { ...props.node, data: { ...props.node.data,
+    finalNode: { seq: 1, messageId: 'tavern-seed-trajectory:v1:fixture:2' }
+  } } }
+  assert.equal(Assistant(seedProps), null, 'model-only seed reply must not render in player chat')
+  assert.equal(Assistant({...seedProps, sessionId:'forked-session'}), null, 'forks retain original seed message ids')
   const registered = Assistant(props)
   const rendered = registered && typeof registered.tag === 'function'
     ? registered.tag(registered.props)
