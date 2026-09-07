@@ -1228,6 +1228,12 @@ window.__ModuleLoader__.load({
 				scheduled = false;
 				if (disposed || !document.body) return;
 				observer.disconnect();
+				// Cancel author transitions while restoring/measuring; otherwise computed font
+				// sizes can still be the previous scaled frame, which compounds on each update.
+				const measurementStyle = document.createElement("style");
+				measurementStyle.setAttribute("data-dsh-tavern-font-measure", "");
+				measurementStyle.textContent = "*,*::before,*::after{transition:none!important}";
+				document.head.appendChild(measurementStyle);
 				try {
 					restore(document.body);
 					const ratio = fontSize / 14;
@@ -1250,7 +1256,13 @@ window.__ModuleLoader__.load({
 						saved.applied = names.map(function (name) { return node.style.getPropertyValue(name); });
 						node.setAttribute("data-dsh-tavern-font-original", JSON.stringify(saved));
 					});
-				} finally { observe(); }
+				} finally {
+					// Flush the final values before restoring transitions, so the adapter itself
+					// does not start another interpolation from the temporary unscaled state.
+					void getComputedStyle(document.body).fontSize;
+					measurementStyle.remove();
+					observe();
+				}
 			}
 			function receive(event) {
 				const data = event.data;
