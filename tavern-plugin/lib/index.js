@@ -1293,6 +1293,7 @@ export async function apply(ctx) {
     }
   })
   const chatHistoryImporter = createChatHistoryImportService({
+    planner: contextPlanner,
     initialization: conversationInitialization,
     cards: { read: readCard }, worldBooks, store: profileData,
     chats: { resolve: chatForSession, publish: conversationRegistry.publish, read: readChat, readRevision: readChatRevision, write: rawWriteChat },

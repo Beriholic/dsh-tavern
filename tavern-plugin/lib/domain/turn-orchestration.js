@@ -151,7 +151,7 @@ function presetMiddleInstructions(snapshot) {
   })
 }
 
-function foregroundFrameInputs(plan, sourceText, projectedText, presetSnapshot, chat) {
+export function foregroundFrameInputs(plan, sourceText, projectedText, presetSnapshot, chat) {
   const inputs = [{
     kind: 'foreground.user-input',
     sourceText,

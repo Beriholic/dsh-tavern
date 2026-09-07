@@ -79,6 +79,7 @@ export async function createInitializationNative(bootPath) {
         flush: session => target.agent ? ctx.sessions.flush(session) : flush(session) }
     })
     importer = createChatHistoryImportService({ initialization, cards: { read: async () => card }, worldBooks: { bound: async () => null }, store: data,
+      planner: createContextPlanner({ prompt: () => 'Native fixture writing rules' }),
       chats: { resolve: registry.resolve, publish: registry.publish, read: persistence.read, readRevision: persistence.readRevision, write: persistence.write },
       native: { wait: async () => target, ensurePrefix: (session, text) => ensureSessionStablePrefix(session, text, storage), flush } })
     return initialization

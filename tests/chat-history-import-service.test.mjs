@@ -1,4 +1,5 @@
 import test from 'node:test'
+import { createContextPlanner } from '../tavern-plugin/lib/domain/context-planner.js'
 import assert from 'node:assert/strict'
 import { Session } from './fixtures/dsh-session-host.mjs'
 import { createChatHistoryImportService } from '../tavern-plugin/lib/domain/chat-history-import-service.js'
@@ -16,7 +17,7 @@ function fixture() {
  const chats={resolve:async id=>clone(links.get(id)),read:async id=>clone(records.get(id)),readRevision:async(id,revision)=>clone(history.get(revision)),
   write:async chat=>{ const saved={...clone(chat),_storageRevision:(records.get(chat.id)?._storageRevision||0)+1};records.set(chat.id,saved);history.set(saved._storageRevision,clone(saved));return clone(saved)},
   publish:async chat=>{publishes++;await chats.write(chat);links.set(chat.sessionId,clone(chat))}}
- const options={cards:{read:async()=>({name:'card'})},worldBooks:{bound:async()=>({view:{entries:[{comment:'[initvar]',content:'hp: 10'}]}})},
+ const options={planner:createContextPlanner({prompt:()=> 'Fixture writing rules'}),cards:{read:async()=>({name:'card'})},worldBooks:{bound:async()=>({view:{entries:[{comment:'[initvar]',content:'hp: 10'}]}})},
  store:{readJson:async p=>clone(journals.get(p)),writeJson:async(p,v)=>journals.set(p,clone(v))},chats,
  initialization:{prepareImport:async()=>timeline.apply({chat:{id:'chat',sessionId:'session',messages:[],mvu:{enabled:true},scriptState:null,cardContextSnapshot:'rules'},intent:{kind:'ensure'}}).chat},
  native:{wait:async()=>({session,agent:{phase}}),ensurePrefix:async()=>{},flush:async()=>{if(failFlush){failFlush=false;throw Error('offline')}}}}
@@ -35,7 +36,7 @@ test('import uses normal storage revision checkpoints, keeps no pending settleme
  assert.equal(chat.messages.at(-1).variables[0].stat_data.hp,8)
  await service.import(input)
  assert.equal(h.publishes,1)
- assert.equal(h.session.deriveMessages().length,5)
+ assert.equal(h.session.deriveMessages().filter(m=>m.source?.form!=='foreground-frame').length,5)
 })
 test('after flush failure a fresh coordinator resumes durable plan without duplicate native messages',async()=>{
  const h=fixture();h.fail()

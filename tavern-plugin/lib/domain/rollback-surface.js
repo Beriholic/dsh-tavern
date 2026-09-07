@@ -125,7 +125,9 @@ export function locateRollbackSurface(input) {
   let userIndex = -1
   for (let index = nodes.length - 1; index >= 0; index -= 1) {
     const event = eventAt(events, nodes[index])
-    if (event && event.type === 'user/message' && !isRollbackUserTombstone(event)) {
+    const source = event?.data?.source
+    const isFrame = source?.kind === 'plugin' && source.plugin === 'dsh-tavern' && source.form === 'foreground-frame'
+    if (event && event.type === 'user/message' && !isFrame && !isRollbackUserTombstone(event)) {
       userIndex = index
       break
     }

@@ -1,4 +1,7 @@
 import { sessionEvents } from './session-events.js'
+import { createForegroundFrameBuilder } from './agent-input-frame.js'
+import { createForegroundFrameSessionAdapter } from './foreground-frame-session-adapter.js'
+import { foregroundFrameInputs } from './turn-orchestration.js'
 
 const clone = value => structuredClone(value)
 
@@ -18,7 +21,9 @@ function nativeMessages(messages) {
 }
 
 /** Build replayable native events and compact checkpoints without running any Agent. */
-export function buildImportedConversation(chat, parsed, { operationId, fileName = '', initialVariables, textOnly = false, now = Date.now() }) {
+export function buildImportedConversation(chat, parsed, { operationId, fileName = '', initialVariables, textOnly = false, framePlan, now = Date.now() }) {
+  if (!framePlan?.text?.trim()) throw new Error('导入缺少原生正文任务指令')
+  const frameBuilder = createForegroundFrameBuilder()
   const events = []
   let turn = 0
   let pendingUsers = [], roundStart = 0
@@ -47,6 +52,15 @@ export function buildImportedConversation(chat, parsed, { operationId, fileName 
       message.turn = turn
       if (index === 0) message.greeting = true
       if (pendingUsers.length) {
+        const userText = pendingUsers.join('\n\n')
+        const frame = frameBuilder.build({ chatId: chat.id, branchId: chat.timeline.branchId,
+          basedOnRevision: chat.timeline.revision, operationId: `import:${operationId}:${turn}`, turn,
+          inputs: foregroundFrameInputs(framePlan, userText, userText, chat.runtimePresetSnapshot, chat),
+          source: { importSource: message.importSource } })
+        const adapted = createForegroundFrameSessionAdapter({ id: () => `tavern-import-frame:${operationId}:${turn}` })
+          .append({ messages: [], frame, step: 1 })
+        events.push({ type: 'turn/start', data: { turn } }, { type: 'step/start', data: { turn, step: 1 } })
+        for (const context of adapted.messages) events.push({ type: 'user/message', data: context, intent: { surfaceOp: 'append' } })
         chat.timeline.checkpoints.push({ id: `import-checkpoint:${operationId}:${turn}`, turn, userText: pendingUsers.join('\n\n'),
           importMessageCount: roundStart, importBefore: { scriptState: clone(chat.scriptState), posture: '', candidates: null,
             settleStatus: 'done', settleError: null, lastSettle: null, preparedWorldBookContext: '', preparedWorldBook: null, participants: beforeParticipants },
@@ -54,7 +68,8 @@ export function buildImportedConversation(chat, parsed, { operationId, fileName 
         chat.timeline.checkpoints = chat.timeline.checkpoints.slice(-40)
         chat.timeline.revision++
       }
-      events.push({ type: 'turn/start', data: { turn } }, { type: 'step/start', data: { turn, step: 1 } },
+      if (!pendingUsers.length) events.push({ type: 'turn/start', data: { turn } }, { type: 'step/start', data: { turn, step: 1 } })
+      events.push(
         { type: 'assistant/message', data: { turn, step: 1, message: { id: messageId, role: 'assistant', content: [{ type: 'text', text: row.text }],
           source: { kind: 'model', provider: 'dsh-tavern', model: 'chat-import', importSource: message.importSource } } }, intent: { surfaceOp: 'append', sourceEventSeqs: [] } },
         { type: 'step/end', data: { turn, step: 1 } }, { type: 'turn/end', data: { turn, reason: { kind: 'completed' } } })
