@@ -311,3 +311,13 @@ test('Windows 换行仍隔离面板并保留原始换行', () => {
   assert.deepEqual(parts.map(part => part.kind), ['markdown', 'html', 'markdown'])
   assert.equal(parts.map(part => part.text ?? part.content).join(''), source)
 })
+
+test('命定之诗 gametxt 正文标记不创建 iframe，后续状态面板仍隔离', () => {
+  const source = '<gametxt>\r\n第一段。\r\n\r\n*第二段。*\r\n</gametxt>\r\n<details><summary>变量</summary>更新</details>'
+  const result = projectReplyLayers(source)
+  assert.equal(result.sessionText, source)
+  assert.deepEqual(result.displayParts.map(part => part.kind), ['markdown', 'html'])
+  assert.match(result.displayParts[0].text, /第一段。[\s\S]*\*第二段。\*/)
+  assert.doesNotMatch(result.displayParts[0].text, /gametxt/)
+  assert.doesNotMatch(result.displayParts[1].content, /第一段|第二段/)
+})

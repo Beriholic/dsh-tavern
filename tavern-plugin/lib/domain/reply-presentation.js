@@ -120,15 +120,20 @@ function splitHtmlBoundaries(source) {
   return segments
 }
 
+// These are narrative protocol markers, not author-provided HTML UI containers.
 function unwrapNarrativeContent(value) {
-  const match = str(value).match(/^\s*<content>\s*\r?\n?([\s\S]*?)\r?\n?\s*<\/content>\s*$/i)
-  return match === null ? null : match[1]
+  const match = str(value).match(/^\s*<(content|gametxt)>\s*\r?\n?([\s\S]*?)\r?\n?\s*<\/\1>([\s\S]*)$/i)
+  return match === null ? null : { body: match[2], rest: match[3] }
 }
 
 function splitPlainSegment(value) {
   const source = str(value)
   const narrative = unwrapNarrativeContent(source)
-  if (narrative !== null) return splitPlainSegment(narrative)
+  if (narrative !== null) {
+    const parts = splitPlainSegment(narrative.body)
+    if (narrative.rest.trim()) parts.push(...splitPlainSegment(narrative.rest))
+    return parts.filter(part => (part.text ?? part.content).trim())
+  }
   if (!hasRawHtml(source)) return [{ kind: 'text', text: source }]
   try {
     // Protect Markdown code blocks before scanning; retain exact source offsets.
