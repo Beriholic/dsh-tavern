@@ -585,7 +585,9 @@ export async function apply(ctx) {
       write: async function (path, text) { return await fileResources.writeWorking(path, text) },
       bindingForCard: async function (cardPath) { return await fileResources.worldBookBindingForCard(cardPath) },
       bind: async function (cardPath, path) { return await fileResources.bindWorldBook(cardPath, path) },
-      unbind: async function (cardPath) { return await fileResources.unbindWorldBook(cardPath) }
+      unbind: async function (cardPath) { return await fileResources.unbindWorldBook(cardPath) },
+      listGlobal: async function () { return await fileResources.listGlobalWorldBooks() },
+      setGlobal: async function (path, enabled) { return await fileResources.setGlobalWorldBook(path, enabled) }
     },
     cards: {
       listPaths: async function () { return await fileResources.list('card') },
@@ -2468,6 +2470,8 @@ export async function apply(ctx) {
       case 'updateWorldBook': return await worldBooks.update(args && args.source, args && args.update)
       case 'exportWorldBook': return { worldBook: await worldBooks.export(args && args.source) }
       case 'deleteWorldBook': return await worldBooks.remove(args && args.path)
+      case 'toggleGlobalWorldBook': return await worldBooks.toggleGlobal(args && args.path, args && args.enabled)
+      case 'listGlobalWorldBooks': return { globalPaths: await worldBooks.listGlobal() }
       case 'listPresets': return await presetLibrary.catalog()
       case 'selectPreset': return await presetLibrary.select(args && args.path)
       case 'getPreset': return { preset: await presetLibrary.detail(args && args.path) }

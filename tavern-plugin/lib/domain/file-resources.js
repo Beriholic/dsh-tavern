@@ -120,6 +120,7 @@ export function createFileResourceStore(options = {}) {
   const markerPath = path.join(dataRoot, '.file-resources-v1.json')
   const bindingsPath = path.join(dataRoot, '.material-bindings.json')
   const worldBookBindingsPath = path.join(dataRoot, '.worldbook-bindings.json')
+  const globalWorldBooksPath = path.join(dataRoot, '.global-worldbooks.json')
   const durableFiles = options.files || createDurableFilePromotion(options.filePromotion)
   const mutations = options.mutations || createResourceMutationJournal({
     dataRoot,
@@ -345,6 +346,57 @@ export function createFileResourceStore(options = {}) {
     return { kind: 'none' }
   }
 
+  async function readGlobalWorldBooks() {
+    try {
+      const source = await durableFiles.read(globalWorldBooksPath)
+      if (source === undefined) return []
+      const value = JSON.parse(source.toString('utf8'))
+      return Array.isArray(value) ? value.filter(item => typeof item === 'string').map(p => normalizeResourcePath(p, 'worldbook')) : []
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return []
+      throw error
+    }
+  }
+
+  async function writeGlobalWorldBooks(paths) {
+    const list = Array.from(new Set((paths || []).map(p => normalizeResourcePath(p, 'worldbook'))))
+    await durableFiles.write(globalWorldBooksPath, JSON.stringify(list, null, 2))
+    return list
+  }
+
+  async function listGlobalWorldBooks() {
+    const rawList = await readGlobalWorldBooks()
+    const existing = []
+    let changed = false
+    for (const p of rawList) {
+      if (await exists(absolute(p))) {
+        existing.push(p)
+      } else {
+        changed = true
+      }
+    }
+    if (changed) {
+      await writeGlobalWorldBooks(existing)
+    }
+    return existing
+  }
+
+  async function setGlobalWorldBook(worldBookPath, enabled) {
+    const normalized = normalizeResourcePath(worldBookPath, 'worldbook')
+    if (enabled && !await exists(absolute(normalized))) {
+      throw new Error('世界书不存在: ' + normalized)
+    }
+    const current = await listGlobalWorldBooks()
+    const set = new Set(current)
+    if (enabled) {
+      set.add(normalized)
+    } else {
+      set.delete(normalized)
+    }
+    await writeGlobalWorldBooks(Array.from(set))
+    return Array.from(set)
+  }
+
   async function legacyScriptForCard(cardPath) {
     const normalized = normalizeResourcePath(cardPath, 'card')
     const stem = path.posix.basename(normalized, path.posix.extname(normalized))
@@ -531,6 +583,7 @@ export function createFileResourceStore(options = {}) {
             worldBookBindingsChanged = true
           }
         }
+        await setGlobalWorldBook(normalized, false)
       }
     }
     await mutations.run('remove-resource:' + normalized, async function (plan) {
@@ -631,6 +684,10 @@ export function createFileResourceStore(options = {}) {
     } else if (kind === 'worldbook') {
       for (const cardPath of Object.keys(worldBookBindings)) {
         if (worldBookBindings[cardPath] === oldPath) { worldBookBindings[cardPath] = newPath; worldBookBindingsChanged = true }
+      }
+      const globalBooks = await readGlobalWorldBooks()
+      if (globalBooks.includes(oldPath)) {
+        await writeGlobalWorldBooks(globalBooks.map(p => p === oldPath ? newPath : p))
       }
     }
     await mutations.run('rename-resource:' + oldPath, async function (plan) {
@@ -841,5 +898,5 @@ export function createFileResourceStore(options = {}) {
     return result
   }
 
-  return Object.freeze({ absolute, bindMaterial, bindWorldBook, cardsForMaterial, ensure, ensureCardWorkspace, hasCardImage, importCard, importText, importWorldBook, list, migrateLegacy, readCard, readCardImage, readText, remove, rename: renameResource, replaceScript, restoreCard, scriptBindingsForCards, scriptForCard, unbindMaterial, unbindWorldBook, worldBookBindingForCard, writeWorking })
+  return Object.freeze({ absolute, bindMaterial, bindWorldBook, cardsForMaterial, ensure, ensureCardWorkspace, hasCardImage, importCard, importText, importWorldBook, list, listGlobalWorldBooks, migrateLegacy, readCard, readCardImage, readText, remove, rename: renameResource, replaceScript, restoreCard, scriptBindingsForCards, scriptForCard, setGlobalWorldBook, unbindMaterial, unbindWorldBook, worldBookBindingForCard, writeWorking })
 }

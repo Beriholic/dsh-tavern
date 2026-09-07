@@ -23,6 +23,7 @@ function harness() {
     })]
   ])
   const bindings = new Map()
+  const globalBooks = new Set()
   const removed = []
   function normalize(path, kind) {
     const value = String(path || '')
@@ -52,16 +53,22 @@ function harness() {
         if (locator === null) bindings.delete(cardPath)
         else bindings.set(cardPath, locator)
       },
-      async unbind(cardPath) { bindings.set(cardPath, null) }
+      async unbind(cardPath) { bindings.set(cardPath, null) },
+      async listGlobal() { return Array.from(globalBooks) },
+      async setGlobal(path, enabled) {
+        if (enabled) globalBooks.add(path)
+        else globalBooks.delete(path)
+        return Array.from(globalBooks)
+      }
     },
     cards: {
       async listPaths() { return Array.from(cards.keys()) },
       async read(path) { return cards.has(path) ? clone(cards.get(path)) : undefined },
       async update(path, patch) { cards.set(path, Object.assign({}, cards.get(path), clone(patch))) }
     },
-    async removeStandalone(path) { files.delete(path); removed.push(path); return { removed: path } }
+    async removeStandalone(path) { files.delete(path); globalBooks.delete(path); removed.push(path); return { removed: path } }
   })
-  return { library, cards, files, bindings, removed }
+  return { library, cards, files, bindings, globalBooks, removed }
 }
 
 test('World Book Library 用同一 interface 投影独立与人物卡内嵌世界书', async () => {
@@ -244,3 +251,105 @@ test('人物卡导出读取绑定世界书并转换为 character_book', async ()
   assert.equal(book.entries[0].enabled, true)
   assert.equal(book.entries[0].id, 7)
 })
+
+test('独立世界书支持标记为全局生效与取消，并在目录和关联查询中体现', async () => {
+  const run = harness()
+
+  // 初始状态非全局
+  assert.equal(await run.library.isGlobal('worldbooks/王都.json'), false)
+  let catalog = await run.library.catalog()
+  assert.equal(catalog.standalone[0].global, false)
+  assert.deepEqual(catalog.globalPaths, [])
+
+  // 标记为全局
+  const result = await run.library.toggleGlobal('worldbooks/王都.json', true)
+  assert.equal(result.global, true)
+  assert.deepEqual(result.globalPaths, ['worldbooks/王都.json'])
+  assert.equal(await run.library.isGlobal('worldbooks/王都.json'), true)
+
+  // 目录和详情反映全局
+  catalog = await run.library.catalog()
+  assert.equal(catalog.standalone[0].global, true)
+  assert.deepEqual(catalog.globalPaths, ['worldbooks/王都.json'])
+
+  const bookDetail = await run.library.get({ kind: 'standalone', path: 'worldbooks/王都.json' })
+  assert.equal(bookDetail.global, true)
+
+  const assoc = await run.library.associations({ kind: 'standalone', path: 'worldbooks/王都.json' })
+  assert.equal(assoc.global, true)
+  assert.equal(assoc.conflict, false)
+
+  // 取消全局
+  const untoggled = await run.library.toggleGlobal('worldbooks/王都.json', false)
+  assert.equal(untoggled.global, false)
+  assert.deepEqual(untoggled.globalPaths, [])
+  assert.equal(await run.library.isGlobal('worldbooks/王都.json'), false)
+})
+
+test('全局世界书与人物卡世界书自动合成为复合世界书并按优先级排序', async () => {
+  const run = harness()
+  // 添加通用规则世界书（order: 200，比默认 100 优先级更高）
+  run.files.set('worldbooks/通用世界观.json', JSON.stringify({
+    name: '通用世界观',
+    entries: {
+      0: { uid: 0, comment: '魔法法则', content: '魔法需要消耗魔力。', disable: false, key: ['魔法'], order: 200, displayIndex: 1 }
+    }
+  }))
+
+  // 设为全局
+  await run.library.toggleGlobal('worldbooks/通用世界观.json', true)
+
+  // 1. 对于没有专属世界书的人物卡（空白），直接返回全局世界书
+  const emptyCardBound = await run.library.bound('cards/空白.json', run.cards.get('cards/空白.json'), null)
+  assert.ok(emptyCardBound)
+  assert.equal(emptyCardBound.view.displayName, '通用世界观')
+  assert.equal(emptyCardBound.view.entries.length, 1)
+  assert.equal(emptyCardBound.view.entries[0].content, '魔法需要消耗魔力。')
+
+  // 2. 对于有内置世界书的人物卡（命运，条目 order: 100），自动合成复合世界书
+  const fateCardBound = await run.library.bound('cards/命运.json', run.cards.get('cards/命运.json'), null)
+  assert.ok(fateCardBound)
+  assert.equal(fateCardBound.source.kind, 'composite')
+  assert.equal(fateCardBound.view.entries.length, 2)
+  // order 200 应该排在 order 100 前面
+  assert.equal(fateCardBound.view.entries[0].content, '魔法需要消耗魔力。')
+  assert.equal(fateCardBound.view.entries[1].content, '钟楼只在午夜开放。')
+
+  // 3. 同时再把王都设为全局，复合三个来源
+  await run.library.toggleGlobal('worldbooks/王都.json', true)
+  const tripleBound = await run.library.bound('cards/命运.json', run.cards.get('cards/命运.json'), null)
+  assert.equal(tripleBound.source.kind, 'composite')
+  assert.equal(tripleBound.view.entries.length, 3)
+})
+
+test('存在开局快照时复合世界书不重复叠加全局条目', async () => {
+  const run = harness()
+  run.files.set('worldbooks/通用世界观.json', JSON.stringify({
+    name: '通用世界观',
+    entries: {
+      0: { uid: 0, comment: '魔法法则', content: '魔法需要消耗魔力。', disable: false, key: ['魔法'], order: 200 }
+    }
+  }))
+  await run.library.toggleGlobal('worldbooks/通用世界观.json', true)
+
+  // 先获取复合世界书
+  const initial = await run.library.bound('cards/命运.json', run.cards.get('cards/命运.json'), null)
+  assert.equal(initial.view.entries.length, 2)
+
+  // 模拟游戏会话保存了开局快照
+  const chat = {
+    id: 'chat-123',
+    openingWorldbookSnapshot: {
+      version: 1,
+      source: initial.source,
+      document: initial.document
+    }
+  }
+
+  // 再次读取该 chat 的绑定世界书
+  const chatBound = await run.library.bound('cards/命运.json', run.cards.get('cards/命运.json'), chat)
+  // 不会重复合并全局条目，条目数仍是 2
+  assert.equal(chatBound.view.entries.length, 2)
+  assert.equal(chatBound.localChatId, 'chat-123')
+})
+

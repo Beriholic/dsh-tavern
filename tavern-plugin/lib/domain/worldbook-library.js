@@ -58,19 +58,42 @@ export function createWorldBookLibrary(options = {}) {
     }
   }
 
+  async function listGlobal() {
+    if (typeof resources.listGlobal !== 'function') return []
+    const paths = await resources.listGlobal()
+    return Array.isArray(paths) ? paths.map(function (p) { return normalizePath(p, 'worldbook') }) : []
+  }
+
+  async function isGlobal(path) {
+    const list = await listGlobal()
+    const normalized = normalizePath(path, 'worldbook')
+    return list.includes(normalized)
+  }
+
+  async function toggleGlobal(path, enabled) {
+    if (typeof resources.setGlobal !== 'function') throw new Error('当前环境不支持设置全局世界书')
+    const normalized = normalizePath(path, 'worldbook')
+    const nextList = await resources.setGlobal(normalized, enabled === true)
+    return { path: normalized, global: nextList.includes(normalized), globalPaths: nextList }
+  }
+
   async function get(locator) {
     const record = await readRecord(locator)
-    return { source: record.source, view: record.view }
+    const isGlob = record.source.kind === 'standalone' && (await isGlobal(record.source.path))
+    return { source: record.source, view: record.view, global: isGlob }
   }
 
   async function catalog() {
+    const globalList = await listGlobal()
+    const globalSet = new Set(globalList)
     const standaloneResults = await Promise.all((await resources.list('worldbook')).map(async function (path) {
       try {
         const record = await readRecord({ kind: 'standalone', path })
         return { row: {
           kind: 'standalone', path: record.source.path, name: record.view.displayName,
           entryCount: record.view.entryCount, enabledCount: record.view.enabledCount,
-          diagnostics: record.view.diagnostics.length
+          diagnostics: record.view.diagnostics.length,
+          global: globalSet.has(record.source.path)
         } }
       } catch (error) {
         return { diagnostic: { kind: 'standalone', path, message: str(error && error.message || error) } }
@@ -93,7 +116,7 @@ export function createWorldBookLibrary(options = {}) {
     const standalone = standaloneResults.map(function (result) { return result.row }).filter(Boolean)
     const embedded = embeddedResults.map(function (result) { return result.row }).filter(Boolean)
     const diagnostics = standaloneResults.concat(embeddedResults).map(function (result) { return result.diagnostic }).filter(Boolean)
-    return { standalone, embedded, diagnostics }
+    return { standalone, embedded, diagnostics, globalPaths: globalList }
   }
 
   async function binding(cardPath) {
@@ -142,6 +165,7 @@ export function createWorldBookLibrary(options = {}) {
   async function associations(locator) {
     const source = sourceOf(locator)
     const cardPaths = await cards.listPaths()
+    const isGlob = source.kind === 'standalone' && (await isGlobal(source.path))
     const cardRows = []
     for (const cardPath of cardPaths) {
       const card = await cards.read(cardPath)
@@ -157,24 +181,127 @@ export function createWorldBookLibrary(options = {}) {
     const boundCards = cardRows.filter(function (card) { return card.bound }).map(function (card) {
       return { path: card.path, name: card.name }
     })
-    return { source, cards: cardRows, boundCards, conflict: boundCards.length > 1 }
+    return {
+      source,
+      cards: cardRows,
+      boundCards,
+      conflict: isGlob ? false : boundCards.length > 1,
+      global: isGlob
+    }
+  }
+
+  function compositeWorldBookRecords(cardRecord, globalRecords) {
+    const allRecords = [...globalRecords]
+    if (cardRecord) allRecords.push(cardRecord)
+
+    const compositeEntries = {}
+    const allEntries = []
+
+    for (const rec of allRecords) {
+      if (!rec || !rec.document) continue
+      const stBook = exportSillyTavernWorldBook(rec.document)
+      const bookTitle = rec.view?.displayName || rec.source?.path || '世界书'
+      const entries = Object.values(stBook.entries || {})
+      for (const entry of entries) {
+        allEntries.push({
+          entry: clone(entry),
+          bookTitle,
+          source: rec.source
+        })
+      }
+    }
+
+    allEntries.sort(function (left, right) {
+      const orderL = Number(left.entry.order) || 100
+      const orderR = Number(right.entry.order) || 100
+      if (orderR !== orderL) return orderR - orderL
+      const dispL = Number(left.entry.displayIndex) || 0
+      const dispR = Number(right.entry.displayIndex) || 0
+      return dispL - dispR
+    })
+
+    allEntries.forEach(function (item, index) {
+      const entry = item.entry
+      entry.uid = index
+      if (!entry.extensions || typeof entry.extensions !== 'object') entry.extensions = {}
+      entry.extensions.displayIndex = index
+      entry.extensions.bookTitle = item.bookTitle
+      compositeEntries[String(index)] = entry
+    })
+
+    const compositeDocument = {
+      name: '全局与专属复合世界书',
+      entries: compositeEntries
+    }
+
+    const view = inspectWorldBookDocument(compositeDocument, { filename: '全局与专属复合世界书' })
+
+    return {
+      source: {
+        kind: 'composite',
+        sources: allRecords.flatMap(function (r) {
+          return r.source && r.source.kind === 'composite' && Array.isArray(r.source.sources) ? r.source.sources : (r.source ? [r.source] : [])
+        }),
+        cardSource: cardRecord && cardRecord.source && cardRecord.source.kind === 'composite' ? cardRecord.source.cardSource : (cardRecord ? cardRecord.source : null)
+      },
+      document: compositeDocument,
+      view,
+      cardRecord,
+      globalRecords,
+      localChatId: cardRecord?.localChatId
+    }
   }
 
   async function bound(cardPath, card, chat) {
+    let cardRecord = null
     if (chat?.openingWorldbookSnapshot?.version === 1) {
       const snapshot = chat.openingWorldbookSnapshot
-      if (snapshot.document === null) return null
-      return { source: clone(snapshot.source), document: clone(snapshot.document),
-        localChatId: chat.id, view: inspectWorldBookDocument(snapshot.document) }
+      if (snapshot.document !== null) {
+        cardRecord = {
+          source: clone(snapshot.source),
+          document: clone(snapshot.document),
+          localChatId: chat.id,
+          view: inspectWorldBookDocument(snapshot.document)
+        }
+      }
+    } else if (cardPath) {
+      const current = await binding(cardPath)
+      if (current.kind !== 'none') {
+        if (current.available !== true) throw new Error('绑定的世界书不存在，请重新绑定或解绑')
+        if (current.kind === 'embedded' && card && current.source.cardPath === normalizePath(cardPath, 'card')) {
+          const document = embeddedDocument(card)
+          cardRecord = { source: current.source, view: inspectWorldBookDocument(document, { filename: card.name }), document }
+        } else {
+          cardRecord = await readRecord(current.source)
+        }
+      }
     }
-    const current = await binding(cardPath)
-    if (current.kind === 'none') return null
-    if (current.available !== true) throw new Error('绑定的世界书不存在，请重新绑定或解绑')
-    if (current.kind === 'embedded' && card && current.source.cardPath === normalizePath(cardPath, 'card')) {
-      const document = embeddedDocument(card)
-      return { source: current.source, view: inspectWorldBookDocument(document, { filename: card.name }) }
+
+    const globalPaths = await listGlobal()
+    const globalRecords = []
+    for (const gPath of globalPaths) {
+      if (cardRecord && cardRecord.source) {
+        if (cardRecord.source.kind === 'standalone' && cardRecord.source.path === gPath) {
+          continue
+        }
+        if (cardRecord.source.kind === 'composite' && Array.isArray(cardRecord.source.sources) &&
+            cardRecord.source.sources.some(function (s) { return s && s.kind === 'standalone' && s.path === gPath })) {
+          continue
+        }
+      }
+      try {
+        const gRecord = await readRecord({ kind: 'standalone', path: gPath })
+        globalRecords.push(gRecord)
+      } catch (_error) {}
     }
-    return await get(current.source)
+
+    if (globalRecords.length === 0) {
+      return cardRecord
+    }
+    if (!cardRecord && globalRecords.length === 1) {
+      return globalRecords[0]
+    }
+    return compositeWorldBookRecords(cardRecord, globalRecords)
   }
 
   async function bind(cardPath, locator) {
@@ -189,7 +316,7 @@ export function createWorldBookLibrary(options = {}) {
     }
     const relations = await associations(source)
     const occupied = relations.boundCards.filter(function (item) { return item.path !== normalized })
-    if (occupied.length) throw new Error('该世界书已绑定人物卡：' + occupied.map(function (item) { return item.name || item.path }).join('、'))
+    if (occupied.length && !relations.global) throw new Error('该世界书已绑定人物卡：' + occupied.map(function (item) { return item.name || item.path }).join('、'))
     if (source.kind === 'card' && source.cardPath === normalized) await resources.bind(normalized, null)
     else await resources.bind(normalized, source.kind === 'card' ? { kind: 'embedded', cardPath: source.cardPath } : source)
     return await binding(normalized)
@@ -256,8 +383,12 @@ export function createWorldBookLibrary(options = {}) {
   }
 
   async function remove(path) {
-    return await removeStandalone(normalizePath(path, 'worldbook'))
+    const normalized = normalizePath(path, 'worldbook')
+    if (typeof resources.setGlobal === 'function') {
+      try { await resources.setGlobal(normalized, false) } catch (_e) {}
+    }
+    return await removeStandalone(normalized)
   }
 
-  return Object.freeze({ catalog, get, binding, associations, bound, bind, unbind, import: importBook, update, replaceNative, export: exportBook, characterBookForCard, remove })
+  return Object.freeze({ catalog, get, binding, associations, bound, bind, unbind, import: importBook, update, replaceNative, export: exportBook, characterBookForCard, remove, listGlobal, toggleGlobal, isGlobal })
 }

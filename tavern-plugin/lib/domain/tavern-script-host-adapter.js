@@ -243,9 +243,15 @@ export function createTavernScriptHostAdapter(options = {}) {
   }
 
   async function updateBoundWorldbook(resolved, request, nativeDocument) {
-    if (!resolved.record.localChatId) return nativeDocument === undefined
-      ? await options.worldBooks.update(resolved.record.source, request)
-      : await options.worldBooks.replaceNative(resolved.record.source, nativeDocument)
+    if (!resolved.record.localChatId) {
+      const targetSource = resolved.record.source.kind === 'composite'
+        ? (resolved.record.cardRecord ? resolved.record.cardRecord.source : null)
+        : resolved.record.source
+      if (!targetSource) throw new Error('全局复合世界书不支持直接回写')
+      return nativeDocument === undefined
+        ? await options.worldBooks.update(targetSource, request)
+        : await options.worldBooks.replaceNative(targetSource, nativeDocument)
+    }
     if (nativeDocument !== undefined) {
       if (!nativeDocument || typeof nativeDocument !== 'object' || !nativeDocument.entries ||
           typeof nativeDocument.entries !== 'object' || Array.isArray(nativeDocument.entries)) throw new Error('原生世界书需要 entries 对象')
@@ -265,13 +271,18 @@ export function createTavernScriptHostAdapter(options = {}) {
   }
 
   async function exportBoundWorldbook(record) {
-    return record.localChatId ? exportSillyTavernWorldBook(record.document)
+    return (record.localChatId || record.source.kind === 'composite')
+      ? exportSillyTavernWorldBook(record.document)
       : (await options.worldBooks.export(record.source)).document
   }
 
   function worldbookKey(record) {
     if (record.localChatId) return 'chat:' + record.localChatId
-    return record.source.kind === 'card' ? 'card:' + record.source.cardPath : 'standalone:' + record.source.path
+    const source = record.source.kind === 'composite' && record.cardRecord ? record.cardRecord.source : record.source
+    if (source.kind === 'composite') {
+      return 'composite:' + (source.sources || []).map(function (s) { return s.kind + ':' + (s.cardPath || s.path) }).join(';')
+    }
+    return source.kind === 'card' ? 'card:' + source.cardPath : 'standalone:' + source.path
   }
 
   async function loadWorldInfo(sessionId, name) {
