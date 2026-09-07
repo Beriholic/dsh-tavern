@@ -41,8 +41,8 @@ export function forkConversationChat(source, options = {}) {
   chat.updatedAt = now
   chat.nativeOpeningAppended = true
   chat.nativeCommits = {}
-  chat.suppressedDshTurns = []
-  chat.regeneratedDshTurns = {}
+  // The host forks the native event history with its original turn numbers.
+  // Keep its rollback/regeneration projection alongside the copied game state.
   chat.candidates = null
   chat.candidateAgent = null
   chat.foregroundError = null

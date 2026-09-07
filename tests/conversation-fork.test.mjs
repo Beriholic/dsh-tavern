@@ -47,6 +47,9 @@ test('分叉复制持久游戏状态，但建立独立身份并清理旧运行�
   assert.equal(fork.candidates, null)
   assert.equal(fork.candidateAgent, null)
   assert.deepEqual(fork.nativeCommits, {})
+  assert.deepEqual(fork.suppressedDshTurns, [9])
+  assert.deepEqual(fork.regeneratedDshTurns, { 2: 9 })
+  assert.notEqual(fork.regeneratedDshTurns, source.regeneratedDshTurns)
   assert.deepEqual(fork.forkedFrom, {
     chatId: 'chat-source', sessionId: 'session-source', branchId: 'branch-source', revision: 4,
     storageRevision: 17, checkpointId: 'checkpoint-4', forkedAt: 100
