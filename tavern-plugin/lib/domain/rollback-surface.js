@@ -22,7 +22,8 @@ function isRollbackUserTombstone(event) {
   const source = event && event.type === 'user/message' && event.data && event.data.source
   return source && source.kind === 'plugin' && (
     source.plugin === 'dsh-tavern-failed-turn-cleanup' ||
-    source.plugin === 'dsh-tavern-regeneration-abort'
+    source.plugin === 'dsh-tavern-regeneration-abort' ||
+    source.plugin === 'dsh-tavern-context-window'
   )
 }
 

@@ -6,6 +6,24 @@ import { createInitializationNative } from './fixtures/conversation-initializati
 const native = { skip: !process.env.DSH_BOOT_MODULE, timeout: 30000 }
 const openingEvents = session => sessionEvents(session).filter(e => e.type === 'assistant/message' && e.data.turn === 1)
 
+test('oversized import enters native pressure compaction only after subsequent context growth', native, async t => {
+  const h=await createInitializationNative(process.env.DSH_BOOT_MODULE)
+  t.after(()=>h.dispose())
+  const rows=[{chat_metadata:{}},{is_user:false,mes:'Opening'}]
+  for(let n=0;n<20;n++) rows.push({is_user:true,mes:'Action '+n},{is_user:false,mes:'History-'+n+' '+'.'.repeat(1000)})
+  await h.importHistory({...h.input,text:rows.map(JSON.stringify).join('\n'),operationId:'native-context-test'})
+  const result=await h.verifyImportContextCompaction()
+  assert.equal(result.chat.importHistory.contextPreparation.status,'trimmed')
+  assert.ok(result.afterPreparation<1600)
+  assert.equal(result.firstPressure,null)
+  assert.equal(result.summaryCallsBeforeGrowth,0)
+  assert.ok(result.result)
+  assert.ok(result.afterCompaction<1600)
+  assert.equal(h.requests.filter(r=>r.purpose==='compaction').length,1)
+  assert.equal(result.chat.messages.length,41)
+  assert.ok(result.events.some(e=>e.type==='compaction/end'))
+})
+
 test('native card workbench starts empty or with a card and restores its greeting only once', native, async t => {
   for (const cardPath of ['', 'cards/test.json']) {
     const h = await createInitializationNative(process.env.DSH_BOOT_MODULE)

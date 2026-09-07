@@ -1,4 +1,5 @@
 import { createChatHistoryImportService } from '../../tavern-plugin/lib/domain/chat-history-import-service.js'
+import { createImportContextPreparation } from '../../tavern-plugin/lib/domain/import-context-preparation.js'
 import { sessionEvents } from '../../tavern-plugin/lib/domain/session-events.js'
 // Production initialization, Chat journal and installed DSH Session/Agent loop.
 // All files are temporary and the text model is scripted; no paid requests.
@@ -42,8 +43,9 @@ export async function createInitializationNative(bootPath) {
   }
   ctx.on('session/flush', flush)
   class FixtureModel extends LlmAdapter {
+    async resolveModel(provider, id) { return { provider, id, name: id, context: { contextWindow: 2000 } } }
     async *stream(input) {
-      requests.push(structuredClone({ system: input.system, messages: input.messages }))
+      requests.push(structuredClone({ system: input.system, messages: input.messages, purpose: input.purpose }))
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'block-end', index: 0, block: { type: 'text', text: '继续故事。' } }
       yield { type: 'finish', reason: { kind: 'stop' } }
@@ -100,6 +102,35 @@ export async function createInitializationNative(bootPath) {
       storage = createSessionStablePrefixStorage(join(root, 'prefix'))
     },
     async checkpoint() { await flush(target.session) },
+    async verifyImportContextCompaction() {
+      const { BasicCompactionEngine } = await import(new URL('../../dsh-compaction-basic/lib/index.js', bootUrl))
+      const compaction = new BasicCompactionEngine(ctx, { auto: false })
+      const chatId = (await data.readJson('sessions.json'))[sessionId]
+      const session = target.session
+      session.append('request/header', { header: { config: selection }, reason: 'initial' })
+      const request = { ...selection, sessionId, maxTokens: 256, messages: session.deriveMessages() }
+      const prepare = createImportContextPreparation({
+        readChat: () => persistence.read(chatId), updateChat: persistence.update, getSession: () => session, flush,
+        modelInfo: r => ctx.llm.resolveModelInfo(r.provider, r.model), estimateMessage: m => ctx.tokenMeter.estimateMessage(m)
+      })
+      const projected = await prepare.prepare(request)
+      const afterPreparation = ctx.tokenMeter.measure(session).totalTokens
+      const signal = new AbortController().signal
+      const firstPressure = await compaction.compactIfNeeded(target.agent, 'pressure', signal)
+      const summaryCallsBeforeGrowth = requests.filter(r => r.purpose === 'compaction').length
+      const turn = 50
+      session.append('user/message', { id: 'later-input', role: 'user', content: [{ type: 'text', text: 'L'.repeat(2500) }], source: { kind: 'user' } }, { surfaceOp: 'append' })
+      session.append('turn/start', { turn })
+      session.append('step/start', { turn, step: 1 })
+      session.append('assistant/message', { turn, step: 1, message: { id: 'later-body', role: 'assistant', content: [{ type: 'text', text: 'Later body' }], source: { kind: 'model', ...selection } } }, { surfaceOp: 'append', sourceEventSeqs: [] })
+      session.append('step/end', { turn, step: 1 })
+      session.append('turn/end', { turn, reason: { kind: 'completed' } })
+      session.append('turn/start', { turn: 51 })
+      const result = await compaction.compactIfNeeded(target.agent, 'pressure', signal)
+      session.append('turn/end', { turn: 51, reason: { kind: 'completed' } })
+      return { projected, afterPreparation, firstPressure, summaryCallsBeforeGrowth, result, afterCompaction: ctx.tokenMeter.measure(session).totalTokens,
+        chat: await persistence.read(chatId), events: sessionEvents(session) }
+    },
     async continueWithAgent() {
       const seed = JSON.parse(await readFile(eventsPath, 'utf8')).events
       for (const handle of handles) await handle.dispose()

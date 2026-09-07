@@ -101,6 +101,15 @@ test('rc.1 snapshot-only history supports regeneration and rollback without rewr
   }
 })
 
+test('rollback refuses a checkpoint whose round has left the native Surface instead of removing a different round', async () => {
+  const h=harness({checkpoint:true})
+  h.session.events[1].data.turn=1
+  const before=structuredClone(h.chat)
+  await assert.rejects(h.create().rollback('session','chat'),/已不在当前模型上下文/)
+  assert.deepEqual(h.chat,before)
+  assert.equal(h.calls.length,0)
+})
+
 test('配对失败的证据写入现有诊断包，原错误与聊天、原生历史保持不变', async () => {
   const h = harness()
   h.chat.messages.splice(1, 1)

@@ -1,4 +1,5 @@
 import { createChatHistoryImportService } from './domain/chat-history-import-service.js'
+import { createImportContextPreparation, needsImportContextPreparation } from './domain/import-context-preparation.js'
 import { sessionEvents } from './domain/session-events.js'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { randomUUID } from 'node:crypto'
@@ -1134,7 +1135,9 @@ export async function apply(ctx) {
       tavernHelperWorldbook: helperWorldbook,
       tavernRuntimePolicy: { trustedCardMode: runtimeSettings.trustedCardMode },
       releaseCapabilities: TAVERN_RELEASE_CAPABILITIES,
-      presentationWarnings: Array.isArray(chat.presentationWarnings) ? chat.presentationWarnings : [],
+      presentationWarnings: (Array.isArray(chat.presentationWarnings) ? chat.presentationWarnings : []).concat(
+        chat.importHistory?.contextPreparation?.status === 'trimmed'
+          ? ['导入记录较长：已保留开头和最近完整轮次，中间 ' + chat.importHistory.contextPreparation.droppedRounds + ' 轮暂不随模型请求发送，历史正文仍可召回。'] : []),
       worldBookError: chat.worldBookError || null,
       foregroundError: chat.foregroundError || null,
       lastWorldBookRecall: chat.lastWorldBookRecall || null,
@@ -2931,6 +2934,22 @@ export async function apply(ctx) {
     })
   })
 
+  const importContextPreparation = createImportContextPreparation({
+    readChat: chatForSession, updateChat,
+    getSession: id => sessionStore.get(id) || agentRegistry.get(id)?.session,
+    flush: session => sessionStore.flush(session),
+    modelInfo: request => ctx.llm.resolveModelInfo(request.provider, request.model, request.signal),
+    estimateMessage: message => {
+      const meter = ctx.get('tokenMeter')
+      if (!meter?.estimateMessage) throw new Error('当前宿主缺少原生 token 计量接口，请更新 DSH 后重试')
+      const native = meter.estimateMessage(message)
+      // The host's fixed four-characters/token estimate underprices CJK text.
+      // Use a conservative Unicode floor for this one-time admission check.
+      const text = (message.content || []).map(block => block.text || JSON.stringify(block)).join('')
+      const nonAscii = [...text].filter(char => char.codePointAt(0) > 127).length
+      return Math.max(native, Math.ceil((text.length - nonAscii) / 4) + nonAscii * 2 + 8)
+    }
+  })
   ctx.on('llm/stream', function (options, next) {
     const sessionId = str(options && options.sessionId)
     const coordinates = requestCoordinates.get(sessionId)
@@ -2947,6 +2966,7 @@ export async function apply(ctx) {
           yield * fallback
           return
         }
+        if (needsImportContextPreparation(chat)) throw new Error('导入对话尚未完成首次上下文容量检查，暂不调用摘要模型')
         const request = createStoryCompactionRequest(options, runtimePrompt('story-compaction'))
         if (request === options) {
           yield * fallback
@@ -2956,12 +2976,14 @@ export async function apply(ctx) {
         yield * ctx.llm.stream(request)
       })()
     }
-    const projectedRequest = foregroundStrategies.projectRequest(options, coordinates)
+    const projectedRequest = importContextPreparation.isPrepared(options) ? null : foregroundStrategies.projectRequest(options, coordinates)
     if (projectedRequest !== null) return ctx.llm.stream(projectedRequest)
     const stream = next()
     const backgroundContext = backgroundAgentRunner.requestContext(sessionId)
     const ownerSessionId = backgroundContext ? backgroundContext.parentSessionId : sessionId
     return (async function * () {
+      const prepared = await importContextPreparation.prepare(options)
+      if (prepared !== options) { yield * ctx.llm.stream(prepared); return }
       const chat = ownerSessionId === '' ? undefined : await chatForSession(ownerSessionId)
       let requestRecord = null
       if (options.purpose === undefined && chat !== undefined && (chat.mode === 'story' || chat.mode === 'script')) {

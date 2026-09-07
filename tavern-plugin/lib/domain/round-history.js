@@ -290,6 +290,10 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     }
     if (assistantIndex < 0 || assistantIndex - 1 < 0) throw new Error('没有可回退的用户输入与正文组合')
     if (msgs[assistantIndex - 1] === null || typeof msgs[assistantIndex - 1] !== 'object' || msgs[assistantIndex - 1].role !== 'user') throw new Error('最后一组消息不是用户输入 + 正文')
+    const expectedTurn = Number(msgs[assistantIndex].turn)
+    if (expectedTurn > 0 && hiddenTurn !== expectedTurn && hiddenTurn !== Number(regeneratedDshTurns[String(expectedTurn)])) {
+      throw new Error('该轮已不在当前模型上下文中，不能直接回退；历史正文仍可通过 history_recall 检索')
+    }
     const removedUserText = str(msgs[assistantIndex - 1].text).trim()
     const removedAssistantText = str(msgs[assistantIndex].text).trim()
     // 2) 旧对话从 native commit 生成一次性迁移 checkpoint；新对话直接使用权威 checkpoint
