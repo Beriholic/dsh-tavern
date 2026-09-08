@@ -1,3 +1,4 @@
+import { cardAgentContext } from './domain/card-agent-context.js'
 import { appendHelperUserSessionContext } from './domain/helper-user-session-context.js'
 import { sessionOpeningDescriptor, prepareSessionOpening } from './domain/session-opening.js'
 import { scriptPromptScanText } from './domain/tavern-script-prompts.js'
@@ -2964,6 +2965,9 @@ export async function apply(ctx) {
       },
       visibleTools: async function (sessionId) { return await turnOrchestrator.visibleTools(sessionId) },
       modePrompt: function () { return runtimePrompt('card-mode') },
+      cardContext: async function (chat) {
+        return cardAgentContext(chat && str(chat.cardPath) !== '' ? await readChatCard(chat) : null)
+      },
       workspaceContext: resourceWorkspaceContext,
       ensureSessionPrefix: async function (input) {
         return await ensureNativeSystemPrefix(input.payload.agent.session, input.chat)

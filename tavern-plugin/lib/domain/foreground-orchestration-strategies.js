@@ -310,6 +310,10 @@ export function createNativePlayOrchestrationStrategy(options) {
     const sections = mode === 'card' ? [] : (input.fixedSystemSections || []).slice()
     if (mode === 'card') {
       sections.push({ name: 'tavern:mode-persona', text: options.modePrompt(mode) })
+      if (typeof options.cardContext === 'function') {
+        const text = await options.cardContext(input.chat)
+        if (text) sections.push({ name: 'tavern:character-card', text })
+      }
       const workspace = options.workspaceContext(input.cwd, input.workspaceProjection)
       if (workspace !== '') sections.push({ name: 'tavern:resource-workspace', text: workspace })
     }
