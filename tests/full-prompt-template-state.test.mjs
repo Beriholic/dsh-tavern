@@ -1,3 +1,4 @@
+import { createPromptTemplateGlobalVariables } from '../tavern-plugin/lib/domain/prompt-template-global-variables.js'
 import { createNativeTemplateConnection, reconcileTemplateReceipt } from '../tavern-plugin/lib/vendor/st-prompt-template/host-build/native-connection.js'
 import { createProfileDataStore } from '../tavern-plugin/lib/profile-data-store.js'
 import { createTavernExtensionSettings } from '../tavern-plugin/lib/domain/tavern-extension-settings.js'
@@ -21,6 +22,7 @@ async function fixture(t) {
   const adapter=createTavernScriptHostAdapter({resolveChat:()=>persistence.read('chat'),writeChat:persistence.write,
     updateChat:persistence.update,readChatRevision:persistence.readRevision,readCard:async()=>({name:'角色'}),
     worldBooks:{bound:async()=>null},scriptDispatch:{},isPlayChat:()=>true,
+    globalVariables:createPromptTemplateGlobalVariables(createProfileDataStore({dataRoot:root})),
     fullExtensionSettings:createTavernExtensionSettings(createProfileDataStore({dataRoot:root}))})
   return {persistence,adapter,open}
 }
@@ -81,6 +83,7 @@ test('变量存档不能夹带聊天正文修改，失败时其他变量也不�
 test('浏览器连接使用实际宿主接口保存设置与变量，回执推进读取版本',async t=>{
   const {adapter,open}=await fixture(t)
   const rpc=async(method,args)=>{
+    if(method==='saveFullPromptTemplateGlobals') return adapter.saveFullPromptTemplateGlobals(args.sessionId,args.variables,args.expectedVariables)
     if(method==='getFullPromptTemplateState') return adapter.readFullPromptTemplateState(args.sessionId)
     if(method==='saveFullPromptTemplateState') return adapter.saveFullPromptTemplateState(args.sessionId,args.state)
     if(method==='saveFullPromptTemplateSettings') return adapter.saveFullPromptTemplateSettings(args.sessionId,args.settings,args.expectedSettings)
@@ -97,8 +100,11 @@ test('浏览器连接使用实际宿主接口保存设置与变量，回执推�
   assert.equal((await open().read('chat')).messages[0].variables[0].hp,13)
   const reread=await adapter.readFullPromptTemplateState('session')
   assert.equal(reread.environment.extension_settings.EjsTemplate.enabled,false)
-  state.extension_settings.variables.global.unimplemented=1
-  await assert.rejects(connection.callbacks.saveSettingsDebounced(state.extension_settings),error=>error.code==='PROMPT_TEMPLATE_GLOBAL_UNSUPPORTED')
+  state.extension_settings.variables.global.LAST_SEND_TOKENS=165
+  await connection.callbacks.saveSettingsDebounced(state.extension_settings)
+  state.extension_settings.variables.global.LAST_SEND_TOKENS=166
+  await connection.callbacks.saveChatConditional(state)
+  assert.equal((await adapter.readFullPromptTemplateState('session')).environment.extension_settings.variables.global.LAST_SEND_TOKENS,166)
 })
 
 test('保存回执保留等待期间的新编辑，合入服务器上的无关更新',()=>{

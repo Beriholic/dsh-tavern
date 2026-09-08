@@ -335,6 +335,14 @@ export function createTavernScriptHostAdapter(options = {}) {
     }
   }
 
+  async function saveFullPromptTemplateGlobals(sessionId, variables, expectedVariables) {
+    assertTemplateChat(await resolveChat(sessionId))
+    if (!expectedVariables || typeof expectedVariables !== 'object' || Array.isArray(expectedVariables)) throw new Error('缺少全局变量读取版本')
+    if (!options.globalVariables) throw new Error('全局变量存储未连接')
+    const saved = await options.globalVariables.save(variables, expectedVariables)
+    return { updated: true, variables: saved }
+  }
+
   async function saveFullPromptTemplateSettings(sessionId, settings, expectedSettings) {
     assertPluginJson(settings, '模板设置')
     if (expectedSettings !== undefined) assertPluginJson(expectedSettings, '模板设置读取版本')
@@ -540,6 +548,7 @@ export function createTavernScriptHostAdapter(options = {}) {
     readFullPromptTemplateState,
     saveFullPromptTemplateState,
     saveFullPromptTemplateSettings,
+    saveFullPromptTemplateGlobals,
     saveExtensionSettings,
     saveChatData,
     loadWorldInfo,

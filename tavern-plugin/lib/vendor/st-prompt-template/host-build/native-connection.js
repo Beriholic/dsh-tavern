@@ -22,10 +22,18 @@ export function reconcileTemplateReceipt(current, submitted, saved) {
 export async function createNativeTemplateConnection({ sessionId, rpc, services = {}, settingsHtml }) {
   const initial=await rpc('getFullPromptTemplateState',{sessionId})
   let baseline=clone(initial.state), settingsBaseline=clone(initial.environment.extension_settings.EjsTemplate)
-  const globalBaseline=clone(initial.environment.extension_settings.variables?.global)
+  let globalBaseline=clone(initial.environment.extension_settings.variables?.global)
   const snapshot={...initial.state,...initial.environment}
   let saves=Promise.resolve(), latest=saves
   function enqueue(operation) { const next=saves.then(operation); latest=next; saves=next.catch(error=>{ if(services.onPersistenceError) services.onPersistenceError(error); else console.error('Template persistence failed',error) }); return next }
+  async function saveGlobals(settings) {
+    const submitted=clone(settings.variables?.global || {})
+    if(same(submitted,globalBaseline)) return
+    const result=await rpc('saveFullPromptTemplateGlobals',{sessionId,variables:submitted,expectedVariables:globalBaseline})
+    if(result.updated!==true || !result.variables) throw new Error('Template global save was not acknowledged')
+    reconcileTemplateReceipt(settings.variables.global,submitted,result.variables)
+    globalBaseline=clone(result.variables)
+  }
   const callbacks={...services,
     renderExtensionTemplateAsync:async(name,template)=>{
       if(name!=='third-party/ST-Prompt-Template' || template!=='settings') throw new Error('Unknown template UI resource')
@@ -33,9 +41,7 @@ export async function createNativeTemplateConnection({ sessionId, rpc, services 
     },
     loadWorldInfo:async name=>clone(initial.environment.worldbooks[name] || null),
     saveChatConditional: data=>enqueue(async()=>{
-      if(!same(data.extension_settings.variables?.global,globalBaseline)) {
-        const error=new Error('完整模板全局变量保存尚未接入');error.code='PROMPT_TEMPLATE_GLOBAL_UNSUPPORTED';throw error
-      }
+      await saveGlobals(data.extension_settings)
       const submitted={...clone(baseline),chat:clone(data.chat),chat_metadata:clone(data.chat_metadata)}
       const result=await rpc('saveFullPromptTemplateState',{sessionId,state:submitted})
       if(result.updated!==true || !result.state) throw new Error('Template state save was not acknowledged')
@@ -45,9 +51,7 @@ export async function createNativeTemplateConnection({ sessionId, rpc, services 
       return result
     }),
     saveSettingsDebounced:settings=>enqueue(async()=>{
-      if(!same(settings.variables?.global,globalBaseline)) {
-        const error=new Error('完整模板全局变量保存尚未接入');error.code='PROMPT_TEMPLATE_GLOBAL_UNSUPPORTED';throw error
-      }
+      await saveGlobals(settings)
       const submitted=clone(settings.EjsTemplate)
       const result=await rpc('saveFullPromptTemplateSettings',{sessionId,settings:submitted,expectedSettings:settingsBaseline})
       if(result.updated!==true) throw new Error('Template settings save was not acknowledged')

@@ -1,3 +1,4 @@
+import { createPromptTemplateGlobalVariables } from '../../tavern-plugin/lib/domain/prompt-template-global-variables.js'
 import { createServer } from 'node:http'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -17,7 +18,8 @@ await persistence.write({id:'test-chat',sessionId:'test-session',cardPath:'cards
   variables:{},messages:[{role:'assistant',text:'Opening',variables:[{hp:7}]}]})
 const adapter=createTavernScriptHostAdapter({resolveChat:()=>persistence.read('test-chat'),writeChat:persistence.write,
  updateChat:persistence.update,readChatRevision:persistence.readRevision,readCard:async()=>({name:'Alice'}),scriptDispatch:{},
- fullExtensionSettings:createTavernExtensionSettings(createProfileDataStore({dataRoot:root})),
+ globalVariables:createPromptTemplateGlobalVariables(createProfileDataStore({dataRoot:root})),
+    fullExtensionSettings:createTavernExtensionSettings(createProfileDataStore({dataRoot:root})),
  worldBooks:{bound:async()=>({source:{kind:'standalone',path:'book'},view:{displayName:'book'}}),
  export:async()=>({document:{entries:{0:{uid:0,comment:'Guide',key:[],constant:true,content:'HP <%= getMessageVar("hp") %>',position:0,order:100}}}})}
 })
@@ -53,7 +55,7 @@ const server=createServer(async(req,res)=>{
  try {
   const path=new URL(req.url,'http://localhost').pathname
   if(path==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(html);return}
-  if(path==='/persisted'){const state=await open().read('test-chat');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({hp:state.messages[0].variables[0].hp,revision:state._storageRevision}));return}
+  if(path==='/persisted'){const state=await open().read('test-chat');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({hp:state.messages[0].variables[0].hp,revision:state._storageRevision,globalVariables:await createPromptTemplateGlobalVariables(createProfileDataStore({dataRoot:root})).read()}));return}
   if(path.startsWith('/api/')) {
    if(path.startsWith(FULL_PROMPT_TEMPLATE_ASSET_PREFIX) || path.startsWith(TAVERN_RUNTIME_ASSET_PREFIX)) {
     const file=path.startsWith(FULL_PROMPT_TEMPLATE_ASSET_PREFIX)?await asset(path):await readTavernRuntimeAsset(path)
@@ -62,7 +64,8 @@ const server=createServer(async(req,res)=>{
    let raw='';for await(const chunk of req)raw+=chunk
    const args=JSON.parse(raw),name=path.slice(5)
    let result
-   if(name==='getFullPromptTemplateState') result=await adapter.readFullPromptTemplateState(args.sessionId)
+   if(name==='saveFullPromptTemplateGlobals') result=await adapter.saveFullPromptTemplateGlobals(args.sessionId,args.variables,args.expectedVariables)
+   else if(name==='getFullPromptTemplateState') result=await adapter.readFullPromptTemplateState(args.sessionId)
    else if(name==='saveFullPromptTemplateState') result=await adapter.saveFullPromptTemplateState(args.sessionId,args.state)
    else if(name==='saveFullPromptTemplateSettings') result=await adapter.saveFullPromptTemplateSettings(args.sessionId,args.settings,args.expectedSettings)
    else throw new Error('Unknown method')

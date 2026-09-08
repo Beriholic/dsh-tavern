@@ -1,3 +1,4 @@
+import { createPromptTemplateGlobalVariables } from './domain/prompt-template-global-variables.js'
 import { FULL_PROMPT_TEMPLATE_ASSET_PREFIX, readFullPromptTemplateAsset } from './domain/full-prompt-template-assets.js'
 import { createTavernApiDiagnostics } from './domain/tavern-api-diagnostics.js'
 import { generateHelperRaw } from './domain/helper-generation.js'
@@ -173,19 +174,9 @@ export async function apply(ctx) {
     if (failures.length > 0) console.warn('dsh-tavern: 部分静态运行库暂未缓存，将在使用时重试:', failures.map(function (result) { return str(result.reason && result.reason.message || result.reason) }).join('；'))
   })
   const settingsPath = 'tavern-settings.json'
-  const promptTemplateVariablesPath = 'prompt-template-variables.json'
-  async function readPromptTemplateGlobalVariables() {
-    const saved = await profileData.readJson(promptTemplateVariablesPath)
-    return saved && saved.global && typeof saved.global === 'object' && !Array.isArray(saved.global) ? saved.global : {}
-  }
-  async function writePromptTemplateGlobalVariables(variables) {
-    await profileData.updateJson(promptTemplateVariablesPath, function (current) {
-      const next = current && typeof current === 'object' ? Object.assign({}, current) : {}
-      next.global = variables && typeof variables === 'object' && !Array.isArray(variables) ? variables : {}
-      next.updatedAt = Date.now()
-      return next
-    })
-  }
+  const promptTemplateGlobalVariables = createPromptTemplateGlobalVariables(profileData)
+  const readPromptTemplateGlobalVariables = promptTemplateGlobalVariables.read
+  const writePromptTemplateGlobalVariables = promptTemplateGlobalVariables.save
   let tavernSettingsDocument = await profileData.readJson(settingsPath)
   function promptDefaults() {
     return Object.fromEntries(SYSTEM_PROMPT_NAMES.map(function (name) { return [name, prompt(name)] }))
@@ -991,13 +982,7 @@ export async function apply(ctx) {
     extensionSettingsChanged: async function (sessionId) {
       sessionSignals.publish(sessionId, { kind: 'tavern-state', version: 'extension-settings:' + await profileData.version('tavern-extension-settings.json') })
     },
-    globalVariables: {
-      read: readPromptTemplateGlobalVariables,
-      save: async function (variables) {
-        await writePromptTemplateGlobalVariables(variables)
-        return await readPromptTemplateGlobalVariables()
-      }
-    },
+    globalVariables: promptTemplateGlobalVariables,
     characterVariables: {
       save: async function (cardPath, variables, sessionId) {
         const saved = await replaceCardVariables(cardPath, variables)
@@ -2391,6 +2376,7 @@ export async function apply(ctx) {
 	      case 'updateTavernHelperMessages': return await tavernScriptHostAdapter.updateMessages(args && args.sessionId, args && args.messages, args && args.expectedLifecycleRevision, args && args.eventId)
 	      case 'createTavernHelperMessages': return await tavernScriptHostAdapter.createMessages(args && args.sessionId, args && args.messages, args && args.option, args && args.expectedLifecycleRevision, args && args.eventId)
       case 'getFullPromptTemplateState': return await tavernScriptHostAdapter.readFullPromptTemplateState(args && args.sessionId)
+      case 'saveFullPromptTemplateGlobals': return await tavernScriptHostAdapter.saveFullPromptTemplateGlobals(args && args.sessionId, args && args.variables, args && args.expectedVariables)
       case 'saveFullPromptTemplateSettings': return await tavernScriptHostAdapter.saveFullPromptTemplateSettings(args && args.sessionId, args && args.settings, args && args.expectedSettings)
       case 'saveFullPromptTemplateState': return await tavernScriptHostAdapter.saveFullPromptTemplateState(args && args.sessionId, args && args.state)
       case 'saveTavernChatData': return await tavernScriptHostAdapter.saveChatData(args && args.sessionId, args && args.request)
