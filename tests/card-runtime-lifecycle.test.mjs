@@ -659,7 +659,8 @@ test('下载等待暂停初始化超时，同一沙箱可手动恢复且拒绝�
 })
 
 test('MVU subscriptions cannot advertise settlement readiness until initialized variables are saved; late persistence recovers without replay', async () => {
-  const states = [], h = sandbox({ onMvuLoadState: state => states.push(copy(state)) })
+  let now = 0
+  const states = [], h = sandbox({ now: () => now, onMvuLoadState: state => states.push(copy(state)) })
   const input = mvuView()
   input.tavernHelper.messages[0].variables = {}
   h.runtime.sync('A', input)
@@ -676,6 +677,7 @@ test('MVU subscriptions cannot advertise settlement readiness until initialized 
   h.message(frame, 'dsh-tavern-helper-call', { requestId: 'stale', method: 'updateTavernHelperMessages' })
   await tick()
   assert.equal(h.client.tavernScriptRuntimeReady(h.runtime.inspect()), false, 'rejected writes cannot satisfy initialization')
+  now += 15000
   h.runTimer()
   assert.match(h.runtime.inspect().initializationError, /初始变量.*保存/)
   assert.equal(states.at(-1).phase, 'error')
