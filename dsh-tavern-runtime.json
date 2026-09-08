@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "33f05aa89bfbec49e73a0b702183d75480481971",
-  "releaseSequence": 112,
+  "revision": "9375518ee59ff618da6c21c5e1d6885eac9c56d8",
+  "releaseSequence": 113,
   "version": "1.5.0",
   "files": [
     {
@@ -66,8 +66,8 @@
     },
     {
       "path": "bin/service-lifecycle.mjs",
-      "sha256": "67cfd3d36061e9b1e9aae946993275df1e7cfc621e62496757d4753c4cea5364",
-      "size": 12367
+      "sha256": "06981a7260ddc529195e207cdcc888c9084ab6e72ea446d5f7fdeab6ece5c563",
+      "size": 12834
     },
     {
       "path": "bin/session-prefix-migration.mjs",
