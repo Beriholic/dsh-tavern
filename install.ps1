@@ -47,7 +47,10 @@ function Assert-LastCommand([string]$Message) {
   if ($LASTEXITCODE -ne 0) { throw $Message }
 }
 
+$PreviousNpmRegistry = $env:npm_config_registry
 try {
+  # Child npm/pnpm processes, including Profile and plugin installs, inherit this.
+  $env:npm_config_registry = if ($env:DSH_TAVERN_NPM_REGISTRY) { $env:DSH_TAVERN_NPM_REGISTRY } else { 'https://registry.npmmirror.com' }
   if (-not (Test-Command 'node')) {
     Start-Process 'https://nodejs.org/'
     throw '未找到 Node.js。请安装 Node.js 22.19 或更高版本，然后重新运行本命令。'
@@ -245,6 +248,7 @@ catch {
   throw ("安装失败：" + $_.Exception.Message)
 }
 finally {
+  $env:npm_config_registry = $PreviousNpmRegistry
   if (Test-Path $TempDir) {
     Remove-Item -LiteralPath $TempDir -Recurse -Force
   }

@@ -209,6 +209,8 @@ curl -fsSL https://cdn.jsdelivr.net/gh/flizzywine/dsh-tavern@main/install.sh | D
 
 安装程序会自动安装依赖、启动 dsh-tavern，并在首次安装时打开网页。关闭页面后，运行 `dsh-tavern open` 可重新打开；也可运行 `dsh-tavern status`，复制显示的完整访问地址（含鉴权 token，请勿分享）。不要只输入不带 token 的地址，以免出现鉴权提示。更新时优先使用 Git 增量同步；Git 不可用或同步失败时才下载完整 ZIP。
 
+一键安装及更新、Android 安装默认通过 [npmmirror 国内镜像](https://npmmirror.com/) 下载 npm 依赖，不修改全局 npm 配置。如需使用其他源，在运行安装命令前设置 `DSH_TAVERN_NPM_REGISTRY`：PowerShell 使用 `$env:DSH_TAVERN_NPM_REGISTRY='https://registry.npmjs.org'`，macOS / Linux 使用 `export DSH_TAVERN_NPM_REGISTRY=https://registry.npmjs.org`。
+
 首次使用时，在左侧栏底部打开 **设置 → 模型**，填写模型服务的 API 密钥。
 
 #### 手动安装
