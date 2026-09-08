@@ -309,15 +309,8 @@ export function createNativePlayOrchestrationStrategy(options) {
     // sections explicitly so removing play-mode cannot restore DSH's persona.
     const sections = mode === 'card' ? [] : (input.fixedSystemSections || []).slice()
     if (mode === 'card') {
-      if (typeof options.behaviorPrefix === 'function') {
-        const text = options.behaviorPrefix()
-        if (text) sections.push({ name: 'tavern:card-behavior-prefix', text })
-      }
-      sections.push({ name: 'tavern:mode-persona', text: options.modePrompt(mode) })
-      if (typeof options.cardContext === 'function') {
-        const text = await options.cardContext(input.chat)
-        if (text) sections.push({ name: 'tavern:character-card', text })
-      }
+      const text = typeof options.cardSystemPrompt === 'function' ? options.cardSystemPrompt().trim() : ''
+      if (text) sections.push({ name: 'tavern:card-system', text })
       const workspace = options.workspaceContext(input.cwd, input.workspaceProjection)
       if (workspace !== '') sections.push({ name: 'tavern:resource-workspace', text: workspace })
     }
