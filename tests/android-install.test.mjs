@@ -176,7 +176,7 @@ test('Android 安装脚本增量配置两个 Profile，失败不会伪装成成�
   assert.doesNotMatch(installer, /tavern-plugin\/lib\/client\.js/)
 })
 
-for (const initialVersion of ['11.25.0', '10.15.1', 'missing', 'shadowed']) {
+for (const initialVersion of ['cached', '10.34.5', 'missing', 'install-failed']) {
 test(`Android 安装固定 pnpm 并先安装依赖再停止旧服务：${initialVersion}`, async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'dsh-android-install-order-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
@@ -185,14 +185,17 @@ test(`Android 安装固定 pnpm 并先安装依赖再停止旧服务：${initial
   const events = path.join(directory, 'events')
   const dependenciesReady = path.join(directory, 'dependencies-ready')
   const versionFile = path.join(directory, 'pnpm-version')
-  await writeFile(versionFile, initialVersion)
+  await writeFile(versionFile, '11.25.0')
+  const pnpmRoot = path.join(dshHome, 'runtime', 'tavern-pnpm', '11.25.0')
+  const managedPnpm = path.join(pnpmRoot, 'bin', 'pnpm')
+  const fixturePnpm = path.join(directory, 'managed-pnpm')
   for (const profile of ['tavern', 'web']) {
     const profileDir = path.join(dshHome, 'profiles', profile)
     await mkdir(profileDir, { recursive: true })
     await writeFile(path.join(profileDir, 'package.json'), '{}\n', 'utf8')
   }
   await mkdir(mockBin, { recursive: true })
-  await writeFile(path.join(mockBin, 'pnpm'), `#!/usr/bin/env bash
+  await writeFile(fixturePnpm, `#!/usr/bin/env bash
 set -euo pipefail
 if [ "\$1" = "--version" ]; then
   version=$(cat "${versionFile}")
@@ -205,10 +208,18 @@ if [ "\$1" = "--dir" ] && [ "\$2" = "${new URL('..', import.meta.url).pathname.r
   : > "${dependenciesReady}"
 fi
 `, { mode: 0o755 })
+  if (initialVersion !== 'missing') await writeFile(path.join(mockBin, 'pnpm'), '#!/usr/bin/env bash\nprintf "10.34.5\\n"\n', { mode: 0o755 })
+  if (initialVersion === 'cached') {
+    await mkdir(path.dirname(managedPnpm), { recursive: true })
+    await writeFile(managedPnpm, await readFile(fixturePnpm), { mode: 0o755 })
+  }
   await writeFile(path.join(mockBin, 'npm'), `#!/usr/bin/env bash
 set -euo pipefail
 printf 'npm %s\\n' "\$*" >> "${events}"
-[ "${initialVersion}" = shadowed ] || printf '11.25.0' > "${versionFile}"
+[ "${initialVersion}" != install-failed ] || exit 1
+[ "\$*" = "install --global --prefix ${pnpmRoot} pnpm@11.25.0" ] || exit 92
+mkdir -p "${path.dirname(managedPnpm)}"
+cp "${fixturePnpm}" "${managedPnpm}"
 `, { mode: 0o755 })
   await writeFile(path.join(mockBin, 'dsh'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 })
   await writeFile(path.join(mockBin, 'node'), `#!/usr/bin/env bash
@@ -234,14 +245,13 @@ esac
     encoding: 'utf8',
   })
   const recorded = (await readFile(events, 'utf8')).trim().split('\n')
-  if (initialVersion === 'shadowed') {
+  if (initialVersion === 'install-failed') {
     assert.notEqual(result.status, 0)
-    assert.match(result.stderr, /pnpm/)
-    assert.deepEqual(recorded, ['npm install --global pnpm@11.25.0'])
+    assert.deepEqual(recorded, [`npm install --global --prefix ${pnpmRoot} pnpm@11.25.0`])
     return
   }
   assert.equal(result.status, 0, result.stderr)
-  const expected = initialVersion === '11.25.0' ? [] : ['npm install --global pnpm@11.25.0']
+  const expected = initialVersion === 'cached' ? [] : [`npm install --global --prefix ${pnpmRoot} pnpm@11.25.0`]
   assert.deepEqual(recorded.slice(0, expected.length + 3), [...expected, 'dependencies', 'stop', 'install'])
 })
 }

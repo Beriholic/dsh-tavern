@@ -47,16 +47,21 @@ NODE
 
 require_command node
 require_command dsh
-# The release lockfile uses pnpm 11's patch format; older pnpm rejects it.
-INSTALLED_PNPM_VERSION=$(pnpm --version 2>/dev/null || :)
+# Keep Tavern's package manager independent of DSHA's bundled pnpm and PATH.
+PNPM_ROOT="${DSH_ROOT}/runtime/tavern-pnpm/${PNPM_VERSION}"
+PNPM_COMMAND="${PNPM_ROOT}/bin/pnpm"
+INSTALLED_PNPM_VERSION=$("${PNPM_COMMAND}" --version 2>/dev/null || :)
 if [ "${INSTALLED_PNPM_VERSION}" != "${PNPM_VERSION}" ]; then
   require_command npm
-  printf '\n正在安装 pnpm %s（当前：%s）……\n' "${PNPM_VERSION}" "${INSTALLED_PNPM_VERSION:-未安装}"
-  npm install --global "pnpm@${PNPM_VERSION}"
-  hash -r
+  printf '\n正在安装 Tavern 专用 pnpm %s……\n' "${PNPM_VERSION}"
+  npm install --global --prefix "${PNPM_ROOT}" "pnpm@${PNPM_VERSION}"
 fi
-INSTALLED_PNPM_VERSION=$(pnpm --version 2>/dev/null || :)
-[ "${INSTALLED_PNPM_VERSION}" = "${PNPM_VERSION}" ] || fail "需要 pnpm ${PNPM_VERSION}，当前命令版本为 ${INSTALLED_PNPM_VERSION:-不可用}。请检查 PATH 中的 pnpm 后重试。"
+INSTALLED_PNPM_VERSION=$("${PNPM_COMMAND}" --version 2>/dev/null || :)
+[ "${INSTALLED_PNPM_VERSION}" = "${PNPM_VERSION}" ] || fail "Tavern 专用 pnpm ${PNPM_VERSION} 安装后校验失败（当前：${INSTALLED_PNPM_VERSION:-不可用}）。"
+# All dependency and Profile installs below use this exact executable.
+pnpm() {
+  "${PNPM_COMMAND}" "$@"
+}
 # Android 的 proot 会把硬链接模拟成符号链接，pnpm 默认导入方式可能因此
 # 生成无法进行相对 require 的包目录。DSHA 中的所有后续安装也必须沿用复制模式。
 pnpm config set package-import-method copy --location=user
