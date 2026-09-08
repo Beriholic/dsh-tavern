@@ -280,6 +280,35 @@ test('消息界面的 /send …|/trigger 通过当前 composer 提交并等待�
   await assert.rejects(execute('/compact', 'session-magic-fairy'), /只允许调用/)
 })
 
+test('大凉入局按钮的带空格管道发送开局消息', async () => {
+  const listeners = new Set()
+  const summary = { running: false }
+  const submissions = []
+  const input = {
+    setDraft(value) { submissions.push(['draft', value]) },
+    submit(mode) { submissions.push(['submit', mode]) }
+  }
+  const sessions = {
+    scope(id) { return id === 'session-magic-fairy' ? {} : undefined },
+    list: {
+      getSnapshot() { return { byId: { 'session-magic-fairy': summary } } },
+      subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) }
+    }
+  }
+  const ctx = { sessions, get(name) { return name === 'conversation' ? { input: { for() { return input } } } : undefined } }
+  const execute = client.createTavernFrameSlashExecutor(ctx, { setTimeout, clearTimeout })
+  const completed = execute('/send <开局信息>\n魔法少女 | /trigger', 'session-magic-fairy')
+
+  assert.deepEqual(submissions, [['draft', '<开局信息>\n魔法少女 '], ['submit', 'queue']])
+  summary.running = true
+  listeners.forEach(listener => listener())
+  summary.running = false
+  listeners.forEach(listener => listener())
+  assert.deepEqual(JSON.parse(JSON.stringify(await completed)), { submitted: true })
+  assert.equal(listeners.size, 0)
+  await assert.rejects(execute('/compact', 'session-magic-fairy'), /只允许调用/)
+})
+
 test('消息 iframe 首次缺少 Helper Context 时，在上下文抵达后重建为可交互文档', () => {
   const lifecycle = client.createTavernMessageFrameLifecycle({
     sessionId: 'session-late-context', content: '<button>开始游戏</button>', turn: 1, partIndex: 0,

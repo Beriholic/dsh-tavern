@@ -4465,7 +4465,7 @@ window.__ModuleLoader__.load({
 		function createTavernFrameSlashExecutor(ctx, hostWindow) {
 			hostWindow = hostWindow || window;
 			return function (line, sessionId) {
-				const match = /^\/send\s+([\s\S]+)\|\/trigger\s*$/.exec(String(line || ""));
+				const match = /^\/send\s+([\s\S]+)\|\s*\/trigger\s*$/.exec(String(line || ""));
 				const triggerOnly = /^\/trigger\s*$/.test(String(line || ""));
 				if (!triggerOnly && (!match || !match[1].trim())) return Promise.reject(new Error("消息界面只允许调用 /trigger 或 /send …|/trigger"));
 				const actx = ctx.sessions.scope(sessionId);
