@@ -731,8 +731,8 @@ test('后台 Agent 不执行前台预设正则，保持任务协议和结构化�
 
   assert.match(prompts[0], /正文冗余内容/)
   assert.match(result.text, /后台冗余输出/)
-  assert.equal(events[0].data.message.content[0].text.includes('后台冗余输出'), true, '原始事件保持不变')
-  assert.equal(appended.length, 0, '后台不生成正则投影事件')
+  assert.equal(events.find(event => event.type === 'assistant/message').data.message.content[0].text.includes('后台冗余输出'), true, '原始事件保持不变')
+  assert.deepEqual(appended.map(event => event.type), ['subagent/descriptor'], '只新增代理身份，不生成正则投影事件')
 })
 
 test('生图常驻会话隔离后台任务与游戏，先保存编号且恢复后延续历史', async () => {
@@ -1214,4 +1214,22 @@ test('后台回合耗尽输出 token 时返回真实终止原因', async () => {
     selection: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
     system: '候选规则', messages: [], tools: [], persistent: true, task: 'candidate'
   }), /输出达到模型 token 上限/)
+})
+
+test('后台代理首次运行前即具有目录描述，失败也保留身份', async () => {
+  const events = []
+  const session = { id: 'early-descriptor', header: {}, events, append(type, data) { events.push({ type, data }) } }
+  const runner = createBackgroundAgentRunner({
+    agents: { get: () => ({ id: 'parent', session: { header: {} } }), async create() {
+      return { agent: { session, followup() {
+        assert.equal(events.filter(e => e.type === 'subagent/descriptor').length, 1)
+        throw new Error('deliberate model failure')
+      }, async whenIdle() {} }, async dispose() {} }
+    } }, id: () => session.id
+  })
+  try {
+    await assert.rejects(runner.run({ sessionId: 'parent', persistent: true, task: 'settlement',
+      selection: { provider: 'test', model: 'fake' }, messages: [], tools: [] }), /deliberate model failure/)
+    assert.equal(events.find(e => e.type === 'subagent/descriptor').data.label, '酒馆后台 Agent')
+  } finally { await runner.dispose() }
 })

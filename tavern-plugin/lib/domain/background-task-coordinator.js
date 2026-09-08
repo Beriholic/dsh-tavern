@@ -158,6 +158,11 @@ export function createBackgroundTaskCoordinator(options = {}) {
           boundary: Number.isSafeInteger(boundary) ? boundary : null
         }
       },
+      async bindSession(sessionId) {
+        return serialize(chatId, () => store.updateChat(chatId, source => timeline.apply({ chat: source, intent: {
+          kind: 'agent.bind', operationId: begun.value.operationId, sessionId
+        } }).chat, { source: 'background.' + str(role) + '.bind', operationId: begun.value.operationId }))
+      },
       async commit(input = {}) {
         return await serialize(begun.chat.id, async function () {
           let status = 'missing'

@@ -1727,6 +1727,7 @@ export async function apply(ctx) {
         let mvuResult = null
         if (mvuTarget !== null && (backgroundTasksSettings.variables !== false || mvuTarget.message.mvu.pendingSubmission)) {
           const settlementInput = {
+            onPersistentSessionReady: id => taskRun.bindSession(id),
             backgroundTasks: backgroundTasksSettings,
             operationId: taskRun.operationId,
             chatId: snapshot.id,
