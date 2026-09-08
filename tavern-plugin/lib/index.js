@@ -1,3 +1,4 @@
+import { generateHelperRaw } from './domain/helper-generation.js'
 import { createBodyEditor, synchronizeBodyEdits } from './domain/body-editor.js'
 import { appendHelperUserSessionContext } from './domain/helper-user-session-context.js'
 import { sessionOpeningDescriptor, prepareSessionOpening } from './domain/session-opening.js'
@@ -717,7 +718,7 @@ export async function apply(ctx) {
       diagnostics: await resourceDiagnosticProjection(chat)
     })
   }
-  const openingPreparation = createOpeningPreparation({ readCard, worldBooks, templateRuntime: promptTemplateRuntime })
+  const openingPreparation = createOpeningPreparation({ readCard, worldBooks, templateRuntime: promptTemplateRuntime, generateRaw: (config, context) => generateHelperRaw(config, { ...context, callModel }) })
   async function getCardOpenings(cardPath, userName, requestMode) {
     const card = await readCard(cardPath)
     if (card === undefined) throw new Error('人物卡不存在: ' + cardPath)
@@ -733,12 +734,13 @@ export async function apply(ctx) {
       userName,
       presetRegexScripts: Array.isArray(preset && preset.regexScripts) ? preset.regexScripts : []
     })
-    const interactive = previews.openings.some(opening => /<script\b/i.test(opening.projection.text))
+    const hasOpeningScript = opening => /<script\b/i.test(opening.projection.text) || opening.projection.parts.some(part => /<script\b/i.test(part.content || ''))
+    const interactive = previews.openings.some(hasOpeningScript)
     const preparation = interactive ? await openingPreparation.create(cardPath, { runtime: (extensions.mvuResources || []).some(item => item.enabled !== false), userName }) : null
     if (preparation) {
       const swipes = [str(card.first_mes)].concat(Array.isArray(card.alternate_greetings) ? card.alternate_greetings : [])
       const openingIds = swipes.map((text, index) => str(text).trim() ? (index === 0 ? 'primary' : 'alternate:' + (index - 1)) : null)
-      for (const opening of previews.openings) if (!opening.openingPreview && /<script\b/i.test(opening.projection.text)) {
+      for (const opening of previews.openings) if (hasOpeningScript(opening)) {
         opening.openingPreview = { swipes, openingIds, selectedIndex: openingIds.indexOf(opening.id),
           preparationId: preparation.id, worldbook: preparation.worldbook, characterName: card.name, runtime: preparation.runtime }
       }
@@ -2179,6 +2181,12 @@ export async function apply(ctx) {
         const chat = await chatForSession(args && args.sessionId)
         if (!chat) throw new Error('找不到原对话')
         return await prepareSessionOpening({ chat, card: await readChatCard(chat), swipeId: args.swipeId, message: args.message, preparation: openingPreparation })
+      }
+      case 'generateTavernHelperRaw': {
+        const chat = await chatForSession(args && args.sessionId)
+        if (!chat) throw new Error('找不到当前游戏')
+        return { text: await generateHelperRaw(args.config, { callModel, sessionId: chat.sessionId,
+          history: projectTavernHelperContext(chat).messages.map(message => ({ role: message.role, text: message.message })) }) }
       }
       case 'callOpeningRuntime': return await openingPreparation.callRuntime(args && args.id, args && args.method, args && args.args)
       case 'saveOpeningSelection': return openingPreparation.select(args && args.id, args && args.openingId)

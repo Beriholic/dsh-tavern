@@ -9,7 +9,7 @@ import { projectTavernHelperWorldbook, replaceTavernHelperWorldbookOperations } 
 const copy = value => structuredClone(value)
 
 /** Private pre-game host state. No Session or shared resource is written here. */
-export function createOpeningPreparation({ readCard, worldBooks, templateRuntime, now = Date.now }) {
+export function createOpeningPreparation({ readCard, worldBooks, templateRuntime, generateRaw, now = Date.now }) {
   const drafts = new Map()
   const lifetime = 2 * 60 * 60 * 1000
   function requireDraft(id) {
@@ -64,6 +64,11 @@ export function createOpeningPreparation({ readCard, worldBooks, templateRuntime
     get(id) { return present(requireDraft(id)) },
     async callRuntime(id, method, args = {}) {
       const draft = requireDraft(id)
+      if (method === 'generateTavernHelperRaw') {
+        if (!generateRaw) throw new Error('独立生成服务尚未就绪')
+        return { text: await generateRaw(args.config, { sessionId: draft.sourceSessionId,
+          history: projectTavernHelperContext(draft.chat).messages.map(message => ({ role: message.role, text: message.message })) }) }
+      }
       if (!draft.runtimeEnabled) throw new Error('准备页脚本运行时未初始化')
       if (method === 'loadTavernWorldInfo') return { worldInfo: exportSillyTavernWorldBook(draft.document) }
       if (method === 'getTavernHelperWorldbook') return { worldbook: present(draft).worldbook }

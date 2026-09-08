@@ -106,3 +106,16 @@ test('准备页加载真实模板引擎，运行时变量和插件设置均隔�
   assert.equal(second.runtime.context.extensionSettings.mvu, undefined)
   await assert.rejects(service.callRuntime(draft.id, 'updateTavernHelperMessages', { messages: [{ message_id: 0, message: '改写剧情' }] }), /只能更新开场变量/)
 })
+
+
+test('准备页独立生成只返回文本，不修改草稿或初始化游戏', async () => {
+  let captured
+  const service = createOpeningPreparation({ readCard: async () => structuredClone(card), worldBooks: { bound: async () => null },
+    generateRaw: async (config, context) => { captured = { config, context }; return '档案结果' } })
+  const draft = await service.create('card')
+  const before = service.get(draft.id)
+  assert.deepEqual(await service.callRuntime(draft.id, 'generateTavernHelperRaw', { config: { ordered_prompts: [] } }), { text: '档案结果' })
+  assert.equal(captured.context.sessionId, '')
+  assert.deepEqual(service.get(draft.id), before)
+  await assert.rejects(service.callRuntime('missing', 'generateTavernHelperRaw', {}), /准备/)
+})

@@ -14,11 +14,14 @@ function installOpeningPreviewBridge(token, preview) {
   function request(type, payload) {
     const requestId = String(++nextId);
     return new Promise(function (resolve, reject) {
-      const timer = setTimeout(function () { pending.delete(requestId); reject(new Error('开场操作超时，请重试')); }, 10000);
+      const timer = setTimeout(function () { pending.delete(requestId); reject(new Error('开场操作超时，请重试')); }, type === 'dsh-tavern-helper-call' ? 300000 : 10000);
       pending.set(requestId, { resolve, reject, timer });
       parent.postMessage(Object.assign({ type, token, requestId }, payload), '*');
     });
   }
+  window.generateRaw = function (config) {
+    return request('dsh-tavern-helper-call', { method: 'generateTavernHelperRaw', args: { config: copy(config) } }).then(function (result) { return result.text; });
+  };
   window.getCharWorldbookNames = function () { return { primary: worldbook ? worldbook.name : null, additional: [] }; };
   window.getWorldbook = async function (name) {
     if (preview.preparationId) {
@@ -37,7 +40,7 @@ function installOpeningPreviewBridge(token, preview) {
     worldbook = copy(result.worldbook);
     return copy(worldbook.entries);
   };
-  window.TavernHelper = Object.assign({}, original && original.helper, { getCharWorldbookNames: window.getCharWorldbookNames,
+  window.TavernHelper = Object.assign({}, original && original.helper, { generateRaw: window.generateRaw, getCharWorldbookNames: window.getCharWorldbookNames,
     getWorldbook: window.getWorldbook, updateWorldbookWith: window.updateWorldbookWith });
   const chat = [{ is_user: false, name: preview.characterName || '', mes: swipes[selected], swipe_id: selected, swipes: swipes.slice() }];
   let savedIndex = selected;
@@ -96,7 +99,7 @@ function installOpeningPreviewBridge(token, preview) {
   };
   addEventListener('message', function (event) {
     const data = event.data;
-    if (event.source !== parent || !data || data.token !== token || data.type !== 'dsh-tavern-opening-response') return;
+    if (event.source !== parent || !data || data.token !== token || !['dsh-tavern-opening-response', 'dsh-tavern-helper-response'].includes(data.type)) return;
     const task = pending.get(data.requestId);
     if (!task) return;
     pending.delete(data.requestId); clearTimeout(task.timer);
