@@ -457,7 +457,7 @@ test('卡片模式通过人物卡、剧本、世界书、预设和空白入口�
 	assert.match(clientSource, /暂无可选.*可点击右上角导入/)
 	assert.match(flow, /kind: "card", targetMode: "card"/)
   assert.match(flow, /task: task, label: label, card: card, selectedResources: selectedResources \|\| \[\]/)
-  assert.match(recovery, /if \(pending\.task\) await props\.injectTaskPrompt\(pending\.sessionId, pending\.task, pending\.label, pending\.card, \(pending\.selectedResources \|\| \[\]\)\.length > 0\)/)
+  assert.match(recovery, /if \(pending\.task\) await props\.injectTaskPrompt\(pending\.sessionId, pending\.task, pending\.label, pending\.card, \(pending\.selectedResources \|\| \[\]\)\.length > 0, pending\.taskSupplement\)/)
   assert.doesNotMatch(clientSource, /\bstartExtract\b|newExtractSession|"revision"|mode: "extract"/)
   assert.doesNotMatch(clientSource, /attachSourcesToCurrent|attachCardToCurrent/)
   assert.match(clientSource, /return values\[sessionId\] \|\| "";/)

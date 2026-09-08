@@ -4697,7 +4697,7 @@ window.__ModuleLoader__.load({
 					if (typeof props.openPresetLibraryTab === "function") props.openPresetLibraryTab(pending.sessionId);
 					if (typeof props.openWorldBookLibraryTab === "function") props.openWorldBookLibraryTab(pending.sessionId);
 					if (typeof props.openResourcesTab === "function") props.openResourcesTab(pending.sessionId);
-					if (pending.task) await props.injectTaskPrompt(pending.sessionId, pending.task, pending.label, pending.card, (pending.selectedResources || []).length > 0);
+					if (pending.task) await props.injectTaskPrompt(pending.sessionId, pending.task, pending.label, pending.card, (pending.selectedResources || []).length > 0, pending.taskSupplement);
 					(pending.selectedResources || []).forEach(function (resource) { props.appendMention(pending.sessionId, resource.kind, resource.path, resource.title); });
 				} else if (typeof props.openStatusTab === "function") props.openStatusTab(pending.sessionId);
 				setOpeningPicker(null); setPicking(false); setCardEntry("");
@@ -4819,16 +4819,25 @@ window.__ModuleLoader__.load({
 				catch (err) { setError(String(err && err.message || err)); }
 				finally { setBusy(false); }
 			}
-			async function newCardConversation(card, task, label, selectedResources, debugSource) {
+			async function newCardConversation(card, task, label, selectedResources, debugSource, taskSupplement) {
 				setBusy(true); setError("");
 				try {
 					await conversationLifecycle.start({
 						kind: "card", targetMode: "card", card: card, task: task,
-						pending: { task: task, label: label, card: card, selectedResources: selectedResources || [], debugSource: debugSource || null }
+						pending: { task: task, label: label, card: card, selectedResources: selectedResources || [], debugSource: debugSource || null, taskSupplement: taskSupplement || "" }
 					});
 				} catch (err) { setError(String(err && err.phase || "创建对话") + "失败：" + String(err && err.message || err)); }
 				finally { setBusy(false); }
 			}
+			React.useEffect(function () {
+				function onAdjustCardStyle(event) {
+					const detail = event.detail || {};
+					if (busy || !detail.card || !detail.card.path) return;
+					newCardConversation(detail.card, "edit", "调整人物卡文风", [], null, "我想调整这张人物卡的文风。请先询问我想改变哪些写法，再根据我的要求修改卡片。");
+				}
+				window.addEventListener("dsh-tavern-adjust-card-style", onAdjustCardStyle);
+				return function () { window.removeEventListener("dsh-tavern-adjust-card-style", onAdjustCardStyle); };
+			});
 			React.useEffect(function () {
 				function onOpenUserProfileTask() {
 					newCardConversation(null, "user-profile", "建立用户画像");
@@ -7323,6 +7332,7 @@ window.__ModuleLoader__.load({
 			function TavernStatusPanel(props) {
 			const [error, setError] = usePersistentError("酒馆状态");
 			const [guideDraft, setGuideDraft] = React.useState("");
+			const guideInputRef = React.useRef(null);
 			const [guideBusy, setGuideBusy] = React.useState(false);
 			const [guideError, setGuideError] = usePersistentError("Guide");
 			const [debugBusy, setDebugBusy] = React.useState(false);
@@ -7443,7 +7453,7 @@ window.__ModuleLoader__.load({
 							}) : h("div", { className: "dsh-tavern-status-empty" }, "暂无 Guide。添加后会自动注入正文和候选项生成。")
 						),
 						h("div", { className: "dsh-tavern-guide-add" },
-							h("textarea", { className: "dsh-tavern-regen-input", rows: 2, value: guideDraft, placeholder: "例如：多用短句，多写心理活动，对话不要超过三句", onChange: function (e) { setGuideDraft(e.target.value); } }),
+							h("textarea", { className: "dsh-tavern-regen-input", ref: guideInputRef, rows: 2, value: guideDraft, placeholder: "例如：多用短句，多写心理活动，对话不要超过三句", onChange: function (e) { setGuideDraft(e.target.value); } }),
 							h("button", { className: "dsh-card-primary", disabled: guideBusy || guideDraft.trim() === "", onClick: addGuide }, guideBusy ? "保存中…" : "添加 Guide")
 						),
 						guideError ? h("div", { className: "dsh-card-error" }, guideError) : null
@@ -7475,6 +7485,14 @@ window.__ModuleLoader__.load({
 					h("section", { className: "dsh-tavern-status-section" },
 						h("div", { className: "dsh-tavern-status-label" }, "人物姿势"),
 						view.posture ? h("div", { className: "dsh-tavern-status-now" }, view.posture) : h("div", { className: "dsh-tavern-status-empty" }, "等待第一轮状态结算")
+					),
+					h("section", { className: "dsh-tavern-status-section dsh-tavern-style-guide", "aria-label": "调整文风" },
+						h("div", { className: "dsh-tavern-status-label" }, "调整文风"),
+						h("div", { className: "dsh-tavern-status-empty" }, "少些心理描写、多些对话……直接说出你想改的写法。"),
+						h("button", { type: "button", onClick: function () { guideInputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }); guideInputRef.current?.focus({ preventScroll: true }); } }, h("span", null, "当前故事"), h("small", null, "通过 Guide 调整后续写法")),
+						h("button", { type: "button", onClick: function () { props.openStyleTab("dsh-tavern:user-profile"); } }, h("span", null, "长期偏好"), h("small", null, "在用户画像中设置新游戏偏好")),
+						h("button", { type: "button", disabled: running, onClick: function () { window.dispatchEvent(new CustomEvent("dsh-tavern-adjust-card-style", { detail: { card: view.card } })); } }, h("span", null, "这张人物卡"), h("small", null, "交给卡片助手修改，新开游戏使用")),
+						h("button", { type: "button", onClick: function () { props.openStyleTab("dsh-tavern:presets"); } }, h("span", null, "导入预设"), h("small", null, "已有喜欢的预设？前往预设库"))
 					)
 				)
 			);
@@ -7526,7 +7544,7 @@ window.__ModuleLoader__.load({
 					function () { return selector(chat.getSnapshot()); }
 				);
 			}
-			return h(TavernStatusPanel, { sessionId: props.sessionId, useSession: useSession, useChat: useChat, executeSlash: props.executeSlash });
+			return h(TavernStatusPanel, { sessionId: props.sessionId, useSession: useSession, useChat: useChat, executeSlash: props.executeSlash, openStyleTab: props.openStyleTab });
 		}
 
 		const candidatePanel = { value: null, listeners: new Set() };
@@ -8025,7 +8043,7 @@ window.__ModuleLoader__.load({
 					return { tab: { id: "dsh-tavern:status", type: "dsh-tavern:status", title: "酒馆状态" }, patch: { panelOpen: true } };
 				},
 				component: function (props) {
-					return React.createElement(TavernStatusTab, { sessions: ctx.sessions, uiConversation: uiConversation, sessionId: props.scope.sessionId, executeSlash: executeSlash });
+					return React.createElement(TavernStatusTab, { sessions: ctx.sessions, uiConversation: uiConversation, sessionId: props.scope.sessionId, executeSlash: executeSlash, openStyleTab: function (type) { ctx.betterSidebar.openTab({ type: type }, { sessionId: props.scope.sessionId }); } });
 				}
 			}), "dsh-tavern: Better Sidebar status tab");
 			ctx.effect(() => slots.inject("conversation.session.header.actions", () => slots.register(
@@ -8121,7 +8139,7 @@ window.__ModuleLoader__.load({
 					tavernErrorHub.report("在对话中引用", err);
 				}
 			}
-			async function injectTaskPrompt(sessionId, task, label, card, hasInitialResources) {
+			async function injectTaskPrompt(sessionId, task, label, card, hasInitialResources, taskSupplement) {
 				const actx = ctx.sessions.scope(sessionId);
 				const conversation = ctx.get("conversation");
 				if (!actx || !conversation) throw new Error("当前对话输入框不可用");
@@ -8143,7 +8161,7 @@ window.__ModuleLoader__.load({
 				}
 				const result = await rpc("getCardTaskPrompt", { task: task }, sessionId);
 				const draft = String(input.state.getSnapshot().draft || "");
-				const supplement = draft;
+				const supplement = draft + (taskSupplement ? "\n\n" + taskSupplement : "");
 				const targetSection = targetPath ? "\n\n【目标人物卡】\n@\"" + targetPath + "\"" : "";
 				const resourceSection = hasInitialResources ? (task === "worldbook" || task === "preset" || task === "script" ? "\n\n【编辑目标】\n" : "\n\n【初始剧本】\n") : "";
 				const taskText = "【卡片任务：" + label + "】" + targetSection + "\n\n" + String(result && result.text || "").trim() + resourceSection;

@@ -558,3 +558,15 @@ body.dsh-tavern-shell-active [data-ref-chip="file"] { max-width: calc(100% - 4px
 @media (max-width: 820px) {
   .dsh-tavern-question { width: calc(100% - 24px); }
 }
+
+/* Compact writing-style navigation at the bottom of the status panel. */
+.dsh-tavern-style-guide > button {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  padding: 8px 0; border: 0; border-bottom: 1px solid var(--border, rgba(128,128,128,.16));
+  background: transparent; color: inherit; text-align: left; cursor: pointer;
+}
+.dsh-tavern-style-guide > button:last-child { border-bottom: 0; }
+.dsh-tavern-style-guide > button > span { flex-shrink: 0; font-size: 13px; }
+.dsh-tavern-style-guide > button > small { font-size: 11px; opacity: .65; }
+.dsh-tavern-style-guide > button:hover > span { text-decoration: underline; }
+.dsh-tavern-style-guide > button:disabled { opacity: .45; cursor: default; }
