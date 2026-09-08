@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "eb69252445b02bf63425ab4bc89040000e83b86b",
-  "releaseSequence": 108,
+  "revision": "af6fb3192fb5693bcdcc042b1cd4b45a4bf53e9a",
+  "releaseSequence": 109,
   "version": "1.5.0",
   "files": [
     {
@@ -226,8 +226,8 @@
     },
     {
       "path": "tavern-plugin/lib/client.js",
-      "sha256": "057f4bb0a3d10ba5cc6685d297647cc1e53c3de0c84e5e8758c1dc099e4311cc",
-      "size": 584453
+      "sha256": "94480bc224aa66f6f2ad335a37c6eac041ebe71a54b80a4fa49156330769ea5d",
+      "size": 584653
     },
     {
       "path": "tavern-plugin/lib/cordis-inspect.js",
@@ -446,8 +446,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/mvu-diagnostics.js",
-      "sha256": "dfb53f3e81d2d8c3d23e06715b21d85fb4979dc39e14dcfdf3e7c48845e695e9",
-      "size": 12218
+      "sha256": "d9802e7b2c9df1fbc71e5a0f2d169594b93a7174b92272dee1b1a533b009b9da",
+      "size": 12730
     },
     {
       "path": "tavern-plugin/lib/domain/mvu-settlement-effect.js",
@@ -916,8 +916,8 @@
     },
     {
       "path": "tavern-plugin/lib/index.js",
-      "sha256": "63bafee9f429761ed9979064b231bdb526a8ad183a4f211abf95ce42d318ebbc",
-      "size": 214935
+      "sha256": "3215a5b35cb4fb9559eda7912b008dd806fca9cdc5c5e432b99d7a7f3bb222c7",
+      "size": 215280
     },
     {
       "path": "tavern-plugin/lib/profile-data-store.js",
@@ -2371,8 +2371,8 @@
     },
     {
       "path": "tavern-plugin/src/client/main.js",
-      "sha256": "df544d89305660d14a249023c652c5db3ebf323a39b649c9633100345d69ee73",
-      "size": 563815
+      "sha256": "cb484358820fe0912aebf6ff98056128fbb3d1da5fa57f0f55fb161303b2a19a",
+      "size": 564015
     },
     {
       "path": "tavern-plugin/src/client/modules/library-refresh.js",
