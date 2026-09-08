@@ -718,7 +718,7 @@ export async function apply(ctx) {
       diagnostics: await resourceDiagnosticProjection(chat)
     })
   }
-  const openingPreparation = createOpeningPreparation({ readCard, worldBooks, templateRuntime: promptTemplateRuntime, generateRaw: (config, context) => generateHelperRaw(config, { ...context, callModel }) })
+  const openingPreparation = createOpeningPreparation({ readCard, worldBooks, readRuntimeExtensions: async cardPath => tavernRemoteAssets.pinExtensions(await readCardExtensions(cardPath)), templateRuntime: promptTemplateRuntime, generateRaw: (config, context) => generateHelperRaw(config, { ...context, callModel }) })
   async function getCardOpenings(cardPath, userName, requestMode) {
     const card = await readCard(cardPath)
     if (card === undefined) throw new Error('人物卡不存在: ' + cardPath)

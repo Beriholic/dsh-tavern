@@ -1,3 +1,4 @@
+import { projectTavernHelperScripts } from './tavern-helper-scripts.js'
 import { mutateScriptPrompts } from './tavern-script-prompts.js'
 import { projectTavernHelperContext, replaceTavernHelperVariables, replaceTavernHelperMessages } from './tavern-helper-context.js'
 import { OFFICIAL_MVU_VERSION } from './official-mvu-assets.js'
@@ -9,7 +10,7 @@ import { projectTavernHelperWorldbook, replaceTavernHelperWorldbookOperations } 
 const copy = value => structuredClone(value)
 
 /** Private pre-game host state. No Session or shared resource is written here. */
-export function createOpeningPreparation({ readCard, worldBooks, templateRuntime, generateRaw, now = Date.now }) {
+export function createOpeningPreparation({ readCard, worldBooks, templateRuntime, generateRaw, readRuntimeExtensions, now = Date.now }) {
   const drafts = new Map()
   const lifetime = 2 * 60 * 60 * 1000
   function requireDraft(id) {
@@ -30,7 +31,7 @@ export function createOpeningPreparation({ readCard, worldBooks, templateRuntime
   function present(draft) {
     return copy({ id: draft.id, cardPath: draft.cardPath, openings: draft.openings,
       openingId: draft.openingId || draft.openings[0]?.id, diagnostics: copy(draft.diagnostics || []),
-      runtime: draft.runtimeEnabled ? { context: runtimeContext(draft), scripts: [{ id: '__dsh_official_mvu__', name: 'MVU', system: 'official-mvu', assetUrl: OFFICIAL_MVU_VERSION.assetUrl }] } : null,
+      runtime: draft.runtimeEnabled ? { context: runtimeContext(draft), scripts: (draft.chat.mvu.enabled ? [{ id: '__dsh_official_mvu__', name: 'MVU', system: 'official-mvu', assetUrl: OFFICIAL_MVU_VERSION.assetUrl }] : []).concat(draft.helperScripts || []) } : null,
       worldbook: draft.document ? projectTavernHelperWorldbook(inspectWorldBookDocument(draft.document)) : null })
   }
   return {
@@ -47,8 +48,13 @@ export function createOpeningPreparation({ readCard, worldBooks, templateRuntime
       draft.card = copy(card)
       draft.userName = settings.userName || '你'
       const swipes = [card.first_mes || ''].concat(card.alternate_greetings || [])
-      draft.chat = { id: draft.id, cardPath, mode: 'story', mvu: { enabled: true }, _storageRevision: 0,
+      draft.chat = { id: draft.id, cardPath, mode: 'story', mvu: { enabled: settings.runtime === true }, _storageRevision: 0,
         variables: {}, messages: [{ role: 'assistant', text: swipes[0], sourceText: swipes[0], greeting: true, turn: 1, swipeId: 0, swipes, variables: swipes.map(() => ({})) }] }
+      const extensions = readRuntimeExtensions ? await readRuntimeExtensions(cardPath) : {}
+      const projected = projectTavernHelperScripts(extensions.helperScripts)
+      draft.helperScripts = projected.scripts
+      draft.diagnostics = projected.diagnostics.concat(extensions.diagnostics || [])
+      draft.runtimeEnabled = projected.scripts.length > 0
       draft.extensionSettings = {}
       if (settings.runtime === true && templateRuntime) {
         const runtime = await templateRuntime()

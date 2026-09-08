@@ -119,3 +119,19 @@ test('准备页独立生成只返回文本，不修改草稿或初始化游戏',
   assert.deepEqual(service.get(draft.id), before)
   await assert.rejects(service.callRuntime('missing', 'generateTavernHelperRaw', {}), /准备/)
 })
+
+
+test('准备页复用正式脚本选择，保留启用脚本并排除重复 MVU 核心', async () => {
+  const scripts = [
+    { id: 'core', name: 'MVU', type: 'script', enabled: true, content: 'core' },
+    { id: 'aux', name: '辅助', type: 'script', enabled: true, content: 'window.aux = true', data: { count: 1 } },
+    { id: 'off', name: '关闭', type: 'script', enabled: false, content: 'throw Error()' }
+  ]
+  const service = createOpeningPreparation({ readCard: async () => structuredClone(card), worldBooks: { bound: async () => null },
+    readRuntimeExtensions: async () => ({ helperScripts: scripts }) })
+  const draft = await service.create('card')
+  assert.deepEqual(draft.runtime.scripts.map(s => s.id), ['aux'])
+  assert.equal(draft.runtime.context.mvuEnabled, false)
+  draft.runtime.scripts[0].data.count = 100
+  assert.equal(service.get(draft.id).runtime.scripts[0].data.count, 1)
+})
