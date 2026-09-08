@@ -1,3 +1,4 @@
+import { createBodyEditor, synchronizeBodyEdits } from './domain/body-editor.js'
 import { cardAgentContext } from './domain/card-agent-context.js'
 import { appendHelperUserSessionContext } from './domain/helper-user-session-context.js'
 import { sessionOpeningDescriptor, prepareSessionOpening } from './domain/session-opening.js'
@@ -2155,6 +2156,19 @@ export async function apply(ctx) {
     present: view
   })
 
+  const bodyEditor = createBodyEditor({
+    chats: { forSession: chatForSession, update: updateChat },
+    sessions: { get: id => ctx.get('agents')?.get(id), flush: session => sessionStore.flush(session) },
+    timeline: storyTimeline,
+    activity: chat => backgroundTasks.activity(chat),
+    project: async (text, chat) => {
+      const extensions = await readCardExtensions(chat.cardPath)
+      return projectRuntimeReply(text, { charName: chat.cardName, macroState: chat.macroState,
+        regexScripts: (extensions?.regexScripts || []).concat(chat.runtimePresetSnapshot?.regexScripts || []), placement: 2, isEdit: false, depth: 0 })
+    },
+    present: async chat => view(chat, await readChatCard(chat))
+  })
+
   // ---------- HTTP RPC（客户端同源 fetch） ----------
   async function dispatch(method, args) {
     switch (method) {
@@ -2416,6 +2430,8 @@ export async function apply(ctx) {
       }
       case 'addGuide': return { guides: await addGuide(args && args.sessionId, args && args.text) }
       case 'deleteGuide': return { guides: await deleteGuide(args && args.sessionId, args && args.index) }
+      case 'getBodyEdit': return { edit: await bodyEditor.read(args && args.sessionId) }
+      case 'saveBodyEdit': return { view: await bodyEditor.save(args && args.sessionId, args) }
       case 'regenBody': return { view: await regenBody(args && args.chatId, args && args.guidance, args && args.sessionId) }
       case 'rollbackTurn': return { view: await rollbackTurn(args && args.sessionId, args && args.chatId) }
       case 'retrySettlement': return { view: await retrySettlement(args && args.sessionId, args && args.turn) }
@@ -2990,6 +3006,7 @@ export async function apply(ctx) {
     const decision = await next()
     if (decision.kind === 'reject') return decision
     const chat = await chatForSession(sessionId)
+    if (chat) await synchronizeBodyEdits(payload.agent.session, chat, session => sessionStore.flush(session))
     return await foregroundStrategies.prepareStep({
       sessionId,
       payload,
@@ -3130,6 +3147,7 @@ export async function apply(ctx) {
     if (agent === undefined || agent.session === undefined) return assembly
     if (backgroundAgentRunner.owns(agent.session.id)) return assembly
     const chat = await chatForSession(agent.session.id)
+    if (chat) await synchronizeBodyEdits(agent.session, chat, session => sessionStore.flush(session))
     if (chat && chat.requestMode !== 'sillytavern' && ['story', 'script'].includes(await turnOrchestrator.modeFor(agent.session.id))) {
       await ensureNativeSystemPrefix(agent.session, chat)
     }

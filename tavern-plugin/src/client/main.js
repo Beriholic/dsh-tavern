@@ -7704,6 +7704,67 @@ window.__ModuleLoader__.load({
 			return React.createElement("button", { className: "danger", role: "menuitem", disabled: blocked, title: blocked ? "请等待当前生成或后台处理完成后再回退" : "删除最近一次用户输入和这段 LLM 输出", onClick: rollback }, rolling ? "回退中…" : "回退本轮");
 		}
 
+		const bodyEditPanel = { value: null, listeners: new Set() };
+		function setBodyEditPanel(value) {
+			bodyEditPanel.value = value;
+			bodyEditPanel.listeners.forEach(function (listener) { listener(value); });
+		}
+		function useBodyEditPanel() {
+			const [value, setValue] = React.useState(bodyEditPanel.value);
+			React.useEffect(function () { bodyEditPanel.listeners.add(setValue); return function () { bodyEditPanel.listeners.delete(setValue); }; }, []);
+			return value;
+		}
+		function TavernEditBodyAction(props) {
+			const [busy, setBusy] = React.useState(false);
+			const running = props.useSession(function (snapshot) { return snapshot.running === true; });
+			const latestMessageId = props.useChat(latestTavernAssistantMessageId);
+			const live = useLiveTavernView(props.sessionId, "edit:" + String(running) + ":" + String(latestMessageId));
+			const coordination = useTavernCoordination(props.sessionId, String(running));
+			const activity = describeTavernActivity(coordination.view && coordination.view.activity);
+			async function openEditor() {
+				setBusy(true);
+				try {
+					const result = await rpc("getBodyEdit", {}, props.sessionId);
+					setRegenPanel(null); setCandidatePanel(null); setCandidateGuidePanel(null);
+					setBodyEditPanel({ sessionId: props.sessionId, edit: result.edit, texts: result.edit.parts.filter(function (part) { return part.kind === "text"; }).map(function (part) { return part.text; }), busy: false, error: "" });
+				} catch (error) { tavernErrorHub.report("编辑正文", error); }
+				finally { setBusy(false); }
+			}
+			if (!live.view || !live.view.canRollback) return null;
+			return React.createElement("button", { role: "menuitem", disabled: busy || running || activity.busy, onClick: openEditor }, busy ? "读取中…" : "编辑正文");
+		}
+		function BodyEditPanel(props) {
+			const panel = useBodyEditPanel();
+			const running = props.useSession(function (snapshot) { return snapshot.running === true; });
+			const h = React.createElement;
+			if (!panel || panel.sessionId !== props.sessionId) return null;
+			async function save() {
+				setBodyEditPanel(Object.assign({}, panel, { busy: true, error: "" }));
+				try {
+					const result = await rpc("saveBodyEdit", { token: panel.edit.token, texts: panel.texts }, props.sessionId);
+					liveTavernView.setView(props.sessionId, result.view);
+					notifyTavernDataChanged(["sessions"], "play-controls");
+					tavernCoordination.invalidate(props.sessionId);
+					setBodyEditPanel(null);
+				} catch (error) { setBodyEditPanel(Object.assign({}, panel, { busy: false, error: String(error.message || error) })); }
+			}
+			let textIndex = 0;
+			return h("div", { className: "dsh-tavern-question", role: "region", "aria-label": "编辑正文" },
+				h("div", { className: "dsh-tavern-question-head" }, h("span", null, "编辑正文")),
+				panel.error ? h("div", { className: "dsh-tavern-choice-error", role: "alert" }, panel.error) : null,
+				h("div", { style: { maxHeight: "50vh", overflowY: "auto" } }, panel.edit.parts.map(function (part, index) {
+					if (part.kind === "html") return h("div", { key: index, className: "dsh-tavern-question-sub" }, "HTML 内容保持原样");
+					const current = textIndex++;
+					return h("textarea", { key: index, className: "dsh-tavern-regen-input", "aria-label": "正文文本 " + (current + 1), rows: Math.min(12, Math.max(3, panel.texts[current].split("\n").length)), value: panel.texts[current], disabled: panel.busy, onChange: function (event) {
+						const texts = panel.texts.slice(); texts[current] = event.target.value;
+						setBodyEditPanel(Object.assign({}, panel, { texts: texts }));
+					} });
+				})),
+				h("div", { className: "dsh-tavern-question-foot" },
+					h("button", { className: "dsh-tavern-question-primary", disabled: panel.busy || running, onClick: save }, panel.busy ? "保存中…" : "保存"),
+					h("button", { className: "dsh-tavern-question-free", disabled: panel.busy, onClick: function () { setBodyEditPanel(null); } }, "取消")));
+		}
+
 		function TavernMoreActions(props) {
 			const [open, setOpen] = React.useState(false);
 			const root = React.useRef(null);
@@ -7718,6 +7779,7 @@ window.__ModuleLoader__.load({
 			return React.createElement("div", { className: "dsh-tavern-more-actions", ref: root },
 				React.createElement("button", { type: "button", className: "dsh-tavern-choice-trigger", "aria-haspopup": "menu", "aria-expanded": open, onClick: function () { setOpen(function (value) { return !value; }); } }, "更多 ▾"),
 				React.createElement("div", { className: "dsh-tavern-more-menu", role: "menu", hidden: !open, onClick: function (event) { if (event.target && event.target.closest && event.target.closest("button:not(:disabled)")) setOpen(false); } },
+					React.createElement(TavernEditBodyAction, props),
 					React.createElement(TavernRollbackAction, props),
 					React.createElement(TavernCompactionAction, Object.assign({}, props, { inMenu: true })))
 			);
@@ -7982,7 +8044,7 @@ window.__ModuleLoader__.load({
 			)), "dsh-tavern: candidate guide panel");
 			ctx.effect(() => slots.inject("conversation.input.dock", () => slots.register(
 				{ name: "conversation.input.dock", id: "dsh-tavern-regen", order: -110, label: "重新生成正文" },
-				function (props) { return React.createElement(RegenPanel, props); }
+				function (props) { return React.createElement(React.Fragment, null, React.createElement(RegenPanel, props), React.createElement(BodyEditPanel, props)); }
 			)), "dsh-tavern: regen body panel");
 		}
 		return Object.freeze({ register: register });

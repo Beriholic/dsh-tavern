@@ -444,6 +444,16 @@ export function createStoryTimeline(options = {}) {
     const intent = object(input && input.intent)
     let value
     if (intent.kind === 'ensure') value = { status: 'applied', branchId: chat.timeline.branchId, revision: chat.timeline.revision }
+    else if (intent.kind === 'body.edit') {
+      const index = chat.messages.findLastIndex(message => message?.role === 'assistant')
+      if (index !== chat.messages.length - 1 || chat.messages[index]?.greeting || Number(chat.messages[index]?.turn) !== Number(intent.turn)) throw new Error('只能编辑最后一轮正文')
+      Object.assign(chat.messages[index], intent.patch)
+      delete chat.messages[index].displayRuntime
+      chat.timeline.revision++
+      chat.timeline.updatedAt = now()
+      chat.candidates = null
+      value = { status: 'edited', revision: chat.timeline.revision }
+    }
     else if (intent.kind === 'body.begin') value = beginBody(chat, intent)
     else if (intent.kind === 'agent.begin') value = beginAgent(chat, intent)
     else if (intent.kind === 'background.recover') value = recoverBackground(chat)

@@ -45,7 +45,7 @@ function fencedSegments(value) {
     if (closing !== null && closing[1][0] === fence.character && closing[1].length >= fence.length) {
       if (isHtmlSource(content, fence.info)) {
         if (plain !== '') segments.push({ kind: 'text', text: plain })
-        segments.push({ kind: 'html', content })
+        segments.push({ kind: 'html', content, raw: fenced })
         plain = ''
       } else {
         plain += fenced
@@ -165,6 +165,13 @@ function splitPlainSegment(value) {
   }
 }
 
+/** Lossless editing ranges: HTML (including its fences) remains opaque. */
+export function editableReplyParts(value) {
+  return fencedSegments(value).flatMap(segment => segment.kind === 'html'
+    ? [{ kind: 'html', text: segment.raw }]
+    : splitPlainSegment(segment.text).map(part => ({ kind: part.kind === 'html' ? 'html' : 'text', text: part.kind === 'html' ? part.content : part.text })))
+}
+
 /** Native prose and isolated block HTML share one ordered projection; keep element interiors intact. */
 export function projectDisplayParts(value) {
   const segments = fencedSegments(value)
@@ -262,7 +269,7 @@ export function projectReplyHistory(messages, options = {}) {
     const projected = projectReplyLayers(sourceText, Object.assign({}, options, { projectionText }))
     const sessionText = str(message.text)
 
-    if (!isNativeMarkdownProjection(projected.displayParts, sessionText) || (Array.isArray(message.swipes) && message.swipes.length > 1)) {
+    if (message.bodyEdit || !isNativeMarkdownProjection(projected.displayParts, sessionText) || (Array.isArray(message.swipes) && message.swipes.length > 1)) {
       projections.push({
         version: 2,
         turn,
