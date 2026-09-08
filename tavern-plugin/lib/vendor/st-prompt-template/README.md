@@ -35,3 +35,11 @@ The build fails on unresolved imports or compiler warnings and checks the depend
 `initializeTemplatePlugin` requires jQuery, lodash, toastr and the Tavern context in its dedicated frame, plus a YAML library, snapshot and named callbacks. It initializes upstream modules once (bypassing only index.ts's jQuery auto-init), exposes the actual official exports, and offers serialized event, command and chat-completion operations. Destroy the owning frame after `dispose` to clear upstream DOM/timer/editor resources. Calls made directly to the official `api` are not serialized by this wrapper.
 
 Remaining production wiring: authoritative snapshot construction, native save transactions, frame ownership/transport, display operations and actual provider-request integration. A successful smoke test does not claim these integrations or complete plugin parity.
+
+## Native state connection
+
+`connectTemplateSession` connects the browser instance to the production `getFullPromptTemplateState`, `saveFullPromptTemplateState`, and `saveFullPromptTemplateSettings` RPCs. Its `rpc` argument must reject DSH responses with `ok: false`, even when HTTP status is 200. Native save receipts advance the version baseline and reconcile in-flight edits. Settings use the real EjsTemplate namespace. Chat variables, message variables, and template processing flags persist in the native journal; global-variable edits and message text rewrites still reject explicitly.
+
+The packaged minified `host-build/artifact` is served by the production route with manifest integrity checking. It includes upstream settings HTML and third-party license notices. The production foreground executor does not yet mount the plugin or route provider requests through it. `hostIntegrated: false` remains deliberate until those paths and display handling are completed.
+
+Run `node tests/fixtures/full-prompt-template-native-browser-smoke.mjs /path/to/artifact` for browser → HTTP → native journal → reopen verification. It creates an isolated temporary profile, without touching a user's existing chat. Its model, macro, regex, and tokenizer services remain deterministic test implementations; it verifies template processing and persistence, not provider HTTP behavior or full regex parity.

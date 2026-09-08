@@ -1,3 +1,4 @@
+import { FULL_PROMPT_TEMPLATE_ASSET_PREFIX, readFullPromptTemplateAsset } from '../tavern-plugin/lib/domain/full-prompt-template-assets.js'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
@@ -13,7 +14,7 @@ const start = source.indexOf('handler: async (req, res) => {', source.indexOf("p
 const end = source.indexOf("\n    }), 'dsh-tavern: web route')", start)
 function route(overrides = {}) {
   return vm.runInNewContext('(' + source.slice(start, end).trim() + ')', {
-    URL, Buffer, TAVERN_RELEASE_CAPABILITIES: { sceneImages: false }, OFFICIAL_MVU_VERSION,
+    URL, Buffer, FULL_PROMPT_TEMPLATE_ASSET_PREFIX, readFullPromptTemplateAsset, TAVERN_RELEASE_CAPABILITIES: { sceneImages: false }, OFFICIAL_MVU_VERSION,
     runtimeReadiness: Promise.resolve({ ok: true }), readOfficialMvuBundle, redactMvuLoadError, str: String,
     runtimeGeneration: 'test', TAVERN_RUNTIME_ASSET_PREFIX, readTavernRuntimeAsset,
     TAVERN_CLIENT_ASSET_PREFIX, readTavernClientAsset, ...overrides
@@ -136,4 +137,15 @@ test('RPC keeps malformed JSON rejection and scene-image byte limits before disp
   assert.equal(JSON.parse(large.body).ok, false)
   assert.match(JSON.parse(large.body).error, /生图请求过大/)
   assert.equal(calls, 0)
+})
+
+
+test('完整模板产物通过正式路由发布，错误返回可读且不缓存的 503',async()=>{
+  const response=await request(route(),{url:FULL_PROMPT_TEMPLATE_ASSET_PREFIX+'index.js'})
+  assert.equal(response.status,200)
+  assert.match(response.headers['Content-Type'],/javascript/)
+  assert.equal(response.headers['Access-Control-Allow-Origin'],'*')
+  const failed=await request(route({readFullPromptTemplateAsset:async()=>{throw new Error('asset mismatch')}}),{url:FULL_PROMPT_TEMPLATE_ASSET_PREFIX+'index.js'})
+  assert.equal(failed.status,503)
+  assert.equal(failed.headers['Cache-Control'],'no-store')
 })

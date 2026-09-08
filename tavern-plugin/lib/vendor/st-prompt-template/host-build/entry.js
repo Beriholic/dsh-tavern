@@ -1,3 +1,4 @@
+import { createNativeTemplateConnection } from './native-connection.js'
 import { configureTemplateHost, disposeTemplateHost, eventSource, runTemplateCommand, templateCommandNames } from './host.js'
 
 /** This must be loaded in a dedicated disposable frame, once per session. */
@@ -43,4 +44,11 @@ export async function initializeTemplatePlugin({ snapshot, callbacks, libraries 
     disposeTemplateHost()
     throw error
   }
+}
+
+/** Connect the official plugin to DSH's versioned native state APIs. */
+export async function connectTemplateSession({ sessionId, rpc, services, settingsHtml, libraries }) {
+  const connection = await createNativeTemplateConnection({ sessionId, rpc, services, settingsHtml })
+  const plugin = await initializeTemplatePlugin({ ...connection, libraries })
+  try { await connection.flush(); return { ...plugin, context: connection.snapshot } } catch(error) { await plugin.dispose(); throw error }
 }

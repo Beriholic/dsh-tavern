@@ -31,13 +31,14 @@ export async function buildTemplatePlugin({ dependencyRoot, outputPath }) {
       }),
       new MonacoPlugin({ monacoEditorPath: resolve(dependencyRoot, 'node_modules/monaco-editor'), languages: ['javascript'], customLanguages: [], filename: '[name].worker.js' })
     ],
-    optimization: { minimize: false }, performance: { hints: false }
+    optimization: { minimize: true }, performance: { hints: false }
   }
   await new Promise((accept, reject) => webpack(config, (error, stats) => {
     if (error) return reject(error)
     if (stats.hasErrors() || stats.hasWarnings()) return reject(new Error(stats.toString({ all: false, errors: true, warnings: true })))
     accept()
   }))
+  await writeFile(resolve(outputPath, 'settings.html'), await readFile(resolve(here, '../upstream/settings.html')))
   const files = {}
   for (const name of (await readdir(outputPath)).sort()) {
     const bytes = await readFile(resolve(outputPath, name))
