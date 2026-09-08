@@ -198,3 +198,12 @@ test('generateRaw 返回独立 RPC 文本，不创建聊天消息', async () => 
   assert.equal(await pending, '档案内容')
   assert.equal(run.calls().length, 1)
 })
+
+test('异步 RPC 报错保留调用时的脚本和事件，不能署名最后加载的脚本', async () => {
+  const h = helperHostHarness(), w = h.window
+  w.__dshTavernHelperSetCurrentScript('a')
+  const pending = w.insertVariables({ x: 1 }, { type: 'chat' })
+  w.__dshTavernHelperSetCurrentScript('b')
+  h.reply(h.calls()[0], '写入被拒绝', false)
+  await assert.rejects(pending, error => error.dshTavernScriptId === 'a' && error.dshTavernMethod === 'updateTavernHelperVariables')
+})

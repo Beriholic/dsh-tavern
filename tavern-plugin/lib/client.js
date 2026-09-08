@@ -1732,6 +1732,34 @@ window.__ModuleLoader__.load({
 		    }).finally(function () { pending = false; button.disabled = false; });
 		  });
 		}
+		// The header counts session summaries; its popup reads the lazy catalog.
+		// Refresh an opened catalog when membership/activity changes in the summary feed.
+		function syncTavernSubagentCatalogs(sessions) {
+		  if (!sessions || !sessions.list || typeof sessions.refreshSubagents !== 'function') return function () {};
+		  const signatures = new Map();
+		  let disposed = false;
+		  function reconcile() {
+		    const snapshot = sessions.list.getSnapshot();
+		    const groups = new Map();
+		    for (const row of Object.values(snapshot.byId || {})) {
+		      if (row.origin !== 'subagent' || !row.parentId) continue;
+		      if (!groups.has(row.parentId)) groups.set(row.parentId, []);
+		      groups.get(row.parentId).push(row.id + ':' + String(row.running === true));
+		    }
+		    for (const [parentId, catalog] of Object.entries(snapshot.subagentsByParent || {})) {
+		      if (!catalog || catalog.state !== 'ready') continue;
+		      const signature = (groups.get(parentId) || []).sort().join('|');
+		      if (signatures.get(parentId) === signature) continue;
+		      signatures.set(parentId, signature);
+		      Promise.resolve().then(function () {
+		        if (!disposed) return sessions.refreshSubagents(parentId);
+		      }).catch(function (error) { console.warn('[DSH Tavern] 子代理目录刷新失败', error); });
+		    }
+		  }
+		  const stop = sessions.list.subscribe(reconcile);
+		  reconcile();
+		  return function () { disposed = true; stop(); };
+		}
 
 		function buildTavernFrameDocument(input) {
 			const html = rewriteTavernStaticMarkup(String(input && (input.content !== undefined ? input.content : input.html) || ""));
@@ -1787,8 +1815,9 @@ window.__ModuleLoader__.load({
 			function request(method, args) {
 				return new Promise(function (resolve, reject) {
 					const requestId = String(nextId++);
-					pending[requestId] = { resolve: resolve, reject: reject, method: method };
-					post(Object.assign({ type: "dsh-tavern-helper-call", requestId: requestId, method: method, args: copy(args || {}) }, identity()));
+					const owner = identity();
+					pending[requestId] = { resolve: resolve, reject: reject, method: method, owner: owner };
+					post(Object.assign({ type: "dsh-tavern-helper-call", requestId: requestId, method: method, args: copy(args || {}) }, owner));
 				});
 			}
 			function receive(event) {
@@ -1801,7 +1830,13 @@ window.__ModuleLoader__.load({
 				if (!task) return;
 				delete pending[data.requestId];
 				if (data.ok) { onContext(data.result || {}, task.method); task.resolve(data.result); }
-				else task.reject(new Error(String(data.error || "Helper 调用失败")));
+				else {
+					const error = new Error(String(data.error || "Helper 调用失败"));
+					error.dshTavernScriptId = task.owner.scriptId;
+					error.dshTavernEventId = task.owner.eventId;
+					error.dshTavernMethod = task.method;
+					task.reject(error);
+				}
 			}
 			options.listen(receive);
 			return Object.freeze({ request: request, post: post });
@@ -2775,7 +2810,8 @@ window.__ModuleLoader__.load({
 					if (diagnosticCount++ >= 50) return;
 					try {
 						const message = Array.from(arguments).map(function (value) { return typeof value === "string" ? value : value && value.message || "[structured diagnostic omitted]"; }).join(" ").slice(0, 4000);
-						parent.postMessage({ type: "dsh-tavern-helper-diagnostic", token: token, eventId: activeHostEventId, scriptId: currentScript().id, level: level, message: message }, "*");
+						const failure = Array.from(arguments).find(value => value && value.dshTavernScriptId !== undefined);
+						parent.postMessage({ type: "dsh-tavern-helper-diagnostic", token: token, eventId: failure ? failure.dshTavernEventId : activeHostEventId, scriptId: failure ? failure.dshTavernScriptId : currentScript().id, level: level, message: message }, "*");
 					} catch (_) {}
 				};
 			}
@@ -2796,7 +2832,7 @@ window.__ModuleLoader__.load({
 				parent.postMessage({ type: "dsh-tavern-helper-script-runtime", token: token, scriptId: currentScript().id, level: "error", message: message }, "*");
 			});
 			addEventListener("unhandledrejection", function (event) {
-				parent.postMessage({ type: "dsh-tavern-helper-script-runtime", token: token, scriptId: currentScript().id, level: "error", message: String(event.reason && event.reason.message || event.reason || "人物卡脚本 Promise 失败") }, "*");
+				parent.postMessage({ type: "dsh-tavern-helper-script-runtime", token: token, scriptId: event.reason && event.reason.dshTavernScriptId || currentScript().id, eventId: event.reason && event.reason.dshTavernEventId || "", method: event.reason && event.reason.dshTavernMethod || "", level: "error", message: String(event.reason && event.reason.message || event.reason || "人物卡脚本 Promise 失败") }, "*");
 			});
 			parent.postMessage({ type: "dsh-tavern-helper-script-ready", token: token }, "*");
 		}
@@ -8509,6 +8545,7 @@ window.__ModuleLoader__.load({
 		const inject = ["slots", "sessions", "workspaces", "layout", "connection", "conversation", "betterSidebar", "remote", "remote.commands", "tavernSessionSignals"];
 
 		function apply(ctx) {
+			ctx.effect(() => syncTavernSubagentCatalogs(ctx.sessions), "dsh-tavern: subagent catalog synchronization");
 			const slots = ctx.slots;
 			if (slots === undefined) return;
 			const signals = ctx.tavernSessionSignals;
@@ -8641,6 +8678,7 @@ window.__ModuleLoader__.load({
 		exports.buildOpeningPreviewDocument = buildOpeningPreviewDocument;
 		exports.buildTavernFrameDocument = buildTavernFrameDocument;
 		exports.openingPreviewSelection = openingPreviewSelection;
+		exports.syncTavernSubagentCatalogs = syncTavernSubagentCatalogs;
 		exports.createTavernHelperTransport = createTavernHelperTransport;
 		exports.createTavernHelperEventBus = createTavernHelperEventBus;
 		exports.buildTavernHelperScriptDocument = buildTavernHelperScriptDocument;
