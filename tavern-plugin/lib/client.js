@@ -2235,19 +2235,33 @@ window.__ModuleLoader__.load({
 				}
 			});
 			const call = transport.request;
-			const promptWrites = new Set();
-			let promptFailure = null;
+			// Persistence receipts belong to the script that issued the write. A
+			// different script's event must not drain this entire shared sandbox.
+			const promptWritesByScript = new Map();
+			function promptWriteState(scriptId) {
+				if (!promptWritesByScript.has(scriptId)) promptWritesByScript.set(scriptId, { pending: new Set(), failure: null });
+				return promptWritesByScript.get(scriptId);
+			}
 			function writePrompts(operation) {
+				const owner = currentScript();
+				const writes = promptWriteState(owner.id);
 				const task = call("updateTavernHelperPrompts", { operation: operation }).then(function (result) {
 					if (result && result.stale) throw new Error("聊天已变化，提示词未保存");
 				});
-				promptWrites.add(task);
-				task.then(function () { promptWrites.delete(task); }, function (error) { promptWrites.delete(task); promptFailure = error; console.error(error); });
+				writes.pending.add(task);
+				task.then(function () { writes.pending.delete(task); }, function (error) {
+					writes.pending.delete(task);
+					error.dshTavernScriptId = owner.id;
+					writes.failure = error;
+					console.error("人物卡脚本「" + (owner.name || owner.id) + "」提示词写入失败", error);
+				});
 			}
-			async function drainPromptWrites() {
-				try { while (promptWrites.size) await Promise.all(Array.from(promptWrites)); }
-				catch (error) { promptFailure = null; throw error; }
-				if (promptFailure) { const error = promptFailure; promptFailure = null; throw error; }
+			async function drainPromptWrites(scriptId) {
+				const writes = promptWritesByScript.get(scriptId);
+				if (!writes) return;
+				try { while (writes.pending.size) await Promise.all(Array.from(writes.pending)); }
+				catch (error) { writes.failure = null; throw error; }
+				if (writes.failure) { const error = writes.failure; writes.failure = null; throw error; }
 			}
 			window.injectPrompts = function (prompts, options) {
 				if (!Array.isArray(prompts)) throw new TypeError("提示词必须是数组");
@@ -2268,7 +2282,8 @@ window.__ModuleLoader__.load({
 			async function withScript(scriptId, factory) {
 				const previous = currentScriptId;
 				currentScriptId = String(scriptId || previous || "");
-				try { const result = await factory(); await drainPromptWrites(); return result; }
+				const ownerId = currentScript().id;
+				try { const result = await factory(); await drainPromptWrites(ownerId); return result; }
 				finally { currentScriptId = previous; }
 			}
 			function stringHash(value, seed) {

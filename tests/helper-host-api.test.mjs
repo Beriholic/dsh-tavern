@@ -153,3 +153,34 @@ test('普通脚本获得 Helper 接口但不误检测到 MVU 框架', () => {
   assert.equal(typeof w.TavernHelper.getVariables, 'function')
   assert.equal(w.Mvu, undefined)
 })
+
+for (const outcome of ['pending', 'failed']) test('其他脚本的提示词写入不阻塞或污染 CHAT_CHANGED：' + outcome, async () => {
+  const h = helperHostHarness(), w = h.window
+  w.__dshTavernHelperSetCurrentScript('a')
+  w.injectPrompts([{ id: 'a-prompt', content: 'test' }])
+  const write = h.calls()[0]
+  if (outcome === 'failed') { h.reply(write, 'write A failed', false); await tick() }
+  w.__dshTavernHelperSetCurrentScript('b')
+  w.eventOn('CHAT_CHANGED', () => {})
+  h.receive({ type: 'dsh-tavern-helper-event', eventId: 'b-event', name: 'CHAT_CHANGED', args: ['chat'] })
+  await tick()
+  const completed = h.sent.find(item => item.type === 'dsh-tavern-helper-event-complete' && item.eventId === 'b-event')
+  assert.ok(completed, 'B 必须独立完成，不等待 A 的写入')
+  assert.equal(completed.error, undefined)
+  if (outcome === 'pending') { h.reply(write, { updated: true }); await tick() }
+})
+
+for (const fails of [false, true]) test('事件等待自己的提示词持久化，并保留失败归属：' + fails, async () => {
+  const h = helperHostHarness(), w = h.window
+  w.__dshTavernHelperSetCurrentScript('b')
+  w.eventOn('CHAT_CHANGED', () => { w.injectPrompts([{ id: 'b-prompt', content: 'test' }]) })
+  h.receive({ type: 'dsh-tavern-helper-event', eventId: 'own-event', name: 'CHAT_CHANGED', args: ['chat'] })
+  await tick()
+  assert.equal(h.sent.some(item => item.type === 'dsh-tavern-helper-event-complete'), false)
+  h.reply(h.calls()[0], fails ? 'write B failed' : { updated: true }, !fails)
+  await tick()
+  const result = h.sent.find(item => item.type === 'dsh-tavern-helper-event-complete')
+  assert.ok(result)
+  if (fails) { assert.equal(result.scriptId, 'b'); assert.match(result.error, /write B failed/) }
+  else assert.equal(result.error, undefined)
+})
