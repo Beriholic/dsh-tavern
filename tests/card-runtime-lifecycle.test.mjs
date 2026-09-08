@@ -780,3 +780,15 @@ test('equivalent context revisions and height rerenders do not rescan the conver
   assert.equal(h.posts[0].update.stateRevision, 2)
   h.stop()
 })
+
+test('正式卡片页面追加消息走当前 Session 与生命周期校验', async () => {
+  const h = frames(), frame = h.attach()
+  h.respond(() => Promise.resolve({ updated: true }))
+  frame.message('dsh-tavern-helper-call', { requestId: 'journey', method: 'createTavernHelperMessages', args: { sessionId: 'forged', messages: [{ role: 'user', message: '开局' }] } })
+  await tick()
+  assert.equal(h.calls.length, 1)
+  assert.equal(h.calls[0].method, 'createTavernHelperMessages')
+  assert.equal(h.calls[0].args.sessionId, 'A')
+  assert.equal(h.calls[0].args.expectedLifecycleRevision, 1)
+  h.stop()
+})

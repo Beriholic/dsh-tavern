@@ -18,3 +18,22 @@ test('正式消息首页通过 TavernHelper 获取核心列表，读写仍走宿
   assert.equal((await pending)[0].name, '命定系统-标准核心')
   assert.equal(w.TavernHelper.updateWorldbookWith, w.updateWorldbookWith)
 })
+
+test('自定义开局页面追加玩家消息后才能触发生成，并传播追加失败', async () => {
+  const html = helperClient.buildTavernFrameDocument({ token: 'journey', content: '', persistent: true, helperContext: { messages: [] } })
+  const sent = [], handlers = []
+  let rejectCreate = false
+  const parent = { postMessage(data) {
+    sent.push(data.method)
+    queueMicrotask(() => handlers.forEach(fn => fn({ source: parent, data: { type: 'dsh-tavern-helper-response', token: 'journey', requestId: data.requestId, ok: true, result: data.method === 'createTavernHelperMessages' && rejectCreate ? { stale: true } : { updated: true } } })))
+  } }
+  const w = { parent, structuredClone, addEventListener(type, fn) { handlers.push(fn) } }; w.window = w
+  vm.runInNewContext(html.match(/<script data-dsh-tavern-interactive-helper>([\s\S]*?)<\/script>/)[1], w)
+  const journey = () => vm.runInNewContext('(async()=>{await createChatMessages([{role:"user",message:"开局"}]); await triggerSlash("/trigger")})()', w)
+  await journey()
+  assert.deepEqual(sent, ['createTavernHelperMessages', 'triggerTavernSlash'])
+  assert.equal(w.TavernHelper.createChatMessages, w.createChatMessages)
+  rejectCreate = true; sent.length = 0
+  await assert.rejects(journey(), /聊天已变化/)
+  assert.deepEqual(sent, ['createTavernHelperMessages'])
+})
