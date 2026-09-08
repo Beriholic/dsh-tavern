@@ -6,6 +6,7 @@ import path from 'node:path'
 import net from 'node:net'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+import { resolveDshCliEntry } from '../bin/plugin-dependencies.mjs'
 import { renderWindowsLauncher } from '../bin/profile-installation.mjs'
 
 test('Windows shim is ASCII-only even with Unicode and cmd metacharacters in the installation path', () => {
@@ -59,4 +60,23 @@ test('status while stopped prints a useful error and exits 1', async t => {
   assert.equal(result.status, 1)
   assert.match(result.stderr, /DSH Tavern 未运行/)
   assert.doesNotMatch(result.stderr, /ReferenceError|fail is not defined/)
+})
+
+test('Windows service resolves the selected installation CLI from its bin declaration', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'tavern-cli-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const prefix = path.join(root, '赵 的游戏')
+  const pkg = path.join(prefix, 'node_modules', '@deepseek-ai', 'dsh')
+  await mkdir(pkg, { recursive: true })
+  const shim = path.join(prefix, 'dsh.cmd')
+  await writeFile(shim, '@echo off\r\n')
+  await writeFile(path.join(pkg, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', bin: { dsh: './custom-cli.cjs' } }))
+  const entry = path.join(pkg, 'custom-cli.cjs')
+  await writeFile(entry, 'console.log("cli stdout"); console.error("cli stderr")')
+  const resolved = resolveDshCliEntry({ dsh: shim, platform: 'win32' })
+  assert.equal(resolved, await realpath(entry))
+  const actual = spawnSync(process.execPath, [resolved], { encoding: 'utf8', shell: false })
+  assert.equal(actual.status, 0, actual.stderr)
+  assert.match(actual.stdout, /cli stdout/)
+  assert.match(actual.stderr, /cli stderr/)
 })

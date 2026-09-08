@@ -66,6 +66,7 @@ jobs:
           Set-Content "$app\data\cards\preserve-check.json" '{"preserved":true}'
           $firstPid = (Get-Content "$env:DSH_HOME\logs\tavern.pid.json" | ConvertFrom-Json).pid
           node "$app\bin\dsh-tavern.mjs" update
+          if ($LASTEXITCODE -ne 0) { throw 'Update failed' }
           $secondPid = (Get-Content "$env:DSH_HOME\logs\tavern.pid.json" | ConvertFrom-Json).pid
           if ($firstPid -eq $secondPid) { throw 'Update did not restart Tavern' }
           if (-not (Test-Path "$app\data\cards\preserve-check.json")) { throw 'Update removed user data' }

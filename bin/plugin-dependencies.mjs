@@ -90,6 +90,18 @@ export function resolveHostDependencies({ dsh, host = 'cli', env = process.env, 
   return dependencies
 }
 
+// Resolve the CLI declared by the selected installation, without executing its
+// Windows command shim or assuming a fixed lib/bin.js package layout.
+export function resolveDshCliEntry({ dsh, env = process.env, platform = process.platform }) {
+  const commandFile = resolveCommandFile(dsh, env, platform)
+  const cli = findPackage('@deepseek-ai/dsh', commandFile, false)
+  if (!cli) throw new Error(`无法定位当前 DSH CLI 包：${commandFile}`)
+  const manifest = JSON.parse(readFileSync(path.join(cli.directory, 'package.json'), 'utf8'))
+  const bin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.dsh
+  if (!bin) throw new Error('当前 DSH 包没有声明 dsh 命令入口。')
+  return realpathSync(path.resolve(cli.directory, bin))
+}
+
 export function resolveDshBootModule({ dsh, host = 'cli', env = process.env, execPath = process.execPath, platform = process.platform }) {
   const anchor = resolveHostAnchor({ dsh, host, env, execPath, platform })
   const dependency = findPackage('@deepseek-ai/dsh-app-boot', anchor)

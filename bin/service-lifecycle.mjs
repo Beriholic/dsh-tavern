@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
+import { resolveDshCliEntry } from './plugin-dependencies.mjs'
 import path from 'node:path'
 import { migrateSessionPrefixEvents } from './session-prefix-migration.mjs'
 import { ensureSidebarDefaults } from './launcher-settings.mjs'
@@ -262,6 +263,10 @@ export async function startService() {
     ['--profile', PROFILE, '--host', CLI_HOST, '--port', String(CLI_PORT), '--no-open'],
     runtimeHost,
   )
+  if (process.platform === 'win32') {
+    invocation.args = [resolveDshCliEntry({ dsh }), ...invocation.args]
+    invocation.command = process.execPath
+  }
   mkdirSync(LOG_DIR, { recursive: true })
   const logOffset = existsSync(LOG_FILE) ? statSync(LOG_FILE).size : 0
   const logDescriptor = openSync(LOG_FILE, 'a')
@@ -269,11 +274,10 @@ export async function startService() {
   try {
     child = spawn(invocation.command, invocation.args, {
       cwd: SOURCE_ROOT,
-      // Windows processes survive their launcher without a separate console.
-      // Creating that console can discard the redirected output handles.
-      detached: process.platform !== 'win32',
+      // Track the actual Node service, not a cmd shim that can exit separately.
+      detached: true,
       env: { ...process.env, DSH_TAVERN_RUNTIME_HOST: process.env.DSH_TAVERN_RUNTIME_HOST || 'cli' },
-      shell: process.platform === 'win32',
+      shell: false,
       windowsHide: true,
       stdio: ['ignore', logDescriptor, logDescriptor],
     })
