@@ -154,3 +154,24 @@ test('删除 Chat 会清理 journal 目录和 legacy 备份', async function (t)
   assert.deepEqual((await readdir(path.join(root, 'chats'))).filter(function (name) { return name.startsWith('chat-old') }), [])
   assert.equal(await store.read('chat-old'), undefined)
 })
+
+test('连续小写入的重放只复制一次完整人物卡，历史 revision 保持隔离', async function (t) {
+  const root = await temporary()
+  t.after(async function () { await rm(root, { recursive: true, force: true }) })
+  const store = createChatJournalStore({ dataRoot: root })
+  await bump(store, 'chat-large', chat => { chat.cardPayload = 'unchanged-card'.repeat(1000); chat.counter = 0 })
+  for (let index = 1; index <= 20; index++) await bump(store, 'chat-large', chat => { chat.counter = index })
+  const clone = globalThis.structuredClone
+  let fullCopies = 0
+  t.mock.method(globalThis, 'structuredClone', function (value, options) {
+    if (value?.cardPayload) fullCopies++
+    return clone(value, options)
+  })
+  const latest = await store.read('chat-large')
+  assert.equal(latest.counter, 20)
+  assert.ok(fullCopies <= 1, `完整人物卡被复制了 ${fullCopies} 次`)
+  const historical = await store.readRevision('chat-large', 11)
+  assert.equal(historical.counter, 10)
+  historical.cardPayload = 'changed locally'
+  assert.equal(latest.cardPayload, 'unchanged-card'.repeat(1000))
+})

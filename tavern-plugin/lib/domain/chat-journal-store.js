@@ -149,6 +149,7 @@ export function createChatJournalStore(options = {}) {
     let openFrameCount = 0
     let openValidBytes = 0
     let openInvalidLine = 0
+    const changes = []
     for (const row of await journalRows(paths)) {
       if (row.end <= revision || row.start > targetRevision) continue
       const parsed = await parseJournal(row, revision, targetRevision)
@@ -158,7 +159,8 @@ export function createChatJournalStore(options = {}) {
           error.code = 'DSH_TAVERN_JOURNAL_GAP'
           throw error
         }
-        chat = applyJsonChanges(chat, frame.changes)
+        if (!Array.isArray(frame.changes)) throw new Error('JSON mutation changes 必须是数组')
+        for (const change of frame.changes) changes.push(change)
         revision = Number(frame.revision)
       }
       if (row.open) {
@@ -173,6 +175,9 @@ export function createChatJournalStore(options = {}) {
       error.code = 'DSH_TAVERN_REVISION_NOT_FOUND'
       throw error
     }
+    // Replay the ordered changes in one clone. Cloning the full card once per
+    // journal frame makes initialization slower with every small script write.
+    chat = applyJsonChanges(chat, changes)
     chat[STORAGE_REVISION] = revision
     return { chat, revision, snapshot: selected, open, openFrameCount, openValidBytes, openInvalidLine }
   }
