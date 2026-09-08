@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "13df696d14eb1178eead6cd9281560010b7f7230",
-  "releaseSequence": 114,
+  "revision": "bdebacd98eed2eb8729fdaf708ed442c02178218",
+  "releaseSequence": 115,
   "version": "1.5.0",
   "files": [
     {
@@ -51,8 +51,8 @@
     },
     {
       "path": "bin/plugin-dependencies.mjs",
-      "sha256": "c9f985d99d0b6d3e009313246c9c4943450a62cbe61964f82cf9867b4ccc17fc",
-      "size": 6360
+      "sha256": "be04888941597869dfda2de5c87ddd99a54fafc713d10ac1abbea228ff995a87",
+      "size": 7124
     },
     {
       "path": "bin/profile-configuration.mjs",
@@ -66,8 +66,8 @@
     },
     {
       "path": "bin/service-lifecycle.mjs",
-      "sha256": "6fc7d7710b8fc0aa9d67534faf8515b24820ada783c135020b78bddb21100c79",
-      "size": 12543
+      "sha256": "3ff36fb8a9433e0aa7ddffc45db7eca737307227b5535032ca47903b54c0888e",
+      "size": 12644
     },
     {
       "path": "bin/session-prefix-migration.mjs",
