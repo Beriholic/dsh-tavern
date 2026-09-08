@@ -394,6 +394,7 @@ test('卡片策略不把按需 Cordis 说明放入固定前缀', async () => {
       appendFrame(input) { return { messages: input.messages, receipt: {} } },
       recordFrame() {},
       async visibleTools() { return [] },
+      behaviorPrefix() { return 'experimental prefix' },
       modePrompt() { return 'card' },
       workspaceContext() { return '/resources' },
       async ensureSessionPrefix() {},
@@ -407,6 +408,7 @@ test('卡片策略不把按需 Cordis 说明放入固定前缀', async () => {
   }, { sessionId: 'native', chat: run.chats.get('native'), cwd: '/workspace' })
 
   assert.deepEqual(assembly.sections.map(function (section) { return section.name }), [
+    'tavern:card-behavior-prefix',
     'tavern:mode-persona',
     'tavern:resource-workspace'
   ])

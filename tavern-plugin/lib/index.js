@@ -2980,6 +2980,7 @@ export async function apply(ctx) {
         }))
       },
       visibleTools: async function (sessionId) { return await turnOrchestrator.visibleTools(sessionId) },
+      behaviorPrefix: function () { return runtimePrompt('card-behavior-prefix') },
       modePrompt: function () { return runtimePrompt('card-mode') },
       cardContext: async function (chat) {
         return cardAgentContext(chat && str(chat.cardPath) !== '' ? await readChatCard(chat) : null)

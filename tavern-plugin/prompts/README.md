@@ -17,3 +17,5 @@
 人物卡、Guide、姿势、世界书正文、剧本分块和聊天记录等动态上下文不写在这些文件中，由代码在运行时按需注入。
 
 Agent 的固定规则、新会话欢迎语和卡片对话起始入口追加的任务模板属于这里。普通按钮文字、工具参数说明以及人物卡内用户自定义的 `system_prompt` 不属于这里。
+
+- `card-behavior-prefix.md`：仅卡片 Agent 使用的实验 system 首段。摘自 Minglink/dsh-infinite-gen-3 提交 `5f7f42f13b618d63a1f1d946ce508acfb05fdb69` 的通用段（TASK CLASSES 之前），不包含专项模板。上游：https://github.com/Minglink/dsh-infinite-gen-3 ，许可见 `infinite-gen-3-LICENSE.txt`。
