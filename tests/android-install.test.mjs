@@ -203,6 +203,8 @@ if [ "\$1" = "--version" ]; then
   printf '%s\\n' "\$version"
   exit 0
 fi
+[ "\$1" = "--config.update-notifier=false" ] || exit 93
+shift
 if [ "\$1" = "--dir" ] && [ "\$2" = "${new URL('..', import.meta.url).pathname.replace(/\/$/, '')}" ]; then
   printf 'dependencies\\n' >> "${events}"
   : > "${dependenciesReady}"
@@ -228,6 +230,8 @@ case "\${1:-}" in
   -) exit 0 ;;
   --expose-internals) exit 0 ;;
   */bin/dsh-tavern.mjs)
+    [ "$(command -v pnpm)" = "${managedPnpm}" ] || exit 94
+    [ "\${pnpm_config_update_notifier:-}" = false ] || exit 95
     action="\${2:-}"
     if [ "\${action}" = stop ] && [ ! -f "${dependenciesReady}" ]; then
       printf 'stop-before-dependencies\\n' >> "${events}"

@@ -58,9 +58,13 @@ if [ "${INSTALLED_PNPM_VERSION}" != "${PNPM_VERSION}" ]; then
 fi
 INSTALLED_PNPM_VERSION=$("${PNPM_COMMAND}" --version 2>/dev/null || :)
 [ "${INSTALLED_PNPM_VERSION}" = "${PNPM_VERSION}" ] || fail "Tavern 专用 pnpm ${PNPM_VERSION} 安装后校验失败（当前：${INSTALLED_PNPM_VERSION:-不可用}）。"
+# Node/DSH child processes also invoke pnpm by name. Scope their resolution and
+# version-check policy to this installer; do not alter the user's system PATH.
+export PATH="${PNPM_ROOT}/bin:${PATH}"
+export pnpm_config_update_notifier=false
 # All dependency and Profile installs below use this exact executable.
 pnpm() {
-  "${PNPM_COMMAND}" "$@"
+  "${PNPM_COMMAND}" --config.update-notifier=false "$@"
 }
 # Android 的 proot 会把硬链接模拟成符号链接，pnpm 默认导入方式可能因此
 # 生成无法进行相对 require 的包目录。DSHA 中的所有后续安装也必须沿用复制模式。
