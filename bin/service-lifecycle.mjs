@@ -264,16 +264,24 @@ export async function startService() {
   )
   mkdirSync(LOG_DIR, { recursive: true })
   const logOffset = existsSync(LOG_FILE) ? statSync(LOG_FILE).size : 0
+  const windows = process.platform === 'win32'
   const logDescriptor = openSync(LOG_FILE, 'a')
   let child
   try {
-    child = spawn(invocation.command, invocation.args, {
+    // cmd opens its own log handle: detached Windows console children can lose
+    // inherited stdout/stderr handles. Expand the path once from the environment
+    // so Unicode, spaces, and literal percent signs do not enter command text.
+    const command = windows ? `"${invocation.command}"` : invocation.command
+    const args = windows
+      ? [...invocation.args, '>>', '"%DSH_TAVERN_SERVICE_LOG%"', '2>&1']
+      : invocation.args
+    child = spawn(command, args, {
       cwd: SOURCE_ROOT,
       detached: true,
-      env: { ...process.env, DSH_TAVERN_RUNTIME_HOST: process.env.DSH_TAVERN_RUNTIME_HOST || 'cli' },
-      shell: process.platform === 'win32',
+      env: { ...process.env, DSH_TAVERN_RUNTIME_HOST: runtimeHost, DSH_TAVERN_SERVICE_LOG: LOG_FILE },
+      shell: windows,
       windowsHide: true,
-      stdio: ['ignore', logDescriptor, logDescriptor],
+      stdio: windows ? 'ignore' : ['ignore', logDescriptor, logDescriptor],
     })
     await new Promise((resolve, reject) => {
       child.once('spawn', resolve)

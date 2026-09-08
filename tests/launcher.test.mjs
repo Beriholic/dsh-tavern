@@ -474,13 +474,14 @@ test('一键安装直接启动 Tavern，不通过包管理器托管后台进程'
 })
 
 test('启动器保留显式 Android 运行宿主，普通命令行仍默认 CLI', () => {
-  assert.match(serviceSource, /DSH_TAVERN_RUNTIME_HOST: process\.env\.DSH_TAVERN_RUNTIME_HOST \|\| 'cli'/)
+  assert.match(serviceSource, /const runtimeHost = process\.env\.DSH_TAVERN_RUNTIME_HOST \|\| 'cli'/)
 })
 
 test('共享 Profile 不固定端口，CLI Adapter 启动时显式使用 3081', () => {
   assert.doesNotMatch(profilePatch, /^\s*(?:host|port):/m)
   assert.match(serviceSource, /\['--profile', PROFILE, '--host', CLI_HOST, '--port', String\(CLI_PORT\), '--no-open'\]/)
-  assert.match(serviceSource, /spawn\(invocation\.command, invocation\.args/)
+  assert.match(serviceSource, /spawn\(command, args/)
+  assert.match(serviceSource, /DSH_TAVERN_RUNTIME_HOST: runtimeHost/)
 })
 
 test('Tavern 安装依赖时传入当前宿主而不是将版本号当作 npm 依赖', () => {
