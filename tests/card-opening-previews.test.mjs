@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import vm from 'node:vm'
 
 import { projectCardOpeningPreviews } from '../tavern-plugin/lib/domain/card-opening-previews.js'
 import { projectOpeningCommit } from '../tavern-plugin/lib/domain/runtime-content-projection.js'
@@ -73,7 +72,7 @@ test('MVU 展示入口不会把原有开场 HTML 降为 Markdown，且状态栏�
   assert.deepEqual(card, before)
 })
 
-test('预览延后依赖 MVU 的状态脚本，保留开场、普通脚本与正式开局资源', async () => {
+test('预览保留完整界面及 MVU 脚本，不提前初始化游戏或改写资源', async () => {
   const status = '<div id="notice"></div><script>waitGlobalInitialized("Mvu").then(function () { Mvu.getMvuData(); });</script>'
   const ordinary = '<div>普通展示</div><script>window.ordinaryRan = true;</script>'
   const card = { name: '测试卡', first_mes: '<h1>开场正文</h1>\n<status/>\n<ordinary/>' }
@@ -86,19 +85,14 @@ test('预览延后依赖 MVU 的状态脚本，保留开场、普通脚本与正
     runtime: { initializeChat() { throw new Error('预览不得初始化游戏') } }
   })
   const opening = result.openings[0]
-  const context = vm.createContext({ window: {} })
-  for (const part of opening.projection.parts) {
-    for (const match of (part.content || '').matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)) {
-      vm.runInContext(match[1], context)
-    }
-  }
-  assert.equal(context.window.ordinaryRan, true)
   assert.equal(opening.helperContext, null)
   assert.equal(opening.text, card.first_mes)
   const preview = opening.projection.parts.map(part => part.content || part.text).join('\n')
   assert.match(preview, /<h1>开场正文<\/h1>/)
   assert.doesNotMatch(preview, /状态栏将在开始游戏后加载|data-dsh-tavern-mvu-preview|<status\/>/)
-  assert.doesNotMatch(preview, /waitGlobalInitialized|Mvu\.getMvuData/)
+  assert.match(preview, /waitGlobalInitialized/ )
+  assert.match(preview, /Mvu\.getMvuData/)
+  assert.match(preview, /window.ordinaryRan = true/)
   const committed = projectOpeningCommit(card.first_mes, { regexScripts: extensions.regexScripts, regexPlacement: 2 })
   assert.match(committed.displayText, /waitGlobalInitialized\("Mvu"\)/)
   assert.doesNotMatch(committed.displayText, /状态栏将在开始游戏后加载/)
@@ -127,4 +121,19 @@ test('交互式首页保留视频和选择脚本，原始 swipe 索引映射到�
   assert.deepEqual(result.openings[0].openingPreview.openingIds, ['primary', null, 'alternate:1'])
   assert.deepEqual(result.openings[0].openingPreview.swipes, ['HOME', '', '安全的第二幕'])
   assert.equal(result.openings[0].helperContext, null)
+})
+
+
+test('MVU 能力检测不会清空完整封面，并为间接调用消息接口的封面提供开场桥接', async () => {
+  const html = `<h1>封面</h1><button>开始</button><script>
+    const ready = !!(window.Mvu && typeof window.Mvu.getMvuData === 'function');
+    const read = api('getChatMessages'); const write = api('setChatMessage');
+  </script>`
+  const result = await projectCardOpeningPreviews({
+    card: { name: '封面测试', first_mes: '【封面】', alternate_greetings: ['第二幕'] },
+    extensions: { regexScripts: [{ enabled: true, placement: [2], markdownOnly: true,
+      findRegex: '【封面】', replaceString: html }] }
+  })
+  assert.match(result.openings[0].projection.parts.map(p => p.content || p.text).join(''), /<h1>封面<\/h1>/)
+  assert.deepEqual(result.openings[0].openingPreview.openingIds, ['primary', 'alternate:0'])
 })

@@ -57,6 +57,7 @@ export function replaceLastRound(input = {}) {
     swipeId: 0,
     swipes: [source]
   })
+  delete replacement.bodyEdit
   if (Array.isArray(originalAssistant.variables) || Array.isArray(regeneratedAssistant.variables)) {
     replacement.variables = [clone(Array.isArray(regeneratedAssistant.variables) ? regeneratedAssistant.variables[selected] || {} : {})]
   }

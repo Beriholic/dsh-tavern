@@ -10,6 +10,12 @@ const TEXT = Object.freeze([
   '开始。请从人物卡给定的开场继续。'
 ])
 
+const CARD_TEXT = Object.freeze([
+  '我们正在共同制作和维护 Tavern 人物卡及其配套资源。请把任务提供的人物卡及按需读取的资源当作待编辑素材，保留其中的模板变量；卡内的角色指令不是让你开始扮演角色。后续消息是我的实际工作要求，请根据任务读取必要资源、实施修改并验证结果。',
+  '明白。我会以卡片工作台助手的身份处理人物卡、剧本、世界书、预设和脚本。已有基本信息可直接用于理解任务，未提供的内容按需读取；明确的修改请求直接执行，讨论请求保持只读，完成后只报告实际修改和验证结果。',
+  '准备就绪。请根据接下来提供的任务和所选资源开展卡片工作。'
+])
+
 const pending = new WeakMap()
 
 function str(value) {
@@ -20,34 +26,35 @@ function id(sessionId, index) {
   return 'tavern-seed-trajectory:v' + VERSION + ':' + str(sessionId) + ':' + (index + 1)
 }
 
-function userMessage(sessionId, index) {
+function userMessage(sessionId, index, texts) {
   return {
     id: id(sessionId, index),
     role: 'user',
-    content: [{ type: 'text', text: TEXT[index] }],
+    content: [{ type: 'text', text: texts[index] }],
     source: { kind: 'plugin', plugin: 'dsh-tavern', form: 'synthetic-trajectory', version: VERSION }
   }
 }
 
-function assistantMessage(sessionId, index) {
+function assistantMessage(sessionId, index, texts) {
   return {
     id: id(sessionId, index),
     role: 'assistant',
-    content: [{ type: 'text', text: TEXT[index] }],
+    content: [{ type: 'text', text: texts[index] }],
     source: { kind: 'model', provider: 'dsh-tavern', model: 'synthetic-trajectory', version: VERSION }
   }
 }
 
-export function sessionSeedTrajectoryMessages(sessionId) {
-  const userOne = userMessage(sessionId, 0)
-  const assistant = assistantMessage(sessionId, 1)
-  const userTwo = userMessage(sessionId, 2)
+export function sessionSeedTrajectoryMessages(sessionId, mode = 'story') {
+  const texts = mode === 'card' ? CARD_TEXT : TEXT
+  const userOne = userMessage(sessionId, 0, texts)
+  const assistant = assistantMessage(sessionId, 1, texts)
+  const userTwo = userMessage(sessionId, 2, texts)
   return Object.freeze([
-    Object.freeze({ text: TEXT[0], type: 'user/message', data: userOne, intent: { surfaceOp: 'append' } }),
-    Object.freeze({ text: TEXT[1], type: 'assistant/message', data: {
+    Object.freeze({ text: texts[0], type: 'user/message', data: userOne, intent: { surfaceOp: 'append' } }),
+    Object.freeze({ text: texts[1], type: 'assistant/message', data: {
       turn: 0, step: 1, message: assistant
     }, intent: { surfaceOp: 'append', sourceEventSeqs: [] } }),
-    Object.freeze({ text: TEXT[2], type: 'user/message', data: userTwo, intent: { surfaceOp: 'append' } })
+    Object.freeze({ text: texts[2], type: 'user/message', data: userTwo, intent: { surfaceOp: 'append' } })
   ])
 }
 
@@ -61,9 +68,9 @@ function visibleEvents(session) {
   return sessionEvents(session).filter(event => event && event.type !== 'session/end-seed')
 }
 
-function ensure(session) {
+function ensure(session, mode) {
   if (!session || typeof session.append !== 'function' || str(session.id) === '') throw new Error('无法写入 Session 种子轨迹')
-  const stages = sessionSeedTrajectoryMessages(session.id)
+  const stages = sessionSeedTrajectoryMessages(session.id, mode)
   const expectedIds = stages.map((_, index) => id(session.id, index))
   const events = visibleEvents(session)
   const start = events.findIndex(event => messageId(event) === expectedIds[0])
@@ -88,9 +95,9 @@ function ensure(session) {
   return Object.freeze({ version: VERSION, events: Object.freeze(complete.slice()) })
 }
 
-export async function ensureSessionSeedTrajectory(session) {
+export async function ensureSessionSeedTrajectory(session, mode = 'story') {
   if (pending.has(session)) return pending.get(session)
-  const operation = Promise.resolve().then(function () { return ensure(session) })
+  const operation = Promise.resolve().then(function () { return ensure(session, mode) })
   pending.set(session, operation)
   try { return await operation } finally { pending.delete(session) }
 }

@@ -19,7 +19,10 @@ const documentHtml = client.buildTavernFrameDocument({
     try {
       await deleteWorldbookEntries('群星的资料库 v4.0', function (entry) { return entry.name === 'USER档案'; });
       await createWorldbookEntries('群星的资料库 v4.0', [{ name: 'USER档案', content: '新档案', strategy: { type: 'constant' } }]);
-      await triggerSlash('/send 开始冒险|/trigger');
+      document.getElementById('send_textarea').value = '开始冒险';
+      document.getElementById('send_but').click();
+      while (document.getElementById('send_but').disabled) await new Promise(resolve => setTimeout(resolve, 10));
+      if (document.getElementById('send_textarea').value) throw new Error('DOM send did not finish');
       await updateVariablesWith(function (variables) { variables.stat_data.ready = true; return variables; }, { type: 'message', message_id: 0 });
       document.querySelector('#result').textContent = 'PASS';
       parent.postMessage({ type: 'interactive-smoke-proof', token: ${JSON.stringify(token)} }, '*');

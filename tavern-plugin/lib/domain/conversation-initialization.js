@@ -275,6 +275,10 @@ export function createConversationInitialization(options) {
       await ensureSessionSeedTrajectory(target.session)
       await native.flush(target.session)
     }
+    if (groupOfMode(chat.mode) === 'card') {
+      await ensureSessionSeedTrajectory(target.session, 'card')
+      await native.flush(target.session)
+    }
     if (text !== '') {
       if (target.agent === undefined) logger.warn('dsh-tavern: Agent 尚未注册，直接使用已绑定 Session 写入开场白', { sessionId })
       appendOpeningEvents(target.session, chat, text, recovering)

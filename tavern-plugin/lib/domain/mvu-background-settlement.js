@@ -549,6 +549,7 @@ export function createMvuSettlementModule(options = {}) {
     try {
       run = await options.model.run({
         task: 'settlement', persistent: true, persistentSessionId: traceSessionId, rewindTo: -1,
+        onPersistentSessionReady: input.onPersistentSessionReady,
         selection: input.selection, messages: request.messages, turnContext: request.turnContext,
         system: [str(input.system).trim(), request.system].filter(Boolean).join('\n\n'),
         tools: request.tools, maxToolCalls: maxAttempts + 12,

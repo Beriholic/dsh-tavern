@@ -236,9 +236,14 @@ export function createStoryTimeline(options = {}) {
   function participantRequest(chat, role) {
     const participantKey = participantRole(role)
     const current = object(chat.timeline.participants[participantKey])
+    const bound = Object.values(chat.timeline.operations).filter(operation => operation.kind === 'agent'
+      && participantRole(operation.role) === participantKey && operation.startedSessionId
+      && operation.basedOn.branchId === chat.timeline.branchId
+      && operation.basedOn.revision === chat.timeline.revision).at(-1)
     if (current.status === 'current' && current.branchId === chat.timeline.branchId && str(current.sessionId) !== '') {
       return { role: participantKey, sessionId: current.sessionId, rewindTo: null, lifetime: participantLifetime(current.lifetime), syncedRevision: current.syncedRevision }
     }
+    if (bound && ['running', 'interrupted', 'failed', 'deferred'].includes(bound.status)) return { role: participantKey, sessionId: bound.startedSessionId, rewindTo: null, lifetime: 'chat', syncedRevision: null }
     const rewindTo = Number.isSafeInteger(current.rewindTo) ? current.rewindTo : (Number.isSafeInteger(current.boundary) ? current.boundary : null)
     return {
       role: participantKey,
@@ -444,8 +449,26 @@ export function createStoryTimeline(options = {}) {
     const intent = object(input && input.intent)
     let value
     if (intent.kind === 'ensure') value = { status: 'applied', branchId: chat.timeline.branchId, revision: chat.timeline.revision }
+    else if (intent.kind === 'body.edit') {
+      const index = chat.messages.findLastIndex(message => message?.role === 'assistant')
+      if (index !== chat.messages.length - 1 || chat.messages[index]?.greeting || Number(chat.messages[index]?.turn) !== Number(intent.turn)) throw new Error('只能编辑最后一轮正文')
+      Object.assign(chat.messages[index], intent.patch)
+      delete chat.messages[index].displayRuntime
+      chat.timeline.revision++
+      chat.timeline.updatedAt = now()
+      chat.candidates = null
+      value = { status: 'edited', revision: chat.timeline.revision }
+    }
     else if (intent.kind === 'body.begin') value = beginBody(chat, intent)
     else if (intent.kind === 'agent.begin') value = beginAgent(chat, intent)
+    else if (intent.kind === 'agent.bind') {
+      const operation = chat.timeline.operations[intent.operationId]
+      if (!operation || operation.kind !== 'agent' || operation.status !== 'running'
+        || operation.basedOn.branchId !== chat.timeline.branchId || operation.basedOn.revision !== chat.timeline.revision) throw new Error('后台任务已过期，不能绑定代理')
+      if (!str(intent.sessionId)) throw new Error('后台代理编号为空')
+      operation.startedSessionId = str(intent.sessionId)
+      value = { status: 'bound' }
+    }
     else if (intent.kind === 'background.recover') value = recoverBackground(chat)
     else if (intent.kind === 'turn.rollback') value = rollback(chat, intent)
     else if (intent.kind === 'replacement.abort') {

@@ -106,3 +106,32 @@ test('准备页加载真实模板引擎，运行时变量和插件设置均隔�
   assert.equal(second.runtime.context.extensionSettings.mvu, undefined)
   await assert.rejects(service.callRuntime(draft.id, 'updateTavernHelperMessages', { messages: [{ message_id: 0, message: '改写剧情' }] }), /只能更新开场变量/)
 })
+
+
+test('准备页独立生成只返回文本，不修改草稿或初始化游戏', async () => {
+  let captured
+  const service = createOpeningPreparation({ readCard: async () => structuredClone(card), worldBooks: { bound: async () => null },
+    generateRaw: async (config, context) => { captured = { config, context }; return '档案结果' } })
+  const draft = await service.create('card')
+  const before = service.get(draft.id)
+  assert.deepEqual(await service.callRuntime(draft.id, 'generateTavernHelperRaw', { config: { ordered_prompts: [] } }), { text: '档案结果' })
+  assert.equal(captured.context.sessionId, '')
+  assert.deepEqual(service.get(draft.id), before)
+  await assert.rejects(service.callRuntime('missing', 'generateTavernHelperRaw', {}), /准备/)
+})
+
+
+test('准备页复用正式脚本选择，保留启用脚本并排除重复 MVU 核心', async () => {
+  const scripts = [
+    { id: 'core', name: 'MVU', type: 'script', enabled: true, content: 'core' },
+    { id: 'aux', name: '辅助', type: 'script', enabled: true, content: 'window.aux = true', data: { count: 1 } },
+    { id: 'off', name: '关闭', type: 'script', enabled: false, content: 'throw Error()' }
+  ]
+  const service = createOpeningPreparation({ readCard: async () => structuredClone(card), worldBooks: { bound: async () => null },
+    readRuntimeExtensions: async () => ({ helperScripts: scripts }) })
+  const draft = await service.create('card')
+  assert.deepEqual(draft.runtime.scripts.map(s => s.id), ['aux'])
+  assert.equal(draft.runtime.context.mvuEnabled, false)
+  draft.runtime.scripts[0].data.count = 100
+  assert.equal(service.get(draft.id).runtime.scripts[0].data.count, 1)
+})

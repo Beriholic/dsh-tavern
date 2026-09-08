@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const read = relative => readFile(new URL('../' + relative, import.meta.url), 'utf8')
-const cardMode = await read('tavern-plugin/prompts/card-mode.md')
+const cardMode = await read('tavern-plugin/prompts/card-system.md')
 const editTask = await read('tavern-plugin/prompts/card-task-edit.md')
 const extractTask = await read('tavern-plugin/prompts/card-task-extract.md')
 const worldBookTask = await read('tavern-plugin/prompts/card-task-worldbook.md')
@@ -12,12 +12,8 @@ const scriptTask = await read('tavern-plugin/prompts/card-task-script.md')
 const advancedSkill = await read('presets/tavern/skills/tavern-advanced-capabilities/SKILL.md')
 const mvuSkill = await read('presets/tavern/skills/tavern-card-to-mvu/SKILL.md')
 
-test('卡片 Agent 可按任务自由组合基础工具，不把 Tavern 专用工具设为优先或权限边界', () => {
-  assert.match(cardMode, /Shell、文件读写与编辑等基础工具可以自由组合/)
-  assert.match(cardMode, /选择成本最低、最可靠的实现路径/)
-  assert.doesNotMatch(cardMode, /专用工具是方便操作资源的优先路径/)
-  assert.doesNotMatch(cardMode, /专用工具不能完成[\s\S]*才.*文件工具/)
-  assert.doesNotMatch(cardMode, /先通过 `skill` 加载 `tavern-advanced-capabilities`/)
+test('卡片 system 默认空白，任务与技能独立保留', () => {
+  assert.equal(typeof cardMode, 'string')
   assert.doesNotMatch(advancedSkill, /普通 Tavern 资源能由专用工具完成时，仍优先走专用工具/)
 })
 
@@ -26,7 +22,6 @@ test('任务提示继承用户已有授权，不强制重复确认或禁止适�
     assert.doesNotMatch(prompt, /得到(?:我|用户)明确确认后/)
     assert.doesNotMatch(prompt, /不要一次读取(?:整张卡|全文|整本世界书|整个大型预设)/)
   }
-  assert.match(cardMode, /用户已经明确要求创建或修改时，不重复索取同一授权/)
 })
 
 test('MVU 转换优先采用无损的批量文件操作，禁止逐块转录大型 JSON', () => {

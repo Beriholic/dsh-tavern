@@ -16,7 +16,7 @@ test('插件命名空间与全局函数共享实现，context 在更新后读取
   run.receive({ type: 'dsh-tavern-helper-context', context: { chatId: 'two', playerName: '乙' } })
   assert.equal(context.chatId, 'two')
   assert.equal(context.name1, '乙')
-  assert.equal(w.TavernHelper.generateRaw, undefined, '不暴露尚未实现的能力')
+  assert.equal(w.TavernHelper.generateRaw, w.generateRaw)
 })
 
 test('createChatMessages 追加楼层并等待宿主确认后更新同步上下文', async () => {
@@ -183,4 +183,27 @@ for (const fails of [false, true]) test('事件等待自己的提示词持久化
   assert.ok(result)
   if (fails) { assert.equal(result.scriptId, 'b'); assert.match(result.error, /write B failed/) }
   else assert.equal(result.error, undefined)
+})
+
+
+test('generateRaw 返回独立 RPC 文本，不创建聊天消息', async () => {
+  const run = helperHostHarness({ chatId: 'one' })
+  const config = { ordered_prompts: [{ role: 'user', content: '生成档案' }], should_stream: false }
+  const pending = run.window.TavernHelper.generateRaw(config)
+  await tick()
+  const request = run.calls().at(-1)
+  assert.equal(request.method, 'generateTavernHelperRaw')
+  assert.deepEqual(JSON.parse(JSON.stringify(request.args)), { config })
+  run.reply(request, { text: '档案内容' })
+  assert.equal(await pending, '档案内容')
+  assert.equal(run.calls().length, 1)
+})
+
+test('异步 RPC 报错保留调用时的脚本和事件，不能署名最后加载的脚本', async () => {
+  const h = helperHostHarness(), w = h.window
+  w.__dshTavernHelperSetCurrentScript('a')
+  const pending = w.insertVariables({ x: 1 }, { type: 'chat' })
+  w.__dshTavernHelperSetCurrentScript('b')
+  h.reply(h.calls()[0], '写入被拒绝', false)
+  await assert.rejects(pending, error => error.dshTavernScriptId === 'a' && error.dshTavernMethod === 'updateTavernHelperVariables')
 })

@@ -306,3 +306,13 @@ test('只有尚未结算的纯开场白会在首次生成候选前补跑后台�
     ]
   }), false)
 })
+
+test('运行前保存代理身份，重启恢复后重试复用，但不冒充结算已完成', async () => {
+  const h = coordinatorHarness()
+  const first = await h.coordinator.begin(h.current(), 'settlement')
+  await first.bindSession('background-started')
+  assert.notEqual(h.current().timeline.participants.background?.status, 'current')
+  await h.coordinator.recover(h.current())
+  const retry = await h.coordinator.begin(h.current(), 'settlement')
+  assert.equal(retry.participantRequest.sessionId, 'background-started')
+})

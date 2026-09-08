@@ -1547,7 +1547,7 @@ test('持久 Helper Host 复用同一脚本 iframe、发送生命周期事件并
   })
   await Promise.resolve()
   await new Promise(resolve => setImmediate(resolve))
-  assert.deepEqual(calls, [{ method: 'getTavernHelperWorldbook', args: { name: '灯火阑珊' }, sessionId: 'session-1' }])
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [{ method: 'getTavernHelperWorldbook', args: { name: '灯火阑珊', apiCallOrigin: { scriptId: '', scriptName: '', eventId: '', requestId: '1' } }, sessionId: 'session-1' }])
   assert.equal(frames[0].contentWindow.messages.at(-1).type, 'dsh-tavern-helper-response')
 	assert.deepEqual(mutations, [])
 

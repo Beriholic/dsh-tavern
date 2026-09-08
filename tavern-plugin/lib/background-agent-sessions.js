@@ -157,9 +157,10 @@ export function createBackgroundAgentSessions(options, task) {
             sessionId: traceSessionId,
             meta,
             agentOptions,
-            setup: task.setup(state, descriptor, !(persistent && input.task === 'image'))
+            setup: task.setup(state, descriptor, false)
           })
-          if (persistent && input.task === 'image') handle.agent.session.append('subagent/descriptor', descriptor)
+          // Publish identity before the first model turn, including failed starts.
+          handle.agent.session.append('subagent/descriptor', descriptor)
         }
       } catch (error) {
         const wrapped = traceError(error, traceSessionId, input.task)

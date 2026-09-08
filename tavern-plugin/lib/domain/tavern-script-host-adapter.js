@@ -1,7 +1,8 @@
+import { projectFullPromptTemplateState, applyFullPromptTemplateState, validateFullPromptTemplateSave } from './full-prompt-template-state.js'
 import { mutateScriptPrompts } from './tavern-script-prompts.js'
 import { exportSillyTavernWorldBook, inspectWorldBookDocument, updateWorldBookDocument } from './worldbook-resource.js'
 import { isDeepStrictEqual } from 'node:util'
-import { applyChatPluginData, validateChatPluginRequest } from './tavern-chat-plugin-data.js'
+import { applyChatPluginData, validateChatPluginRequest, assertPluginJson } from './tavern-chat-plugin-data.js'
 import {
   appendTavernHelperMessages,
   lastTavernHelperVariables,
@@ -310,6 +311,68 @@ export function createTavernScriptHostAdapter(options = {}) {
     return { updated: true, context: projectTavernHelperContext(saved) }
   }
 
+  function assertTemplateChat(chat) {
+    if (!chat || !['story', 'script'].includes(chat.mode) || (typeof options.isPlayChat === 'function' && !options.isPlayChat(chat))) throw new Error('当前会话没有绑定游玩对话')
+  }
+
+  async function readFullPromptTemplateState(sessionId) {
+    const chat = await resolveChat(sessionId)
+    assertTemplateChat(chat)
+    const card = await options.readCard(chat)
+    const record = await options.worldBooks.bound(chat.cardPath, card, chat)
+    const book = record ? await exportBoundWorldbook(record) : null
+    const worldName = str(record?.view?.displayName)
+    const extensionSettings = options.fullExtensionSettings ? await options.fullExtensionSettings.read() : {}
+    extensionSettings.variables = { ...extensionSettings.variables, global: options.globalVariables ? await options.globalVariables.read() : {} }
+    if (!Array.isArray(extensionSettings.regex)) extensionSettings.regex = []
+    const character = { ...card, data: { ...card, extensions: { ...card.extensions, ...(worldName ? { world: worldName } : {}) } } }
+    return {
+      state: projectFullPromptTemplateState(chat),
+      environment: { characters: [character], name1: str(chat.macroState?.userName) || '你', name2: str(card.name),
+        this_chid: 0, extension_settings: extensionSettings,
+        world_names: worldName ? [worldName] : [], selected_world_info: [],
+        worldbooks: worldName && book ? { [worldName]: book } : {} }
+    }
+  }
+
+  async function saveFullPromptTemplateGlobals(sessionId, variables, expectedVariables) {
+    assertTemplateChat(await resolveChat(sessionId))
+    if (!expectedVariables || typeof expectedVariables !== 'object' || Array.isArray(expectedVariables)) throw new Error('缺少全局变量读取版本')
+    if (!options.globalVariables) throw new Error('全局变量存储未连接')
+    const saved = await options.globalVariables.save(variables, expectedVariables)
+    return { updated: true, variables: saved }
+  }
+
+  async function saveFullPromptTemplateSettings(sessionId, settings, expectedSettings) {
+    assertPluginJson(settings, '模板设置')
+    if (expectedSettings !== undefined) assertPluginJson(expectedSettings, '模板设置读取版本')
+    assertTemplateChat(await resolveChat(sessionId))
+    if (!options.fullExtensionSettings) throw new Error('完整模板设置存储未连接')
+    const current = await options.fullExtensionSettings.read()
+    const base = { ...current }
+    if (expectedSettings === undefined) delete base.EjsTemplate
+    else base.EjsTemplate = expectedSettings
+    const saved = await options.fullExtensionSettings.save({ ...current, EjsTemplate: settings }, base)
+    return { updated: true, settings: saved.EjsTemplate }
+  }
+
+  async function saveFullPromptTemplateState(sessionId, request) {
+    validateFullPromptTemplateSave(request)
+    const chat = await resolveChat(sessionId)
+    assertTemplateChat(chat)
+    if (!options.readChatRevision || !options.updateChat) throw new Error('模板原生存储未连接')
+    if (settlementTransactions.has(str(sessionId))) throw new Error('MVU 结算进行中，模板存档不能覆盖结算事务')
+    const baseline = await options.readChatRevision(chat.id, request.stateRevision)
+    const saved = await options.updateChat(chat.id, async latest => {
+      assertTemplateChat(latest)
+      if (settlementTransactions.has(str(sessionId))) throw new Error('MVU 结算进行中，模板存档不能覆盖结算事务')
+      if (str(latest.sessionId) !== str(sessionId)) throw new Error('模板聊天已切换')
+      return applyFullPromptTemplateState(latest, baseline, request)
+    }, { source: 'prompt-template.state' })
+    if (!saved) throw new Error('模板聊天已不存在')
+    return { updated: true, state: projectFullPromptTemplateState(saved) }
+  }
+
   async function saveExtensionSettings(sessionId, settings, expectedSettings) {
     await assertScriptEnabled(await resolveChat(sessionId))
     if (!options.extensionSettings) throw new Error('插件设置存储未连接')
@@ -482,6 +545,10 @@ export function createTavernScriptHostAdapter(options = {}) {
     createMessages,
     getWorldbook,
     replaceWorldbook,
+    readFullPromptTemplateState,
+    saveFullPromptTemplateState,
+    saveFullPromptTemplateSettings,
+    saveFullPromptTemplateGlobals,
     saveExtensionSettings,
     saveChatData,
     loadWorldInfo,

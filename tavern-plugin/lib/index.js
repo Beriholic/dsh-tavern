@@ -1,3 +1,8 @@
+import { createPromptTemplateGlobalVariables } from './domain/prompt-template-global-variables.js'
+import { FULL_PROMPT_TEMPLATE_ASSET_PREFIX, readFullPromptTemplateAsset } from './domain/full-prompt-template-assets.js'
+import { createTavernApiDiagnostics } from './domain/tavern-api-diagnostics.js'
+import { generateHelperRaw } from './domain/helper-generation.js'
+import { createBodyEditor, synchronizeBodyEdits } from './domain/body-editor.js'
 import { appendHelperUserSessionContext } from './domain/helper-user-session-context.js'
 import { sessionOpeningDescriptor, prepareSessionOpening } from './domain/session-opening.js'
 import { scriptPromptScanText } from './domain/tavern-script-prompts.js'
@@ -155,8 +160,9 @@ export async function apply(ctx) {
       return null
     }
   }
-  const tavernExtensionSettings = createTavernExtensionSettings(profileData)
+  const tavernExtensionSettings = createTavernExtensionSettings(profileData, { templateRuntime: promptTemplateRuntime })
   const mvuDiagnostics = createMvuDiagnosticStore(profileData)
+  const apiDiagnostics = createTavernApiDiagnostics(profileData)
   const compatibilityDiagnostics = createTavernCompatibilityDiagnosticStore(profileData)
   const tavernRemoteAssets = createTavernRemoteAssetPinStore({
     readJson: async function (path) { return await profileData.readJson(path) },
@@ -168,19 +174,9 @@ export async function apply(ctx) {
     if (failures.length > 0) console.warn('dsh-tavern: 部分静态运行库暂未缓存，将在使用时重试:', failures.map(function (result) { return str(result.reason && result.reason.message || result.reason) }).join('；'))
   })
   const settingsPath = 'tavern-settings.json'
-  const promptTemplateVariablesPath = 'prompt-template-variables.json'
-  async function readPromptTemplateGlobalVariables() {
-    const saved = await profileData.readJson(promptTemplateVariablesPath)
-    return saved && saved.global && typeof saved.global === 'object' && !Array.isArray(saved.global) ? saved.global : {}
-  }
-  async function writePromptTemplateGlobalVariables(variables) {
-    await profileData.updateJson(promptTemplateVariablesPath, function (current) {
-      const next = current && typeof current === 'object' ? Object.assign({}, current) : {}
-      next.global = variables && typeof variables === 'object' && !Array.isArray(variables) ? variables : {}
-      next.updatedAt = Date.now()
-      return next
-    })
-  }
+  const promptTemplateGlobalVariables = createPromptTemplateGlobalVariables(profileData)
+  const readPromptTemplateGlobalVariables = promptTemplateGlobalVariables.read
+  const writePromptTemplateGlobalVariables = promptTemplateGlobalVariables.save
   let tavernSettingsDocument = await profileData.readJson(settingsPath)
   function promptDefaults() {
     return Object.fromEntries(SYSTEM_PROMPT_NAMES.map(function (name) { return [name, prompt(name)] }))
@@ -716,7 +712,7 @@ export async function apply(ctx) {
       diagnostics: await resourceDiagnosticProjection(chat)
     })
   }
-  const openingPreparation = createOpeningPreparation({ readCard, worldBooks, templateRuntime: promptTemplateRuntime })
+  const openingPreparation = createOpeningPreparation({ readCard, worldBooks, readRuntimeExtensions: async cardPath => tavernRemoteAssets.pinExtensions(await readCardExtensions(cardPath)), templateRuntime: promptTemplateRuntime, generateRaw: (config, context) => generateHelperRaw(config, { ...context, callModel }) })
   async function getCardOpenings(cardPath, userName, requestMode) {
     const card = await readCard(cardPath)
     if (card === undefined) throw new Error('人物卡不存在: ' + cardPath)
@@ -732,12 +728,13 @@ export async function apply(ctx) {
       userName,
       presetRegexScripts: Array.isArray(preset && preset.regexScripts) ? preset.regexScripts : []
     })
-    const interactive = previews.openings.some(opening => /<script\b/i.test(opening.projection.text))
+    const hasOpeningScript = opening => /<script\b/i.test(opening.projection.text) || opening.projection.parts.some(part => /<script\b/i.test(part.content || ''))
+    const interactive = previews.openings.some(hasOpeningScript)
     const preparation = interactive ? await openingPreparation.create(cardPath, { runtime: (extensions.mvuResources || []).some(item => item.enabled !== false), userName }) : null
     if (preparation) {
       const swipes = [str(card.first_mes)].concat(Array.isArray(card.alternate_greetings) ? card.alternate_greetings : [])
       const openingIds = swipes.map((text, index) => str(text).trim() ? (index === 0 ? 'primary' : 'alternate:' + (index - 1)) : null)
-      for (const opening of previews.openings) if (!opening.openingPreview && /<script\b/i.test(opening.projection.text)) {
+      for (const opening of previews.openings) if (hasOpeningScript(opening)) {
         opening.openingPreview = { swipes, openingIds, selectedIndex: openingIds.indexOf(opening.id),
           preparationId: preparation.id, worldbook: preparation.worldbook, characterName: card.name, runtime: preparation.runtime }
       }
@@ -862,7 +859,7 @@ export async function apply(ctx) {
     let compatibilityDiagnostic
     try { compatibilityDiagnostic = await compatibilityDiagnostics.read(sessionId) }
     catch { compatibilityDiagnostic = { version: 1, records: [], error: '兼容能力诊断读取失败，仍导出其他日志。' } }
-    const exported = await createMvuDiagnosticExport({ sessionId, backgroundSessionIds, displayDiagnostics: { version: 1, frames: (chat.messages || []).filter(message => message.displayRuntime).slice(-20).flatMap(message => (message.displayRuntime.frames || []).map(frame => ({ turn: message.turn, partIndex: frame.partIndex, capturedAt: frame.capturedAt, console: frame.console, errors: frame.errors, network: frame.network }))) }, compatibilityDiagnostics: compatibilityDiagnostic, store: mvuDiagnostics, sceneDiagnostics: imageDiagnostic, sessions: sessionStore, persistence: ctx.get('sessionPersistence'), query: ctx.get('sessionQuery'), attachments: ctx.get('attachments'), environment: { mvu: OFFICIAL_MVU_VERSION, mvuAsset: inspectOfficialMvuAsset(), runtime: { generation: runtimeGeneration, platform: process.platform, arch: process.arch, nodeVersion: process.version } } })
+    const exported = await createMvuDiagnosticExport({ sessionId, backgroundSessionIds, displayDiagnostics: { version: 1, frames: (chat.messages || []).filter(message => message.displayRuntime).slice(-20).flatMap(message => (message.displayRuntime.frames || []).map(frame => ({ turn: message.turn, partIndex: frame.partIndex, capturedAt: frame.capturedAt, console: frame.console, errors: frame.errors, network: frame.network }))) }, apiDiagnostics: await apiDiagnostics.read(sessionId).catch(() => null), compatibilityDiagnostics: compatibilityDiagnostic, store: mvuDiagnostics, sceneDiagnostics: imageDiagnostic, sessions: sessionStore, persistence: ctx.get('sessionPersistence'), query: ctx.get('sessionQuery'), attachments: ctx.get('attachments'), environment: { mvu: OFFICIAL_MVU_VERSION, mvuAsset: inspectOfficialMvuAsset(), runtime: { generation: runtimeGeneration, platform: process.platform, arch: process.arch, nodeVersion: process.version } } })
     return { filename: exported.filename, base64: exported.buffer.toString('base64') }
   }
   async function attachPlayChatDebug(targetSessionId, sourceSessionId, turn) {
@@ -981,16 +978,11 @@ export async function apply(ctx) {
     worldBooks,
     scriptDispatch: tavernScriptDispatch,
     extensionSettings: tavernExtensionSettings,
+    fullExtensionSettings: createTavernExtensionSettings(profileData),
     extensionSettingsChanged: async function (sessionId) {
       sessionSignals.publish(sessionId, { kind: 'tavern-state', version: 'extension-settings:' + await profileData.version('tavern-extension-settings.json') })
     },
-    globalVariables: {
-      read: readPromptTemplateGlobalVariables,
-      save: async function (variables) {
-        await writePromptTemplateGlobalVariables(variables)
-        return await readPromptTemplateGlobalVariables()
-      }
-    },
+    globalVariables: promptTemplateGlobalVariables,
     characterVariables: {
       save: async function (cardPath, variables, sessionId) {
         const saved = await replaceCardVariables(cardPath, variables)
@@ -1724,6 +1716,7 @@ export async function apply(ctx) {
         let mvuResult = null
         if (mvuTarget !== null && (backgroundTasksSettings.variables !== false || mvuTarget.message.mvu.pendingSubmission)) {
           const settlementInput = {
+            onPersistentSessionReady: id => taskRun.bindSession(id),
             backgroundTasks: backgroundTasksSettings,
             operationId: taskRun.operationId,
             chatId: snapshot.id,
@@ -2154,8 +2147,25 @@ export async function apply(ctx) {
     present: view
   })
 
+  const bodyEditor = createBodyEditor({
+    chats: { forSession: chatForSession, update: updateChat },
+    sessions: { get: id => ctx.get('agents')?.get(id), flush: session => sessionStore.flush(session) },
+    timeline: storyTimeline,
+    activity: chat => backgroundTasks.activity(chat),
+    project: async (text, chat) => {
+      const extensions = await readCardExtensions(chat.cardPath)
+      return projectRuntimeReply(text, { charName: chat.cardName, macroState: chat.macroState,
+        regexScripts: (extensions?.regexScripts || []).concat(chat.runtimePresetSnapshot?.regexScripts || []), placement: 2, isEdit: false, depth: 0 })
+    },
+    present: async chat => view(chat, await readChatCard(chat))
+  })
+
   // ---------- HTTP RPC（客户端同源 fetch） ----------
   async function dispatch(method, args) {
+    return apiDiagnostics.observe(method, args, () => dispatchMethod(method, args))
+  }
+
+  async function dispatchMethod(method, args) {
     switch (method) {
       case 'listCards': return { cards: await listCards() }
       case 'getUpdateStatus': return { status: await applicationUpdater.status() }
@@ -2165,6 +2175,12 @@ export async function apply(ctx) {
         const chat = await chatForSession(args && args.sessionId)
         if (!chat) throw new Error('找不到原对话')
         return await prepareSessionOpening({ chat, card: await readChatCard(chat), swipeId: args.swipeId, message: args.message, preparation: openingPreparation })
+      }
+      case 'generateTavernHelperRaw': {
+        const chat = await chatForSession(args && args.sessionId)
+        if (!chat) throw new Error('找不到当前游戏')
+        return { text: await generateHelperRaw(args.config, { callModel, sessionId: chat.sessionId,
+          history: projectTavernHelperContext(chat).messages.map(message => ({ role: message.role, text: message.message })) }) }
       }
       case 'callOpeningRuntime': return await openingPreparation.callRuntime(args && args.id, args && args.method, args && args.args)
       case 'saveOpeningSelection': return openingPreparation.select(args && args.id, args && args.openingId)
@@ -2359,6 +2375,10 @@ export async function apply(ctx) {
 	      case 'updateTavernHelperVariables': return await tavernScriptHostAdapter.updateVariables(args && args.sessionId, args && args.option, args && args.variables, args && args.expectedLifecycleRevision, args && args.eventId)
 	      case 'updateTavernHelperMessages': return await tavernScriptHostAdapter.updateMessages(args && args.sessionId, args && args.messages, args && args.expectedLifecycleRevision, args && args.eventId)
 	      case 'createTavernHelperMessages': return await tavernScriptHostAdapter.createMessages(args && args.sessionId, args && args.messages, args && args.option, args && args.expectedLifecycleRevision, args && args.eventId)
+      case 'getFullPromptTemplateState': return await tavernScriptHostAdapter.readFullPromptTemplateState(args && args.sessionId)
+      case 'saveFullPromptTemplateGlobals': return await tavernScriptHostAdapter.saveFullPromptTemplateGlobals(args && args.sessionId, args && args.variables, args && args.expectedVariables)
+      case 'saveFullPromptTemplateSettings': return await tavernScriptHostAdapter.saveFullPromptTemplateSettings(args && args.sessionId, args && args.settings, args && args.expectedSettings)
+      case 'saveFullPromptTemplateState': return await tavernScriptHostAdapter.saveFullPromptTemplateState(args && args.sessionId, args && args.state)
       case 'saveTavernChatData': return await tavernScriptHostAdapter.saveChatData(args && args.sessionId, args && args.request)
       case 'saveTavernExtensionSettings': return await tavernScriptHostAdapter.saveExtensionSettings(args && args.sessionId, args && args.settings, args && args.expectedSettings)
       case 'loadTavernWorldInfo': return await tavernScriptHostAdapter.loadWorldInfo(args && args.sessionId, args && args.name)
@@ -2415,6 +2435,8 @@ export async function apply(ctx) {
       }
       case 'addGuide': return { guides: await addGuide(args && args.sessionId, args && args.text) }
       case 'deleteGuide': return { guides: await deleteGuide(args && args.sessionId, args && args.index) }
+      case 'getBodyEdit': return { edit: await bodyEditor.read(args && args.sessionId) }
+      case 'saveBodyEdit': return { view: await bodyEditor.save(args && args.sessionId, args) }
       case 'regenBody': return { view: await regenBody(args && args.chatId, args && args.guidance, args && args.sessionId) }
       case 'rollbackTurn': return { view: await rollbackTurn(args && args.sessionId, args && args.chatId) }
       case 'retrySettlement': return { view: await retrySettlement(args && args.sessionId, args && args.turn) }
@@ -2454,6 +2476,20 @@ export async function apply(ctx) {
 
   const webServer = ctx.get('webServer')
   if (webServer !== undefined) {
+    // Fixed SillyTavern compatibility version for card-script feature probes.
+    ctx.effect(() => {
+      return webServer.register({
+        kind: 'prefix',
+        path: '/version',
+        handler: async (req, res) => {
+          const pathname = new URL(req.url ?? '/', 'http://localhost').pathname
+          if (pathname !== '/version') { res.writeHead(404); res.end('not found'); return }
+          if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); res.end(); return }
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+          res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ pkgVersion: '1.12.14' }))
+        }
+      })
+    })
     ctx.effect(() => webServer.register({
       kind: 'prefix',
       path: '/api/dsh-tavern',
@@ -2461,6 +2497,7 @@ export async function apply(ctx) {
         const pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)
         const cachedAssetMatch = /^\/api\/dsh-tavern\/remote-assets\/([0-9a-f]{64})(?:\/[^/]*)?$/i.exec(pathname)
         const readsStaticAsset = req.method === 'GET' && pathname === '/api/dsh-tavern/static-assets'
+        const readsFullTemplate = req.method === 'GET' && pathname.startsWith(FULL_PROMPT_TEMPLATE_ASSET_PREFIX)
         const readsOfficialMvu = req.method === 'GET' && pathname === OFFICIAL_MVU_VERSION.assetUrl
         const readsRuntimeAsset = req.method === 'GET' && pathname.startsWith(TAVERN_RUNTIME_ASSET_PREFIX)
         const readsClientAsset = req.method === 'GET' && pathname.startsWith(TAVERN_CLIENT_ASSET_PREFIX)
@@ -2479,7 +2516,7 @@ export async function apply(ctx) {
           res.end('forbidden')
           return
         }
-        if (!readsCachedAsset && !readsStaticAsset && !readsOfficialMvu && !readsRuntimeAsset && !readsClientAsset && !sceneSameOrigin && typeof origin === 'string' && origin !== '' && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
+        if (!readsCachedAsset && !readsStaticAsset && !readsOfficialMvu && !readsFullTemplate && !readsRuntimeAsset && !readsClientAsset && !sceneSameOrigin && typeof origin === 'string' && origin !== '' && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
           res.writeHead(403)
           res.end('forbidden')
           return
@@ -2493,6 +2530,15 @@ export async function apply(ctx) {
           return
         }
         try {
+          if (readsFullTemplate) {
+            const asset = await readFullPromptTemplateAsset(pathname)
+            if (!asset) { res.writeHead(404, { 'X-Content-Type-Options': 'nosniff' }); res.end('not found'); return }
+            res.writeHead(200, { 'Content-Type': asset.mediaType, 'Content-Length': asset.body.length,
+              'ETag': asset.etag, 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*',
+              'Cross-Origin-Resource-Policy': 'cross-origin', 'X-Content-Type-Options': 'nosniff' })
+            res.end(asset.body)
+            return
+          }
           if (readsClientAsset) {
             const asset = await readTavernClientAsset(pathname)
             if (asset === undefined) {
@@ -2622,7 +2668,7 @@ export async function apply(ctx) {
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
           res.end(JSON.stringify(Object.assign({ ok: true }, result, { runtimeGeneration })))
         } catch (err) {
-          if (readsOfficialMvu || readsRuntimeAsset) {
+          if (readsOfficialMvu || readsFullTemplate || readsRuntimeAsset) {
             res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
               'Access-Control-Allow-Origin': '*', 'X-Content-Type-Options': 'nosniff' })
             res.end(JSON.stringify({ ok: false, error: redactMvuLoadError(err && err.message || err) }))
@@ -2963,8 +3009,8 @@ export async function apply(ctx) {
         }))
       },
       visibleTools: async function (sessionId) { return await turnOrchestrator.visibleTools(sessionId) },
-      modePrompt: function () { return runtimePrompt('card-mode') },
-      workspaceContext: resourceWorkspaceContext,
+      cardSystemPrompt: function () { return prompt('card-system') },
+      workspaceContext: function (cwd, projection) { return resourceWorkspaceContext(cwd, projection, runtimePrompt('card-workspace')) },
       ensureSessionPrefix: async function (input) {
         return await ensureNativeSystemPrefix(input.payload.agent.session, input.chat)
       },
@@ -2986,6 +3032,7 @@ export async function apply(ctx) {
     const decision = await next()
     if (decision.kind === 'reject') return decision
     const chat = await chatForSession(sessionId)
+    if (chat) await synchronizeBodyEdits(payload.agent.session, chat, session => sessionStore.flush(session))
     return await foregroundStrategies.prepareStep({
       sessionId,
       payload,
@@ -3126,6 +3173,7 @@ export async function apply(ctx) {
     if (agent === undefined || agent.session === undefined) return assembly
     if (backgroundAgentRunner.owns(agent.session.id)) return assembly
     const chat = await chatForSession(agent.session.id)
+    if (chat) await synchronizeBodyEdits(agent.session, chat, session => sessionStore.flush(session))
     if (chat && chat.requestMode !== 'sillytavern' && ['story', 'script'].includes(await turnOrchestrator.modeFor(agent.session.id))) {
       await ensureNativeSystemPrefix(agent.session, chat)
     }

@@ -4,7 +4,7 @@ This directory contains the runtime artifact built from the pinned upstream
 source in `../upstream/` plus the small, audited Host integration transform in
 `prepare-host-build.mjs`.
 
-The deterministic build transform changes build plumbing only:
+The deterministic host build applies these adaptations:
 
 - pins the upstream build date and commit string for reproducible output;
 - keeps browser/UI host globals such as jQuery, lodash and Vue external;
@@ -16,7 +16,9 @@ The deterministic build transform changes build plumbing only:
   until the Host has loaded the card companion scripts, so their official event
   handlers participate in opening initialization.
 
-It does not patch MVU parsing, validation, event order or variable calculation.
+- removes the 3-second MESSAGE_RECEIVED throttle: host events are already serialized, and each settlement must await its own handler rather than receive the previous event's Promise.
+
+It does not patch MVU parsing, validation or variable calculation.
 The sandbox-local uniqueness change is valid because the Host enforces exactly
 one official MVU core per chat sandbox; the readiness barrier only restores the
 shared-page registration order before official chat initialization starts.

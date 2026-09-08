@@ -133,3 +133,13 @@ mainSource = replaceExactlyOnce(
   'wait for card companion scripts before chat initialization'
 )
 await writeFile(mainPath, mainSource)
+
+// Host dispatch already serializes and acknowledges each settlement. Lodash's
+// trailing throttle returns the previous event's Promise and writes after the
+// current transaction has closed; each host event must await its own handler.
+const updatePath = path.join(root, 'src/function/update/index.ts')
+let updateSource = await readFile(updatePath, 'utf8')
+updateSource = replaceExactlyOnce(updateSource,
+  'is_jest_environment ? onMessageReceived : _.throttle(onMessageReceived, 3000)',
+  'onMessageReceived', 'await each serialized host message event')
+await writeFile(updatePath, updateSource)

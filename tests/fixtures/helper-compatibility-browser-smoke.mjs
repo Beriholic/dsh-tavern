@@ -13,7 +13,7 @@ const baseline = JSON.stringify(await host.open().read('audit'))
 const scripts = [
   { id: 'a', name: '兼容诊断脚本甲', content: `
     for(let n=0;n<100;n++) SillyTavern.scrollChatToBottom('PRIVATE_CHAT',{password:'PRIVATE_KEY'});
-    if(typeof TavernHelper.generateRaw==='function') throw Error('false capability');
+    if(typeof TavernHelper.generate==='function') throw Error('false capability');
     try { SillyTavern.registerMacro('PRIVATE_CHAT',()=>{}); throw Error('false success'); }
     catch(error){ if(error.code!=='TAVERN_CAPABILITY_UNSUPPORTED') throw error; }
     eventOn('PROBE',()=>SillyTavern.hideLoader());

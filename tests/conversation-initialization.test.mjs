@@ -107,7 +107,11 @@ test('原生游玩把固定会话种子写在人物卡背景之后、开场白�
 
   const card = initializationFixture()
   await card.make().start({ ...card.input, mode: 'card', cardPath: '' })
-  assert.equal(seedMessages(card.session()).length, 0)
+  assert.equal(seedMessages(card.session()).length, 3)
+  assert.match(seedMessages(card.session())[0].data.content[0].text, /待编辑素材/)
+  const cardEvents = structuredClone(card.session().events)
+  await card.make().start({ ...card.input, mode: 'card', cardPath: '' })
+  assert.deepEqual(card.session().events, cardEvents)
 })
 
 test('会话种子任一消息写入中断后可恢复，且不重放已经追加的前缀', async () => {
