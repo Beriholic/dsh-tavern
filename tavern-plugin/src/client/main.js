@@ -1280,6 +1280,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// @include opening-preview.js
+		// @include legacy-composer.js
 
 		function buildTavernFrameDocument(input) {
 			const html = rewriteTavernStaticMarkup(String(input && (input.content !== undefined ? input.content : input.html) || ""));
@@ -1308,7 +1309,7 @@ window.__ModuleLoader__.load({
 				+ (input && input.helperContext ? '<script data-dsh-tavern-frame-variable-aliases>(' + installTavernFrameVariableAliases.toString() + ')();<\/script>' : '')
 				+ (input && input.helperContext && input.persistent === true ? '<script data-dsh-tavern-status-refresh>(' + installTavernStatusRefresh.toString() + ')(' + token + ');<\/script>' : '')
 				+ (input && input.openingPreview ? '<script data-dsh-tavern-opening-preview>(' + installOpeningPreviewBridge.toString() + ')(' + token + ',' + JSON.stringify(input.openingPreview).replace(/</g, '\\u003c') + ');<\/script>' : '')
-				+ '</head><body class="no-blur">' + (preparationRuntime ? preparationRuntime.body : '') + html + layoutNormalizer + fontRuntime + reporter + readyReporter + '</body></html>';
+				+ '</head><body class="no-blur">' + (input && input.helperContext ? '<script data-dsh-tavern-legacy-composer>(' + installLegacyTavernComposer.toString() + ')();<\/script>' : '') + (preparationRuntime ? preparationRuntime.body : '') + html + layoutNormalizer + fontRuntime + reporter + readyReporter + '</body></html>';
 		}
 
 		function encodeTavernScriptSource(value) {
