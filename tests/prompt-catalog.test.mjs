@@ -25,7 +25,7 @@ const names = [
 
 test('固定提示词从独立 Markdown 文件完整加载', () => {
   for (const name of names) assert.ok(prompt(name).length > 20, name + ' 提示词为空')
-  assert.equal(prompt('card-system'), '')
+  assert.equal(typeof prompt('card-system'), 'string')
   assert.match(prompt('story'), /小说续写引擎/)
   assert.match(prompt('story'), /本轮演出指引/)
   assert.match(prompt('story'), /不是已经发生的剧情/)

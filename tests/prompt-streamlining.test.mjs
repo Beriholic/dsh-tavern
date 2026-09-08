@@ -105,7 +105,7 @@ test('卡片 Agent 以极简模式工具为底座，游玩 Agent 不暴露文件
   assert.doesNotMatch(tavernPresetSource, /complete: true/)
   assert.match(serverSource, /cardSystemPrompt: function \(\) \{ return prompt\('card-system'\) \}/)
   assert.doesNotMatch(serverSource, /runtimePrompt\('play-mode'\)/)
-  assert.match(serverSource, /workspaceContext: resourceWorkspaceContext/)
+  assert.match(serverSource, /resourceWorkspaceContext\(cwd, projection, runtimePrompt\('card-workspace'\)\)/)
   assert.doesNotMatch(orchestrationStrategiesSource, /section\.name === 'tool:cordis'/)
   assert.match(orchestrationStrategiesSource, /name: 'tavern:resource-workspace'/)
   assert.match(advancedSkillSource, /Cordis 动态插件/)

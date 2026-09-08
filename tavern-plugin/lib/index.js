@@ -2980,7 +2980,7 @@ export async function apply(ctx) {
       },
       visibleTools: async function (sessionId) { return await turnOrchestrator.visibleTools(sessionId) },
       cardSystemPrompt: function () { return prompt('card-system') },
-      workspaceContext: resourceWorkspaceContext,
+      workspaceContext: function (cwd, projection) { return resourceWorkspaceContext(cwd, projection, runtimePrompt('card-workspace')) },
       ensureSessionPrefix: async function (input) {
         return await ensureNativeSystemPrefix(input.payload.agent.session, input.chat)
       },
