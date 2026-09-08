@@ -2,6 +2,9 @@
 
 set -eu
 
+# Inherit the registry throughout bootstrap, Profile and plugin installation.
+export npm_config_registry="${DSH_TAVERN_NPM_REGISTRY:-https://registry.npmmirror.com}"
+
 INSTALL_HOST=${DSH_TAVERN_HOST:-cli}
 case ${INSTALL_HOST} in
   cli|desktop) ;;
