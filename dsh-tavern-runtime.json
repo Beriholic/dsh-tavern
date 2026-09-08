@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "8bc0af2c9ef8fff0efd1ec4abf4e0cd0c248f822",
-  "releaseSequence": 120,
+  "revision": "325c1264cccdcd2cb02f056251bc3871b5d831ef",
+  "releaseSequence": 121,
   "version": "1.5.0",
   "files": [
     {
@@ -911,8 +911,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/turn-orchestration.js",
-      "sha256": "7c9d64f6d7880fa0ad9a010f88ad72776d3e8f05f02a33e5bfb5bfb1cd435750",
-      "size": 31530
+      "sha256": "7a1d040a4328b762b60d54021fdcc5c4787a314cf95010c31d4c192bb93d5c97",
+      "size": 31544
     },
     {
       "path": "tavern-plugin/lib/domain/user-extensions.js",
