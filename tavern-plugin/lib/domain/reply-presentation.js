@@ -79,7 +79,19 @@ function hasRawHtml(value) {
 
 // Markdown HTML blocks may extend past a closing tag until the next blank line.
 // Recover element boundaries without parsing/re-serializing author scripts or markup.
-function splitHtmlBoundaries(source) {
+// Bare non-HTML tags are narrative protocol delimiters. HTML elements and
+// custom elements/attribute-bearing UI stay opaque, including everything inside.
+const HTML_ELEMENTS = new Set(('html head body title base link meta style script noscript template slot ' +
+  'address article aside footer header h1 h2 h3 h4 h5 h6 hgroup main nav search section ' +
+  'blockquote dd div dl dt figcaption figure hr li menu ol p pre ul a abbr b bdi bdo br cite code data dfn em i kbd mark q rp rt ruby s samp small span strong sub sup time u var wbr ' +
+  'area audio img map track video embed iframe object picture source canvas svg math portal ' +
+  'del ins caption col colgroup table tbody td tfoot th thead tr button datalist fieldset form input label legend meter optgroup option output progress select textarea ' +
+  'details dialog summary acronym applet big center dir font frame frameset marquee noframes param strike tt xmp').split(' '))
+function isNarrativeTag(tag, token) {
+  return tag && !HTML_ELEMENTS.has(tag) && !/[-:]/.test(tag) && /^<\/?[a-z][\w]*\s*\/?\s*>$/i.test(token)
+}
+
+function splitHtmlBoundaries(source, editing = false) {
   const segments = []
   const stack = []
   const voidTags = new Set('area base br col embed hr img input link meta param source track wbr'.split(' '))
@@ -98,6 +110,14 @@ function splitHtmlBoundaries(source) {
     if (token[2]) continue // Inline code is prose, never executable HTML.
     const tag = (token[1] || '').toLowerCase()
     const closing = /^<\//.test(token[0])
+    if (editing && isNarrativeTag(tag, token[0])) {
+      if (start < 0) {
+        append('text', source.slice(cursor, token.index))
+        append('marker', token[0])
+        cursor = tokens.lastIndex
+      }
+      continue
+    }
     if (start < 0) {
       append('text', source.slice(cursor, token.index))
       start = token.index
@@ -134,9 +154,9 @@ function unwrapNarrativeContent(value) {
   return match === null ? null : { body: match[2], rest: match[3] }
 }
 
-function splitPlainSegment(value) {
+function splitPlainSegment(value, editing = false) {
   const source = str(value)
-  const narrative = unwrapNarrativeContent(source)
+  const narrative = editing ? null : unwrapNarrativeContent(source)
   if (narrative !== null) {
     const parts = splitPlainSegment(narrative.body)
     if (narrative.rest.trim()) parts.push(...splitPlainSegment(narrative.rest))
@@ -151,7 +171,7 @@ function splitPlainSegment(value) {
       ? str(token.raw).replace(/[^\r\n]/g, 'x') : str(token.raw)).join('')
     if (masked.length !== normalized.length) return [{ kind: 'html', content: source }]
     let offset = 0
-    return splitHtmlBoundaries(masked).map(part => {
+    return splitHtmlBoundaries(masked, editing).map(part => {
       const key = part.kind === 'html' ? 'content' : 'text'
       const start = offset
       for (let index = 0; index < part[key].length; index += 1) {
@@ -169,7 +189,7 @@ function splitPlainSegment(value) {
 export function editableReplyParts(value) {
   return fencedSegments(value).flatMap(segment => segment.kind === 'html'
     ? [{ kind: 'html', text: segment.raw }]
-    : splitPlainSegment(segment.text).map(part => ({ kind: part.kind === 'html' ? 'html' : 'text', text: part.kind === 'html' ? part.content : part.text })))
+    : splitPlainSegment(segment.text, true).map(part => ({ kind: part.kind, text: part.kind === 'html' ? part.content : part.text })))
 }
 
 /** Native prose and isolated block HTML share one ordered projection; keep element interiors intact. */

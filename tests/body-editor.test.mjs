@@ -90,3 +90,31 @@ test('display captures do not invalidate an open edit, but advancing the convers
   h.change(chat => { chat.messages.push({ role: 'user', text: '下一轮' }) })
   await assert.rejects(h.editor.save(h.session.id, { token: next.token, texts: ['过时正文'] }), /最后一轮/)
 })
+
+
+test('narrative protocol wrappers retain their bytes while their prose remains editable', async () => {
+  for (const tag of ['dream_plot', 'content', 'gametxt']) {
+    const text = '<' + tag + '>\n<dream_body>\n神龛塌了半边，王晨走进晨雾。\n</dream_body>\n```html\n<div>体力 9</div>\n```\n</' + tag + '>'
+    const h = fixture(text)
+    const parts = editableReplyParts(text)
+    assert.equal(parts.map(part => part.text).join(''), text, 'wrappers and whitespace must be lossless')
+    const edit = await h.editor.read(h.session.id)
+    const texts = edit.parts.filter(part => part.kind === 'text').map(part => part.text.replace('走进晨雾', '留在神龛'))
+    assert.ok(texts.some(text => text.includes('留在神龛')))
+    const result = await h.editor.save(h.session.id, { token: edit.token, texts })
+    assert.equal(result.messages.at(-1).sourceText, text.replace('走进晨雾', '留在神龛'))
+    assert.deepEqual(result.variables, { hp: 9 })
+  }
+})
+
+test('editing distinguishes narrative tags from HTML, custom UI and code samples', () => {
+  for (const text of ['<div><dream_body>界面内容</dream_body></div>', '<story-panel>界面内容</story-panel>', '<panel style="color:red">界面内容</panel>', '<svg><text>图形文字</text></svg>']) {
+    const parts = editableReplyParts(text)
+    assert.deepEqual(parts, [{ kind: 'html', text }])
+  }
+  for (const text of ['<dream_body>未闭合正文', '<gametxt>\r\n正文\r\n</gametxt>', '代码 `<dream_body>` 和 `<div>`', '```js\nconst x = "<dream_body>"\n```']) {
+    const parts = editableReplyParts(text)
+    assert.equal(parts.map(part => part.text).join(''), text)
+    assert.ok(parts.some(part => part.kind === 'text' && part.text.trim()))
+  }
+})

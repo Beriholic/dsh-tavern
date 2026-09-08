@@ -52,7 +52,7 @@ export function createBodyEditor({ chats, sessions, timeline, activity, project,
   }
   async function read(sessionId) {
     const { chat, message, parts } = await context(sessionId)
-    return { token: token(chat, message), turn: message.turn, parts: parts.map(part => part.kind === 'html' ? { kind: 'html' } : part) }
+    return { token: token(chat, message), turn: message.turn, parts: parts.map(part => part.kind === 'text' ? part : { kind: part.kind }) }
   }
   async function save(sessionId, input) {
     if (pending.has(sessionId)) throw new Error('正在保存正文，请稍候')
@@ -63,9 +63,9 @@ export function createBodyEditor({ chats, sessions, timeline, activity, project,
       const texts = input.texts
       if (!Array.isArray(texts) || texts.length !== parts.filter(part => part.kind === 'text').length || texts.some(text => typeof text !== 'string')) throw new Error('编辑文本格式无效')
       if (!texts.some(text => text.trim())) throw new Error('正文不能为空')
-      if (texts.some(text => editableReplyParts(text).some(part => part.kind === 'html'))) throw new Error('这里只能编辑文本，不能新增 HTML')
+      if (texts.some(text => editableReplyParts(text).some(part => part.kind !== 'text'))) throw new Error('这里只能编辑文本，不能新增 HTML')
       let index = 0
-      const text = parts.map(part => part.kind === 'html' ? part.text : texts[index++]).join('')
+      const text = parts.map(part => part.kind === 'text' ? texts[index++] : part.text).join('')
       if (text === source(message)) return present(chat)
       const reply = await project(text, chat)
       const patch = {

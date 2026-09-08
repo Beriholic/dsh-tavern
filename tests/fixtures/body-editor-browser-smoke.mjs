@@ -30,7 +30,7 @@ const libraries = 'const process={env:{NODE_ENV:"production"}};const modules={' 
 const client = await readFile(new URL('../../tavern-plugin/lib/client.js', import.meta.url), 'utf8')
 const controls = client.slice(client.indexOf('const bodyEditPanel ='), client.indexOf('function CandidateDockActions('))
 let session = Session.create('body-editor-browser')
-const text = '雨停了。\n\n```html\n<div style="padding:12px;background:#e8eef6">HTML 状态：体力 9</div>\n```\n\n他走向灯塔。'
+const text = '<dream_plot>\n<dream_body>\n雨停了。\n\n```html\n<div style="padding:12px;background:#e8eef6">HTML 状态：体力 9</div>\n```\n\n他走向灯塔。\n</dream_body>\n</dream_plot>'
 session.append('user/message', { id: 'u', role: 'user', content: [{ type: 'text', text: '继续' }], source: { kind: 'user' } }, { surfaceOp: 'append' })
 session.append('assistant/message', { turn: 2, step: 1, message: { id: 'a', role: 'assistant', content: [{ type: 'text', text }], source: { kind: 'model', provider: 'test', model: 'test' } } }, { surfaceOp: 'append', sourceEventSeqs: [] })
 let chat = { id: 'browser-test', sessionId: session.id, mode: 'story', _storageRevision: 1, messages: [{ role: 'user', text: '继续' }, { role: 'assistant', text, sourceText: text, turn: 2 }], posture: '体力 9', variables: { hp: 9 }, settleStatus: 'done' }
