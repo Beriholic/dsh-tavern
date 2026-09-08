@@ -1794,3 +1794,91 @@ test('frame slash requests reject promptly when generation is unavailable instea
     stop()
   }
 })
+
+test('Host acknowledgements extend idle waits but cannot extend the total event deadline', async () => {
+  const windowListeners = new Map()
+  const frames = []
+  const errors = []
+  const rpcCalls = []
+  let clock = 0
+  let seq = 0
+  const timers = new Map()
+  function advance(to) {
+    while (true) {
+      const due = [...timers].filter(([, timer]) => timer.at <= to).sort((a, b) => a[1].at - b[1].at)[0]
+      if (!due) break
+      clock = due[1].at; timers.delete(due[0]); due[1].fn()
+    }
+    clock = to
+  }
+  const hostWindow = {
+    crypto: { randomUUID() { return 'timeout-runtime-token' } },
+    setTimeout(fn, delay) { timers.set(++seq, { fn, at: clock + delay }); return seq },
+    clearTimeout(id) { timers.delete(id) },
+    addEventListener(name, handler) { windowListeners.set(name, handler) },
+    removeEventListener(name) { windowListeners.delete(name) }
+  }
+  const root = { isConnected: true, appendChild() {}, remove() {} }
+  const hostDocument = {
+    body: { appendChild() {} },
+    documentElement: { appendChild() {} },
+    createElement(tag) {
+      if (tag === 'div') return root
+      const frame = {
+        contentWindow: { messages: [], postMessage(message) { this.messages.push(message) } },
+        listeners: {},
+        addEventListener(name, handler) { this.listeners[name] = handler },
+        remove() {}
+      }
+      frames.push(frame)
+      return frame
+    }
+  }
+  const runtime = client.createTavernHelperScriptRuntime({
+    window: hostWindow,
+    document: hostDocument,
+    eventTimeoutMs: 25,
+    now() { return clock },
+    rpc(method, args) { rpcCalls.push({ method, args }); return Promise.resolve({ updated: true }) },
+    reportError(source, error) { errors.push({ source, message: error.message }) }
+  })
+  runtime.sync('session', {
+    tavernHelper: { messages: [], scriptVariables: {}, lifecycleRevision: 1 },
+    tavernHelperScripts: [{ id: 'guard', name: '变量守卫', content: 'void 0', data: {}, buttons: [] }]
+  })
+  frames[0].listeners.load()
+  const receive = windowListeners.get('message')
+  receive({
+    source: frames[0].contentWindow,
+    data: {
+      type: 'dsh-tavern-helper-subscriptions', token: 'timeout-runtime-token', names: ['MESSAGE_RECEIVED'], ready: true,
+      scripts: [{ id: 'guard', names: ['MESSAGE_RECEIVED'], ready: true, failed: false }]
+    }
+  })
+
+  const emitted = runtime.emit('MESSAGE_RECEIVED', [2], { messages: [], lifecycleRevision: 1 })
+  await Promise.resolve()
+  const request = frames[0].contentWindow.messages.find(item => item.type === 'dsh-tavern-helper-event')
+  receive({
+    source: frames[0].contentWindow,
+    data: { type: 'dsh-tavern-helper-event-progress', token: 'timeout-runtime-token', eventId: request.eventId, scriptId: 'guard', phase: 'started' }
+  })
+
+  const rejected = assert.rejects(emitted, /MESSAGE_RECEIVED.*超时/)
+  for (const at of [20, 40, 60, 80]) {
+    advance(at)
+    receive({ source: frames[0].contentWindow, data: {
+      type: 'dsh-tavern-helper-call', token: 'timeout-runtime-token', eventId: request.eventId,
+      requestId: 'progress-' + at, method: 'updateTavernHelperVariables', args: { variables: { hp: at } }
+    } })
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(errors.length, 0)
+  }
+  advance(99)
+  assert.equal(errors.length, 0)
+  advance(100)
+  await rejected
+  assert.equal(errors.length, 1)
+  assert.equal(rpcCalls.length, 4)
+  runtime.dispose()
+})

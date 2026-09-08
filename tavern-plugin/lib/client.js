@@ -3013,6 +3013,7 @@ window.__ModuleLoader__.load({
 			const onMvuLoadState = options && options.onMvuLoadState || function () {};
 			const initializationTimeoutMs = Math.max(1000, Number(options && options.initializationTimeoutMs) || 15000);
 			const eventTimeoutMs = Math.max(10, Number(options && options.eventTimeoutMs) || 15000);
+			const now = options && options.now || Date.now;
 			const records = new Map();
 			const pendingEvents = new Map();
 			const closedEventIds = new Set();
@@ -3201,7 +3202,11 @@ window.__ModuleLoader__.load({
 					record.mvuDataTimer = null;
 					record.mvuDataError = "";
 				} else if (!record.mvuDataTimer && !record.mvuDataError) {
-					record.mvuDataTimer = hostWindow.setTimeout(function () {
+					const startedAt = now();
+					record.mvuProgressAt = startedAt;
+					record.mvuDataTimer = hostWindow.setTimeout(function check() {
+						const remaining = Math.min(initializationTimeoutMs - (now() - record.mvuProgressAt), initializationTimeoutMs * 4 - (now() - startedAt));
+						if (remaining > 0) { record.mvuDataTimer = hostWindow.setTimeout(check, remaining); return; }
 						record.mvuDataTimer = null;
 						if (records.get(record.id) !== record || mvuDataReady(record)) return;
 						record.mvuDataError = "MVU 脚本已加载，但初始变量尚未保存。请导出日志检查开场初始化；刷新页面后可重试。";
@@ -3231,15 +3236,19 @@ window.__ModuleLoader__.load({
 				}
 				if (!record.subscriptions.has(String(name))) return Promise.resolve(args);
 				const eventId = String(hostEventId || "") || "host-event-" + (++eventSequence);
-				const startedAt = Date.now();
+				const startedAt = now();
 				return new Promise(function (resolve, reject) {
-					const timer = hostWindow.setTimeout(function () {
+					const timer = hostWindow.setTimeout(function check() {
 						const pending = pendingEvents.get(eventId);
+						if (!pending) return;
+						// Only acknowledged host work extends the idle deadline; total time stays bounded.
+						const remaining = Math.min(eventTimeoutMs - (now() - pending.progressAt), eventTimeoutMs * 4 - (now() - startedAt));
+						if (remaining > 0) { pending.timer = hostWindow.setTimeout(check, remaining); return; }
 						pendingEvents.delete(eventId);
 						closeEventId(eventId);
 						const script = pending && record.scripts.get(String(pending.activeScriptId || ""));
 						const source = script ? "人物卡脚本「" + script.name + "」" : "人物卡脚本「" + record.name + "」";
-						const error = new Error((script ? "人物卡脚本「" + script.name + "」" : "共享脚本沙箱") + "处理事件「" + String(name) + "」超时（" + String(Date.now() - startedAt) + "ms）");
+						const error = new Error((script ? "人物卡脚本「" + script.name + "」" : "共享脚本沙箱") + "处理事件「" + String(name) + "」超时（" + String(now() - startedAt) + "ms）");
 						const timeoutKey = record.id + "\n" + String(name);
 						if (!reportedEventTimeouts.has(timeoutKey)) {
 							reportedEventTimeouts.add(timeoutKey);
@@ -3247,7 +3256,7 @@ window.__ModuleLoader__.load({
 						}
 						reject(error);
 					}, eventTimeoutMs);
-					pendingEvents.set(eventId, { record: record, resolve: resolve, reject: reject, timer: timer, name: String(name), activeScriptId: "", diagnostics: diagnostics });
+					pendingEvents.set(eventId, { record: record, resolve: resolve, reject: reject, timer: timer, progressAt: startedAt, name: String(name), activeScriptId: "", diagnostics: diagnostics });
 					post(record, { type: "dsh-tavern-helper-event", eventId: eventId, name: name, args: clone(args) });
 				});
 			}
@@ -3497,6 +3506,13 @@ window.__ModuleLoader__.load({
 				});
 				record.rpcTail = rpcTask;
 				rpcTask.then(function (result) {
+					if (records.get(record.id) === record && result && !result.stale) {
+						const pending = pendingEvents.get(String(data.eventId || ""));
+						if (pending && pending.record === record) {
+							pending.progressAt = now();
+							if (record.mvuDataTimer) record.mvuProgressAt = now();
+						}
+					}
 					// Readiness follows acknowledged persistence, not an iframe's speculative variables.
 					if (result && result.updated === true && !result.stale && !result.transactional && result.context && records.get(record.id) === record
 						&& result.context.chatId === record.context.chatId
