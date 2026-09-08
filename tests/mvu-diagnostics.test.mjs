@@ -207,3 +207,10 @@ test('真实 iframe bootstrap 捕获 console.warn 和 toastr，带事件编号�
   for (let i = 0; i < 100; i++) sandbox.console.warn('repeated')
   assert.ok(messages.filter(item => item.type === 'dsh-tavern-helper-diagnostic').length <= 51)
 })
+
+test('诊断包包含界面按钮错误并脱敏', async () => {
+  const result = await createMvuDiagnosticExport({ sessionId: 's', store: createMvuDiagnosticStore(storage()), displayDiagnostics: { frames: [{ turn: 1, console: [{ level: 'error', args: [{ message: 'journey failed', token: 'PRIVATE_TOKEN' }] }] }] } })
+  assert.match(result.buffer.toString(), /display\/diagnostics.json/)
+  assert.match(result.buffer.toString(), /journey failed/)
+  assert.doesNotMatch(result.buffer.toString(), /PRIVATE_TOKEN/)
+})

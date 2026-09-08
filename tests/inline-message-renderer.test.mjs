@@ -1717,3 +1717,25 @@ test('收起的 details 隐藏内容不撑高 iframe，展开后恢复测高', (
   assert.match(html, /html\[data-dsh-tavern-scroll\]\{overflow-y:auto!important\}/)
   assert.match(html, /html\[data-dsh-tavern-scroll\] body\{overflow-y:visible!important\}/)
 })
+
+test('右侧持久页面记录被捕获的按钮异常和执行日志，但不采集 DOM', () => {
+  const html = client.buildTavernFrameDocument({ content: '', token: 'diagnostics', persistent: true, helperContext: { messages: [] }, observeMvuView: false, runtimeReporting: true })
+  const script = html.match(/<script data-dsh-tavern-frame>([\s\S]*?)<\/script>/)[1]
+  const pending = [], reports = []
+  const context = {
+    console: { log() {}, info() {}, warn() {}, error() {} },
+    parent: { postMessage(value) { reports.push(value) } },
+    document: { body: { cloneNode() { throw new Error('must not capture DOM') } } },
+    addEventListener() {}, setTimeout(fn) { pending.push(fn); return pending.length },
+  }
+  context.window = context
+  vm.createContext(context)
+  vm.runInContext(script, context)
+  vm.runInContext('console.log("角色数据已写入"); console.error("踏上旅程失败", new Error("消息追加失败"))', context)
+  for (const fn of pending) fn()
+  const runtime = reports.at(-1).runtime
+  assert.equal(runtime.dom, '')
+  assert.equal(runtime.console[0].args[0], '角色数据已写入')
+  assert.equal(runtime.console[1].args[1].message, '消息追加失败')
+  assert.match(runtime.console[1].args[1].stack, /消息追加失败/)
+})
