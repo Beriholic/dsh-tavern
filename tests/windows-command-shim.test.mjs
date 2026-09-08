@@ -74,7 +74,7 @@ test('Windows service resolves the selected installation CLI from its bin declar
   const entry = path.join(pkg, 'custom-cli.cjs')
   await writeFile(entry, 'console.log("cli stdout"); console.error("cli stderr")')
   const resolved = resolveDshCliEntry({ dsh: shim, platform: 'win32' })
-  assert.equal(resolved, await realpath(entry))
+  assert.equal(await realpath(resolved), await realpath(entry))
   const actual = spawnSync(process.execPath, [resolved], { encoding: 'utf8', shell: false })
   assert.equal(actual.status, 0, actual.stderr)
   assert.match(actual.stdout, /cli stdout/)

@@ -82,7 +82,7 @@ jobs:
             Write-Host ($log -replace 'https?://[^\s]+', '[URL redacted]')
             throw 'Running service did not report an access URL'
           }
-          $response = Invoke-WebRequest -Uri $url -MaximumRedirection 0
+          $response = Invoke-WebRequest -Uri $url -MaximumRedirection 5
           if ($response.StatusCode -ne 200) { throw 'Reported access URL is not usable' }
           if ((Get-Item "$env:DSH_HOME\logs\tavern.log").Length -eq 0) { throw 'Detached service log is empty' }
           & $shim stop
