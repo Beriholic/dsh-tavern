@@ -336,3 +336,27 @@ test('MVU 在同一个后台任务维护台账，先记账再提交变量，台�
   assert.equal(result.ledger.npcs[0].name, '林岚')
   assert.equal(result.traceSessionId, 'same-background')
 })
+test('MVU 结算透传独立 selection 与推理强度至后台模型', async () => {
+  let capturedSelection = null
+  const module = createMvuSettlementModule({
+    model: {
+      async run(input) {
+        capturedSelection = input.selection
+        await input.onToolCall({ name: 'mvu_submit_update', arguments: { operations: [] } })
+        return { text: '' }
+      }
+    },
+    runtime: {
+      async settleMvuUpdate() {
+        return { context: { messages: [{ variables: {} }] } }
+      }
+    }
+  })
+  await module.settleVariables({
+    backgroundTasks: { posture: false, characterDesign: false },
+    operationId: 'mvu-effort', branchId: 'branch', basedOnRevision: 1, chatId: 'chat', sessionId: 'session', messageId: 0, swipeId: 0,
+    storyText: '无变化。', currentVariables: {},
+    selection: { provider: 'test', model: 'test', reasoningEffort: 'off' }
+  })
+  assert.deepEqual(capturedSelection, { provider: 'test', model: 'test', reasoningEffort: 'off' })
+})

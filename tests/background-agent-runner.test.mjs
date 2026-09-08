@@ -1326,3 +1326,36 @@ test('常驻后台会话在下一任务替换世界书，任务内固定且不�
     assert.match(JSON.stringify(session.events), /开局DLC/)
   } finally { await runner.dispose() }
 })
+test('后台任务通过 selection.reasoningEffort 在请求钩子动态覆盖单轮推理强度', async () => {
+  const parent = { id: 'parent-session', session: { header: {} } }
+  const listeners = []
+  let capturedRequest = null
+  const child = {
+    session: { id: 'bg-reasoning-effort', events: [], append() {} },
+    followup() {},
+    async whenIdle() {
+      const listener = listeners.find(entry => entry.name === 'agent/request')
+      capturedRequest = await listener.listener({}, async () => ({ provider: 'test', model: 'test' }))
+    }
+  }
+  const agents = {
+    get(id) { return id === parent.id ? parent : undefined },
+    async create(options) {
+      assert.equal(options.agentOptions.reasoningEffort, 'off')
+      await options.setup({
+        systemPrompt: { section() {}, variable() {}, suppressRuntimeContext() {} },
+        tools: { restrict() {}, register() {} },
+        on(name, listener) { listeners.push({ name, listener }) }
+      })
+      return { agent: child, async dispose() {} }
+    }
+  }
+  const runner = createBackgroundAgentRunner({ agents, id: () => 'bg-reasoning-effort' })
+  await runner.run({
+    sessionId: parent.id,
+    selection: { provider: 'test', model: 'test', reasoningEffort: 'off' },
+    system: '规则', messages: [], tools: [], persistent: true, task: 'settlement',
+    acceptWithoutText: () => true
+  })
+  assert.equal(capturedRequest.reasoningEffort, 'off')
+})

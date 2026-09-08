@@ -8,6 +8,7 @@ import { createBackgroundTaskCoordinator } from '../tavern-plugin/lib/domain/bac
 import { createRoundHistory } from '../tavern-plugin/lib/domain/round-history.js'
 import { applyMvuSettlementEffect, createMvuSettlementEffect } from '../tavern-plugin/lib/domain/mvu-settlement-effect.js'
 import { createMvuSettlementReconciler } from '../tavern-plugin/lib/domain/mvu-settlement-reconciler.js'
+import { resolveMvuSelection } from '../tavern-plugin/lib/domain/background-model-selection.js'
 import { LEDGER_SUBMIT_TOOL, LEDGER_RULES, ledgerContext, createLedgerSubmission } from '../tavern-plugin/lib/domain/story-ledger.js'
 import { POSTURE_SUBMIT_TOOL, POSTURE_SUBMIT_TOOL_NAME, normalizePostureSubmission } from '../tavern-plugin/lib/domain/posture-submission.js'
 import { CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL } from '../tavern-plugin/lib/domain/character-design-document.js'
@@ -47,7 +48,7 @@ async function harness({ beginRunning = true, mvu = true } = {}) {
     view: async chat => chat, settlementTurn: () => 2,
     projectAgentMessageText: message => message.text, mvuUpdateRules: async () => [],
     readTavernSettings: async () => ({ backgroundTasks: { posture: true, characterDesign: true } }),
-    backgroundModelSelection: () => ({}), runtimePrompt: () => '',
+    backgroundModelSelection: () => ({}), resolveMvuSelection, runtimePrompt: () => '',
     settleUserText: () => '【本轮正文】\n门开了',
     applySettlement: () => ({ postureUpdated: false }), applyMvuSettlementEffect, createMvuSettlementReconciler,
     backgroundAgentRunner: { async run() { throw new Error('backgroundAgentRunner not configured') } },

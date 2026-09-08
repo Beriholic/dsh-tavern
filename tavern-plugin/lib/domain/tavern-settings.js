@@ -1,5 +1,6 @@
 import { compactionPolicy } from './auto-compaction.js'
-import { normalizeBackgroundModel } from './background-model-selection.js'
+import { normalizeBackgroundModel, normalizeReasoningEffort } from './background-model-selection.js'
+
 
 function object(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -31,6 +32,11 @@ export function applyTavernSettingsPatch(current, patch) {
       if (backgroundModel === null) throw new Error('后台模型配置无效')
       next.backgroundModel = backgroundModel
     }
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'mvuReasoningEffort')) {
+    const effort = normalizeReasoningEffort(input.mvuReasoningEffort)
+    if (effort === null) delete next.mvuReasoningEffort
+    else next.mvuReasoningEffort = effort
   }
   const legacyStory = Object.prototype.hasOwnProperty.call(input, 'storyPrompt') ? { name: 'story', text: input.storyPrompt } : null
   const promptChange = Object.prototype.hasOwnProperty.call(input, 'systemPrompt') ? object(input.systemPrompt) : legacyStory
@@ -79,6 +85,7 @@ export function presentTavernSettings(document, defaults) {
     compatibilityMode: true,
     webSearchEnabled: object(document).webSearchEnabled === true,
     backgroundModel: normalizeBackgroundModel(object(document).backgroundModel),
+    mvuReasoningEffort: normalizeReasoningEffort(object(document).mvuReasoningEffort),
     backgroundTasks: normalizeBackgroundTasks(object(document).backgroundTasks),
     // Card rendering uses a fixed trusted policy; legacy preferences are no longer applied.
     trustedCardMode: true,

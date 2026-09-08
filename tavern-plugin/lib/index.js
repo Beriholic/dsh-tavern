@@ -38,7 +38,7 @@ import { projectCardOpeningPreviews } from './domain/card-opening-previews.js'
 import { READABLE_CARD_FIELDS, readCardField } from './domain/card-reading.js'
 import { createConversationInitialization } from './domain/conversation-initialization.js'
 import { assertConversationForkable, conversationForkReceipt, forkConversationChat } from './domain/conversation-fork.js'
-import { resolveChatBackgroundModel } from './domain/background-model-selection.js'
+import { resolveChatBackgroundModel, resolveMvuSelection } from './domain/background-model-selection.js'
 import { createPlayCardSnapshots } from './domain/play-card-snapshots.js'
 import { createUserPreferenceProfile } from './domain/user-preference-profile.js'
 import { createContextPlanner } from './domain/context-planner.js'
@@ -1909,7 +1909,8 @@ export async function apply(ctx) {
       let backgroundBoundary = null
       try {
         const card = await readChatCard(snapshot)
-        const backgroundTasksSettings = normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks)
+        const tavernSettings = await readTavernSettings()
+        const backgroundTasksSettings = normalizeBackgroundTasks(tavernSettings.backgroundTasks)
         const mvuTarget = snapshot.mvu && snapshot.mvu.enabled === true && snapshot.mvu.owner === 'official'
           ? pendingMvuTarget(snapshot)
           : null
@@ -1942,8 +1943,9 @@ export async function apply(ctx) {
           if (pendingSubmission && typeof pendingSubmission === 'object') {
             mvuResult = await mvuSettlement.resumeVariables({ ...settlementInput, submission: pendingSubmission })
           } else {
-            const selection = backgroundModelSelection(snapshot)
-            if (selection === null) throw new Error('没有可用的模型配置，请先在当前会话的模型选择器中选择模型')
+            const baseSelection = backgroundModelSelection(snapshot)
+            if (baseSelection === null) throw new Error('没有可用的模型配置，请先在当前会话的模型选择器中选择模型')
+            const selection = resolveMvuSelection(baseSelection, snapshot.mvuReasoningEffort || tavernSettings.mvuReasoningEffort)
             mvuResult = await mvuSettlement.settleVariables({
               ...settlementInput,
               system: backgroundTasksSettings.posture ? runtimePrompt('posture-settlement') : '',

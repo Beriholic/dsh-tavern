@@ -205,6 +205,7 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
     compatibilityMode: true,
     webSearchEnabled: false,
     backgroundModel: null,
+    mvuReasoningEffort: null,
     backgroundTasks: { posture: true, characterDesign: false, variables: true, ledger: false },
     trustedCardMode: true,
     systemPrompts: [{ name: 'story', text: '内置正文提示词', customized: false }],
@@ -220,6 +221,7 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
     compatibilityMode: true,
     webSearchEnabled: false,
     backgroundModel: null,
+    mvuReasoningEffort: null,
     backgroundTasks: { posture: true, characterDesign: false, variables: true, ledger: false },
     trustedCardMode: true,
     systemPrompts: [{ name: 'story', text: '用户正文提示词', customized: true }],
@@ -292,3 +294,37 @@ test('台账维护可独立开启且不改变其他后台任务', async t => {
   await run.update({ backgroundTasks: { ledger: false } })
   assert.equal((await run.read()).backgroundTasks.ledger, false)
 })
+
+test('变量结算思考强度可以单独设置并在后台设置中持久化', async t => {
+  const run = await settingsHarness(t)
+  assert.equal((await run.read()).mvuReasoningEffort, null)
+  await run.update({ mvuReasoningEffort: 'off' })
+  assert.equal((await run.read()).mvuReasoningEffort, 'off')
+  assert.equal((await run.saved()).mvuReasoningEffort, 'off')
+  await run.update({ mvuReasoningEffort: 'low' })
+  assert.equal((await run.read()).mvuReasoningEffort, 'low')
+  await run.update({ mvuReasoningEffort: null })
+  assert.equal((await run.read()).mvuReasoningEffort, null)
+  assert.equal((await run.saved()).mvuReasoningEffort, undefined)
+})
+
+test('变量结算思考强度可在界面中触发保存', async t => {
+  const harness = await settingsHarness(t)
+  let state = { mvuReasoningEffort: null }
+  const events = []
+  const context = {
+    setState: updater => { state = updater(state) },
+    rpc: async (_method, args) => ({ settings: await harness.update(args.patch) }),
+    window: { dispatchEvent: event => events.push(event.type) },
+    CustomEvent: class { constructor(type) { this.type = type } }
+  }
+  const start = clientSource.indexOf('async function setMvuReasoningEffort(value)')
+  assert.ok(start >= 0)
+  vm.runInNewContext(clientSource.slice(start, clientSource.indexOf('\n\t\t\treturn React.createElement', start)) +
+    '; this.setEffort = setMvuReasoningEffort;', context)
+  await context.setEffort('off')
+  assert.equal(state.mvuReasoningEffort, 'off')
+  assert.equal((await harness.read()).mvuReasoningEffort, 'off')
+  assert.deepEqual(events, ['dsh-tavern-settings-changed', 'dsh-tavern-data-changed'])
+})
+

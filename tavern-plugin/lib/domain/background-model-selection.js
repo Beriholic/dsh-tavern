@@ -6,13 +6,24 @@ function text(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+export const VALID_REASONING_EFFORTS = Object.freeze(['off', 'low', 'medium', 'high'])
+
+export function normalizeReasoningEffort(value) {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().toLowerCase()
+  return VALID_REASONING_EFFORTS.includes(normalized) ? normalized : null
+}
+
 export function normalizeBackgroundModel(value) {
   if (value === null || value === undefined) return null
   const input = object(value)
   const provider = text(input.provider)
   const model = text(input.model)
   if (provider === '' || model === '') return null
-  return { provider, model }
+  const result = { provider, model }
+  const reasoningEffort = normalizeReasoningEffort(input.reasoningEffort)
+  if (reasoningEffort !== null) result.reasoningEffort = reasoningEffort
+  return result
 }
 
 export function snapshotBackgroundModel(configured) {
@@ -28,4 +39,11 @@ export function resolveChatBackgroundModel(chat, fallback) {
     selected.reasoningEffort = source.reasoningEffort.trim()
   }
   return selected
+}
+
+export function resolveMvuSelection(baseSelection, mvuReasoningEffort) {
+  if (baseSelection === null || typeof baseSelection !== 'object') return null
+  const effort = normalizeReasoningEffort(mvuReasoningEffort)
+  if (effort === null) return baseSelection
+  return Object.assign({}, baseSelection, { reasoningEffort: effort })
 }

@@ -5946,11 +5946,11 @@ window.__ModuleLoader__.load({
 		}
 
 		function TavernSettingsSection() {
-			const [state, setState] = React.useState({ loading: true, busy: false, webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: false, variables: true, ledger: false }, modelCatalog: [], sceneImages: false, error: "" });
+			const [state, setState] = React.useState({ loading: true, busy: false, webSearchEnabled: false, backgroundModel: null, mvuReasoningEffort: null, backgroundTasks: { posture: true, characterDesign: false, variables: true, ledger: false }, modelCatalog: [], sceneImages: false, error: "" });
 			React.useEffect(function () {
 				let active = true;
 				rpc("getTavernSettings").then(function (result) {
-					if (active) setState({ loading: false, busy: false, webSearchEnabled: Boolean(result.settings && result.settings.webSearchEnabled), backgroundModel: result.settings && result.settings.backgroundModel || null, backgroundTasks: result.settings && result.settings.backgroundTasks || { posture: true, characterDesign: false, variables: true, ledger: false }, modelCatalog: Array.isArray(result.modelCatalog) ? result.modelCatalog : [], sceneImages: Boolean(result.releaseCapabilities && result.releaseCapabilities.sceneImages), error: "" });
+					if (active) setState({ loading: false, busy: false, webSearchEnabled: Boolean(result.settings && result.settings.webSearchEnabled), backgroundModel: result.settings && result.settings.backgroundModel || null, mvuReasoningEffort: result.settings && result.settings.mvuReasoningEffort || null, backgroundTasks: result.settings && result.settings.backgroundTasks || { posture: true, characterDesign: false, variables: true, ledger: false }, modelCatalog: Array.isArray(result.modelCatalog) ? result.modelCatalog : [], sceneImages: Boolean(result.releaseCapabilities && result.releaseCapabilities.sceneImages), error: "" });
 				}, function (error) {
 					if (active) setState(function (current) { return Object.assign({}, current, { loading: false, busy: false, error: String(error && error.message || error) }); });
 				});
@@ -5982,7 +5982,20 @@ window.__ModuleLoader__.load({
 				try {
 					const backgroundModel = value === "" ? null : JSON.parse(value);
 					const result = await rpc("updateTavernSettings", { patch: { backgroundModel: backgroundModel } });
-					setState(function (current) { return Object.assign({}, current, { loading: false, busy: false, backgroundModel: result.settings && result.settings.backgroundModel || null, error: "" }); });
+					setState(function (current) { return Object.assign({}, current, { loading: false, busy: false, backgroundModel: result.settings && result.settings.backgroundModel || null, mvuReasoningEffort: result.settings && result.settings.mvuReasoningEffort || null, error: "" }); });
+					window.dispatchEvent(new CustomEvent("dsh-tavern-settings-changed"));
+					window.dispatchEvent(new CustomEvent("dsh-tavern-data-changed"));
+				} catch (error) {
+					setState(function (current) { return Object.assign({}, current, { busy: false, error: String(error && error.message || error) }); });
+				}
+			}
+
+			async function setMvuReasoningEffort(value) {
+				setState(function (current) { return Object.assign({}, current, { busy: true, error: "" }); });
+				try {
+					const mvuReasoningEffort = value === "" ? null : value;
+					const result = await rpc("updateTavernSettings", { patch: { mvuReasoningEffort: mvuReasoningEffort } });
+					setState(function (current) { return Object.assign({}, current, { loading: false, busy: false, mvuReasoningEffort: result.settings && result.settings.mvuReasoningEffort || null, error: "" }); });
 					window.dispatchEvent(new CustomEvent("dsh-tavern-settings-changed"));
 					window.dispatchEvent(new CustomEvent("dsh-tavern-data-changed"));
 				} catch (error) {
@@ -6025,7 +6038,20 @@ window.__ModuleLoader__.load({
 						return React.createElement("label", { key: item[0], className: "dsh-tavern-settings-row" },
 							React.createElement("span", { className: "dsh-tavern-settings-copy" }, React.createElement("span", { className: "dsh-tavern-settings-title" }, item[1]), React.createElement("span", { className: "dsh-tavern-settings-desc" }, item[2])),
 							React.createElement("span", { className: "dsh-tavern-settings-switch" }, React.createElement("input", { type: "checkbox", checked: state.backgroundTasks[item[0]], disabled: state.loading || state.busy, "aria-label": item[1], onChange: function (event) { void setBackgroundTask(item[0], event.target.checked); } }), React.createElement("span", { className: "dsh-tavern-settings-track", "aria-hidden": "true" })));
-					})
+					}),
+					React.createElement("label", { className: "dsh-tavern-settings-row dsh-tavern-settings-model-row" },
+						React.createElement("span", { className: "dsh-tavern-settings-copy" },
+							React.createElement("span", { className: "dsh-tavern-settings-title" }, "变量结算思考强度"),
+							React.createElement("span", { className: "dsh-tavern-settings-desc" }, "单独控制 MVU 变量更新时模型的思考强度。建议设为“关闭思考”以加快结算速度并避免空回复。")
+						),
+						React.createElement("select", { className: "dsh-tavern-settings-select", value: state.mvuReasoningEffort || "", disabled: state.loading || state.busy || state.backgroundTasks.variables === false, onChange: function (event) { void setMvuReasoningEffort(event.target.value); }, "aria-label": "变量结算思考强度" },
+							React.createElement("option", { value: "" }, "跟随后台模型（默认）"),
+							React.createElement("option", { value: "off" }, "关闭思考（推荐）"),
+							React.createElement("option", { value: "low" }, "低（Low）"),
+							React.createElement("option", { value: "medium" }, "中（Medium）"),
+							React.createElement("option", { value: "high" }, "高（High）")
+						)
+					)
 				),
 				state.sceneImages ? React.createElement(SceneImageSettings, null) : null,
 				state.error ? React.createElement("div", { className: "dsh-tavern-settings-error", role: "alert" }, "保存失败：" + state.error) : null

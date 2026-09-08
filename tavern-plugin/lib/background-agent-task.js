@@ -218,8 +218,14 @@ export function createBackgroundAgentTask(options) {
         const temperature = state.characterDesignStage
           ? state.characterDesignStage.temperature(input.temperature)
           : input.temperature
-        if (typeof temperature !== 'number' || input.selection && input.selection.provider === 'openai-codex') return request
-        return Object.assign({}, request, { temperature })
+        const overrides = {}
+        if (typeof temperature === 'number' && input.selection && input.selection.provider !== 'openai-codex') {
+          overrides.temperature = temperature
+        }
+        if (input.selection && typeof input.selection.reasoningEffort === 'string' && input.selection.reasoningEffort.trim() !== '') {
+          overrides.reasoningEffort = input.selection.reasoningEffort.trim()
+        }
+        return Object.keys(overrides).length > 0 ? Object.assign({}, request, overrides) : request
       })
     }
   }

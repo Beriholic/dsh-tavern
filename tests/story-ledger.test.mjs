@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { applyLedgerDelta, emptyLedger, createLedgerSubmission, LEDGER_SUBMIT_TOOL, LEDGER_RULES, ledgerContext, readLedger } from '../tavern-plugin/lib/domain/story-ledger.js'
 import { createLedgerEditor } from '../tavern-plugin/lib/domain/ledger-editor.js'
 import { createStoryTimeline } from '../tavern-plugin/lib/domain/story-timeline.js'
+import { resolveMvuSelection } from '../tavern-plugin/lib/domain/background-model-selection.js'
 
 test('台账保留离场角色和寄存物品，部分消耗、用尽和未知更新原子处理', () => {
   const first = applyLedgerDelta(null, { items: { add: [{ name: '解药', qty: 3 }, { name: '铜匣', carried: false, location: '客栈' }] }, npcs: { add: [{ name: '林岚', relation: '同行者，互相信任', follow: true }] }, scenes: { add: [{ path: ['城', '客栈'], desc: '初遇的客栈' }] }, location: '客栈', locationPath: ['城', '客栈'] }, 1)
@@ -56,7 +57,7 @@ test('普通卡真实 runSettlement 调用原后台并提交台账，姿势不�
     readChat: async () => structuredClone(chat), prepareNextWorldBookContext: async c => c,
     backgroundTasks: { begin: async snapshot => ({ chat: snapshot, participantRequest: { sessionId: 'same-background', rewindTo: null }, participant: x => x, commit: async completion => { assert.notEqual(completion.status, 'failed', '真实结算意外进入失败分支'); assert.equal(typeof completion.apply, 'function'); completion.apply(chat); return { status: 'committed', chat } } }) },
     readChatCard: async () => ({ name: '测试卡' }), readTavernSettings: async () => ({ backgroundTasks: { ledger: true, posture: true, variables: false, characterDesign: false } }),
-    backgroundModelSelection: () => ({ model: 'fake' }),
+    backgroundModelSelection: () => ({ model: 'fake' }), resolveMvuSelection,
     backgroundAgentRunner: { run: async input => {
       calls++; assert.equal(input.persistentSessionId, 'same-background'); assert.ok(input.system.includes('台账维护'))
       assert.equal(JSON.parse(await input.onToolCall({ name: 'posture_submit', arguments: { posture: '站立' } })).retryable, true)
