@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "a1568f15e8786542475245a73588cbac97c34948",
-  "releaseSequence": 111,
+  "revision": "33f05aa89bfbec49e73a0b702183d75480481971",
+  "releaseSequence": 112,
   "version": "1.5.0",
   "files": [
     {
@@ -61,7 +61,7 @@
     },
     {
       "path": "bin/profile-installation.mjs",
-      "sha256": "b24432cd422f08284b53a630d9fda7b23eb4cb1f560d4303a79b781383f1b162",
+      "sha256": "9503d82e382eff969572b2ff991fb93f53320c68c198e0ede12c591a008f756e",
       "size": 12140
     },
     {
