@@ -209,6 +209,7 @@ test('play status tab receives the host conversation service when it is opened',
   runtime.createPlayControlsFeatureModule().register({ ctx, slots })
   const rendered = statusTab.component({ scope: { sessionId: 's1' } })
 
+  assert.equal(typeof rendered.props.executeSlash, 'function')
   assert.equal(rendered.props.uiConversation, uiConversation)
   assert.equal(rendered.props.sessionId, 's1')
 })

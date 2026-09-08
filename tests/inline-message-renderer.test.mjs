@@ -1739,3 +1739,58 @@ test('右侧持久页面记录被捕获的按钮异常和执行日志，但不�
   assert.equal(runtime.console[1].args[1].message, '消息追加失败')
   assert.match(runtime.console[1].args[1].stack, /消息追加失败/)
 })
+
+test('standalone /trigger admits a native turn without overwriting the draft or duplicating helper messages', async () => {
+  const listeners = new Set()
+  const summary = { running: false }
+  const prompts = []
+  let reply = { ok: true }
+  const ctx = {
+    sessions: {
+      scope() { return {} },
+      binding(id) { assert.equal(id, 'opening'); return { session: { prompt(content, mode) { prompts.push([content, mode]); return Promise.resolve(reply) } } } },
+      list: {
+        getSnapshot() { return { byId: { opening: summary } } },
+        subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn) }
+      }
+    },
+    get() { return { input: { for() { return { setDraft() { assert.fail('must preserve draft') }, submit() { assert.fail('must use native admission') } } } } } }
+  }
+  const execute = client.createTavernFrameSlashExecutor(ctx, { setTimeout, clearTimeout })
+  const completion = execute('/trigger', 'opening')
+  assert.deepEqual(JSON.parse(JSON.stringify(prompts)), [[[], 'queue']])
+  summary.running = true
+  listeners.forEach(fn => fn())
+  summary.running = false
+  listeners.forEach(fn => fn())
+  assert.equal((await completion).submitted, true)
+  assert.equal(listeners.size, 0)
+  reply = { ok: false, error: { message: 'provider unavailable' } }
+  await assert.rejects(execute('/trigger', 'opening'), /provider unavailable/)
+  assert.equal(listeners.size, 0)
+})
+
+test('frame slash requests reject promptly when generation is unavailable instead of remaining pending', async () => {
+  for (const executeSlash of [undefined, () => { throw new Error('executor failed') }]) {
+    const listeners = new Map()
+    const replies = []
+    const frame = { contentWindow: { postMessage(message) { replies.push(message) } } }
+    const lifecycle = client.createTavernMessageFrameLifecycle({
+      sessionId: 'opening', content: '<button>start</button>', turn: 1, partIndex: 0,
+      helperContext: { lifecycleRevision: 1, messages: [] }, eager: true, executeSlash
+    }, { window: {
+      crypto: { randomUUID() { return 'slash-token' } },
+      sessionStorage: { getItem() { return null }, setItem() {} }, document: null, setTimeout, clearTimeout,
+      addEventListener(name, handler) { listeners.set(name, handler) }, removeEventListener(name) { listeners.delete(name) }
+    } })
+    const doc = lifecycle.snapshot().visibleDocument
+    doc.ref(frame)
+    const stop = lifecycle.start(() => {})
+    listeners.get('message')({ source: frame.contentWindow, data: { type: 'dsh-tavern-helper-call', token: doc.token, requestId: 'trigger', method: 'triggerTavernSlash', args: { line: '/trigger' } } })
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(replies.length, 1)
+    assert.equal(replies[0].ok, false)
+    assert.match(replies[0].error, /无法触发生成|executor failed/)
+    stop()
+  }
+})

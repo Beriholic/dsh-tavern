@@ -192,6 +192,7 @@ export function createTavernScriptHostAdapter(options = {}) {
       }
       throw error
     }
+    if (typeof options.publishCreatedMessages === 'function') await options.publishCreatedMessages(chat, created)
     return { updated: true, targets: created, context: projectTavernHelperContext(chat) }
   }
 

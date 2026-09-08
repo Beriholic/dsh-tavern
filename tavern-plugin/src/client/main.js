@@ -3749,8 +3749,10 @@ window.__ModuleLoader__.load({
 
 					if (data.method === "triggerTavernSlash") {
 						const executeSlash = configuredSlashExecutor || requestProps.executeSlash;
-						if (typeof executeSlash !== "function") return;
-						executeSlash(String(data.args && data.args.line || ""), props.sessionId).then(function (result) {
+						Promise.resolve().then(function () {
+							if (typeof executeSlash !== "function") throw new Error("当前界面无法触发生成，请刷新页面后重试");
+							return executeSlash(String(data.args && data.args.line || ""), props.sessionId);
+						}).then(function (result) {
 							return invoke("getSession", {}, props.sessionId).then(function (snapshot) {
 								const context = snapshot && snapshot.view && snapshot.view.tavernHelper;
 								if (context) helperContext = context;
@@ -4034,11 +4036,13 @@ window.__ModuleLoader__.load({
 			hostWindow = hostWindow || window;
 			return function (line, sessionId) {
 				const match = /^\/send\s+([\s\S]+)\|\/trigger\s*$/.exec(String(line || ""));
-				if (!match || !match[1].trim()) return Promise.reject(new Error("消息界面只允许调用 /send …|/trigger"));
+				const triggerOnly = /^\/trigger\s*$/.test(String(line || ""));
+				if (!triggerOnly && (!match || !match[1].trim())) return Promise.reject(new Error("消息界面只允许调用 /trigger 或 /send …|/trigger"));
 				const actx = ctx.sessions.scope(sessionId);
 				const conversation = ctx.get("conversation");
 				if (!actx || !conversation) return Promise.reject(new Error("当前对话输入框不可用"));
 				const input = conversation.input.for(actx);
+				const binding = triggerOnly && ctx.sessions.binding(sessionId);
 				const sessions = ctx.sessions.list;
 				return new Promise(function (resolve, reject) {
 					let observedRun = false;
@@ -4061,8 +4065,15 @@ window.__ModuleLoader__.load({
 					stop = sessions.subscribe(inspect);
 					timer = hostWindow.setTimeout(function () { finish(new Error("等待开局生成完成超时")); }, 15 * 60 * 1000);
 					try {
-						input.setDraft(match[1]);
-						input.submit("queue");
+						if (triggerOnly) {
+							// Helper messages are already persisted and projected into the next request.
+							Promise.resolve(binding.session.prompt([], "queue")).then(function (result) {
+								if (!result || !result.ok) finish(new Error(result && result.error && result.error.message || "开局生成提交失败"));
+							}, finish);
+						} else {
+							input.setDraft(match[1]);
+							input.submit("queue");
+						}
 						inspect();
 					} catch (error) { finish(error); }
 				});
@@ -6828,6 +6839,7 @@ window.__ModuleLoader__.load({
 				trustedCardMode: Boolean(view.tavernRuntimePolicy && view.tavernRuntimePolicy.trustedCardMode),
 				eager: true,
 				persistent: true,
+				executeSlash: props.executeSlash,
 				observeMvuView: false,
 				runtimeReporting: true
 			}));
@@ -7366,7 +7378,7 @@ window.__ModuleLoader__.load({
 					view.foregroundError ? h("div", { className: "dsh-card-error" }, view.foregroundError.message || "前台正文生成失败，请重新生成本轮正文。") : null,
 					view.tavernStatusView && view.tavernStatusView.content && view.tavernHelper ? h("section", { className: "dsh-tavern-status-section" },
 						h("div", { className: "dsh-tavern-status-label" }, "人物卡状态栏"),
-						h(TavernPersistentStatusRuntime, { sessionId: props.sessionId, view: view })
+						h(TavernPersistentStatusRuntime, { sessionId: props.sessionId, view: view, executeSlash: props.executeSlash })
 					) : null,
 					(view.presentationWarnings || []).map(function (warning, index) {
 						return h("div", { className: "dsh-card-error", key: "presentation-warning-" + index }, warning);
@@ -7486,7 +7498,7 @@ window.__ModuleLoader__.load({
 					function () { return selector(chat.getSnapshot()); }
 				);
 			}
-			return h(TavernStatusPanel, { sessionId: props.sessionId, useSession: useSession, useChat: useChat });
+			return h(TavernStatusPanel, { sessionId: props.sessionId, useSession: useSession, useChat: useChat, executeSlash: props.executeSlash });
 		}
 
 		const candidatePanel = { value: null, listeners: new Set() };
@@ -7912,6 +7924,7 @@ window.__ModuleLoader__.load({
 			const ctx = input.ctx;
 			const slots = input.slots;
 			const uiConversation = ctx.get("uiConversation") || ctx.get("conversation");
+			const executeSlash = createTavernFrameSlashExecutor(ctx);
 			ctx.effect(() => ctx.betterSidebar.registerTab({
 				id: "dsh-tavern:status",
 				title: "酒馆状态",
@@ -7921,7 +7934,7 @@ window.__ModuleLoader__.load({
 					return { tab: { id: "dsh-tavern:status", type: "dsh-tavern:status", title: "酒馆状态" }, patch: { panelOpen: true } };
 				},
 				component: function (props) {
-					return React.createElement(TavernStatusTab, { sessions: ctx.sessions, uiConversation: uiConversation, sessionId: props.scope.sessionId });
+					return React.createElement(TavernStatusTab, { sessions: ctx.sessions, uiConversation: uiConversation, sessionId: props.scope.sessionId, executeSlash: executeSlash });
 				}
 			}), "dsh-tavern: Better Sidebar status tab");
 			ctx.effect(() => slots.inject("conversation.session.header.actions", () => slots.register(

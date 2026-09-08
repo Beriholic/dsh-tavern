@@ -1,3 +1,4 @@
+import { appendHelperUserSessionContext } from './domain/helper-user-session-context.js'
 import { sessionOpeningDescriptor, prepareSessionOpening } from './domain/session-opening.js'
 import { scriptPromptScanText } from './domain/tavern-script-prompts.js'
 import { createOpeningPreparation } from './domain/opening-preparation.js'
@@ -967,6 +968,11 @@ export async function apply(ctx) {
     return { captured: true, turn, partIndex: index, captureKind: capture.captureKind }
   }
   const tavernScriptHostAdapter = createTavernScriptHostAdapter({
+    publishCreatedMessages: async function (chat, targets) {
+      const session = sessionStore.get(chat.sessionId) || agentRegistry.get(chat.sessionId)?.session
+      appendHelperUserSessionContext(session, chat, targets)
+      await sessionStore.flush(session)
+    },
     resolveChat: chatForSession,
     writeChat,
     updateChat,

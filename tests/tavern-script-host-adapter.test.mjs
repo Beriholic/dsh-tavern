@@ -469,3 +469,23 @@ test('非 MVU 普通脚本可使用变量和世界书，但不能执行官方 MV
   enabled = false
   await assert.rejects(adapter.updateVariables('session-1', { type: 'chat' }, {}), /没有启用脚本/)
 })
+
+test('Helper creation waits for native session publication and propagates publication failure', async () => {
+  let release
+  let published
+  const gate = new Promise(resolve => { release = resolve })
+  const run = harness(chat(), { publishCreatedMessages: async (value, targets) => {
+    assert.equal(run.writes.length, 1)
+    published = { value: structuredClone(value), targets }
+    await gate
+  } })
+  let done = false
+  const task = run.adapter.createMessages('session-1', [{ role: 'user', message: '旅馆开局' }], {}, 2).then(value => { done = true; return value })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(done, false)
+  assert.equal(published.value.messages[published.targets[0].messageId].text, '旅馆开局')
+  release()
+  assert.equal((await task).updated, true)
+  const failed = harness(chat(), { publishCreatedMessages: async () => { throw new Error('native flush failed') } })
+  await assert.rejects(failed.adapter.createMessages('session-1', [{ role: 'user', message: '开局' }], {}, 2), /native flush failed/)
+})
