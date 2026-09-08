@@ -176,13 +176,16 @@ test('Android 安装脚本增量配置两个 Profile，失败不会伪装成成�
   assert.doesNotMatch(installer, /tavern-plugin\/lib\/client\.js/)
 })
 
-test('Android 更新先安装新源码依赖，再用新源码停止旧服务', async (t) => {
+for (const initialVersion of ['11.25.0', '10.15.1', 'missing', 'shadowed']) {
+test(`Android 安装固定 pnpm 并先安装依赖再停止旧服务：${initialVersion}`, async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'dsh-android-install-order-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const dshHome = path.join(directory, 'dsh-home')
   const mockBin = path.join(directory, 'mock-bin')
   const events = path.join(directory, 'events')
   const dependenciesReady = path.join(directory, 'dependencies-ready')
+  const versionFile = path.join(directory, 'pnpm-version')
+  await writeFile(versionFile, initialVersion)
   for (const profile of ['tavern', 'web']) {
     const profileDir = path.join(dshHome, 'profiles', profile)
     await mkdir(profileDir, { recursive: true })
@@ -191,10 +194,21 @@ test('Android 更新先安装新源码依赖，再用新源码停止旧服务', 
   await mkdir(mockBin, { recursive: true })
   await writeFile(path.join(mockBin, 'pnpm'), `#!/usr/bin/env bash
 set -euo pipefail
+if [ "\$1" = "--version" ]; then
+  version=$(cat "${versionFile}")
+  [ "\$version" != missing ] || exit 127
+  printf '%s\\n' "\$version"
+  exit 0
+fi
 if [ "\$1" = "--dir" ] && [ "\$2" = "${new URL('..', import.meta.url).pathname.replace(/\/$/, '')}" ]; then
   printf 'dependencies\\n' >> "${events}"
   : > "${dependenciesReady}"
 fi
+`, { mode: 0o755 })
+  await writeFile(path.join(mockBin, 'npm'), `#!/usr/bin/env bash
+set -euo pipefail
+printf 'npm %s\\n' "\$*" >> "${events}"
+[ "${initialVersion}" = shadowed ] || printf '11.25.0' > "${versionFile}"
 `, { mode: 0o755 })
   await writeFile(path.join(mockBin, 'dsh'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 })
   await writeFile(path.join(mockBin, 'node'), `#!/usr/bin/env bash
@@ -219,9 +233,18 @@ esac
     env: { ...process.env, DSH_HOME: dshHome, PATH: `${mockBin}${path.delimiter}${process.env.PATH}` },
     encoding: 'utf8',
   })
+  const recorded = (await readFile(events, 'utf8')).trim().split('\n')
+  if (initialVersion === 'shadowed') {
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /pnpm/)
+    assert.deepEqual(recorded, ['npm install --global pnpm@11.25.0'])
+    return
+  }
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual((await readFile(events, 'utf8')).trim().split('\n').slice(0, 3), ['dependencies', 'stop', 'install'])
+  const expected = initialVersion === '11.25.0' ? [] : ['npm install --global pnpm@11.25.0']
+  assert.deepEqual(recorded.slice(0, expected.length + 3), [...expected, 'dependencies', 'stop', 'install'])
 })
+}
 
 test('Android setup 是唯一公开入口，优先 Git 并提供压缩包回退', () => {
   assert.match(setup, /^#!\/usr\/bin\/env bash\nset -euo pipefail/m)

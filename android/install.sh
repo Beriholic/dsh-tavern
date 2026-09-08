@@ -6,6 +6,7 @@ REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)"
 DSH_ROOT="${DSH_HOME:-${HOME}/.dsh}"
 TAVERN_PROFILE_DIR="${DSH_ROOT}/profiles/tavern"
 TAVERN_PORT=3088
+PNPM_VERSION=11.25.0
 
 fail() {
   printf '安装失败：%s\n' "$1" >&2
@@ -46,11 +47,16 @@ NODE
 
 require_command node
 require_command dsh
-if ! command -v pnpm >/dev/null 2>&1; then
+# The release lockfile uses pnpm 11's patch format; older pnpm rejects it.
+INSTALLED_PNPM_VERSION=$(pnpm --version 2>/dev/null || :)
+if [ "${INSTALLED_PNPM_VERSION}" != "${PNPM_VERSION}" ]; then
   require_command npm
-  printf '\n未检测到 pnpm，正在安装……\n'
-  npm install --global pnpm
+  printf '\n正在安装 pnpm %s（当前：%s）……\n' "${PNPM_VERSION}" "${INSTALLED_PNPM_VERSION:-未安装}"
+  npm install --global "pnpm@${PNPM_VERSION}"
+  hash -r
 fi
+INSTALLED_PNPM_VERSION=$(pnpm --version 2>/dev/null || :)
+[ "${INSTALLED_PNPM_VERSION}" = "${PNPM_VERSION}" ] || fail "需要 pnpm ${PNPM_VERSION}，当前命令版本为 ${INSTALLED_PNPM_VERSION:-不可用}。请检查 PATH 中的 pnpm 后重试。"
 # Android 的 proot 会把硬链接模拟成符号链接，pnpm 默认导入方式可能因此
 # 生成无法进行相对 require 的包目录。DSHA 中的所有后续安装也必须沿用复制模式。
 pnpm config set package-import-method copy --location=user
