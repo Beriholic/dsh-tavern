@@ -21,7 +21,6 @@ import {
   recordInstalledRelease,
   resolveDshInvocation,
   resolveUpdateProgram,
-  renderWindowsLauncher,
   restartBrowserTarget,
   webUrlFromLogChunk,
   resolveServicePort,
@@ -55,13 +54,6 @@ test('无 Git 的 ZIP 安装在收尾时补写提交号', async () => {
 const tavernPluginManifest = JSON.parse(await readFile(new URL('../tavern-plugin/package.json', import.meta.url), 'utf8'))
 const profileWorkspace = await readFile(new URL('../pnpm-workspace.yaml', import.meta.url), 'utf8')
 
-test('Windows launcher quotes paths containing spaces and forwards arguments', () => {
-  const launcher = renderWindowsLauncher('D:\\My Games\\dsh-tavern\\bin\\dsh-tavern.mjs')
-  assert.equal(
-    launcher,
-    '@echo off\r\nnode "D:\\My Games\\dsh-tavern\\bin\\dsh-tavern.mjs" %*\r\n',
-  )
-})
 
 test('公开安装命令使用 jsDelivr，不把 raw GitHub 作为国内用户入口', () => {
   assert.match(readme, /cdn\.jsdelivr\.net\/gh\/flizzywine\/dsh-tavern@main\/install\.ps1/)

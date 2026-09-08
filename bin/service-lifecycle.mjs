@@ -169,7 +169,7 @@ export async function statusService() {
     console.log(`DSH Tavern 正在启动：PID ${state.record.pid}（端口 ${state.port} 尚未监听）。`)
     return
   }
-  fail(`DSH Tavern 未运行（端口 ${state.port}）。`)
+  throw new Error(`DSH Tavern 未运行（端口 ${state.port}）。`)
 }
 
 async function currentServiceWebUrl(state) {

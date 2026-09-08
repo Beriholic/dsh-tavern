@@ -68,7 +68,11 @@ function prepareProfileConfiguration(host, dshVersion) {
 }
 
 export function renderWindowsLauncher(scriptPath) {
-  return `@echo off\r\nnode "${scriptPath.replaceAll('"', '""')}" %*\r\n`
+  // cmd.exe may decode batch files with an OEM code page. Keep path data ASCII,
+  // then decode inside Node without changing cwd or relying on a fixed layout.
+  const encoded = Buffer.from(scriptPath, 'utf8').toString('base64')
+  const bootstrap = `const p=Buffer.from('${encoded}','base64').toString('utf8');process.argv.splice(1,0,p);import(require('node:url').pathToFileURL(p).href).catch(e=>{console.error(e.message);process.exitCode=1})`
+  return `@echo off\r\nnode -e "${bootstrap}" -- %*\r\n`
 }
 
 function pathEntries() {
