@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "95b19bb5cffcb196792df8ecf8ced64dcb0f4bf5",
-  "releaseSequence": 118,
+  "revision": "0bc9d1645d87121c9ca833d893452eab41bd0b11",
+  "releaseSequence": 119,
   "version": "1.5.0",
   "files": [
     {
@@ -96,13 +96,13 @@
     },
     {
       "path": "install.ps1",
-      "sha256": "14100391016449a67cdb4bbd90bc12dfd2f7461cd0c5dddc493062cd603ff198",
-      "size": 12295
+      "sha256": "9028f05337216694e530aea5841b5ee7a6c53020c0d61185f54171806aab2f3f",
+      "size": 12614
     },
     {
       "path": "install.sh",
-      "sha256": "76fab41dee8e4400338b212518d570d11623289bb1d34f3089821db6a5654234",
-      "size": 9416
+      "sha256": "7f2b88119e0e0726fae636086c485e431c2f87a61adb812d27be0d8f0e012c20",
+      "size": 9583
     },
     {
       "path": "package.json",
