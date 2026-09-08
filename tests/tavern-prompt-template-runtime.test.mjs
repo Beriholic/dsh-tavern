@@ -87,3 +87,10 @@ test('从世界书专用条目初始化 EJS 变量且不接受普通条目', () 
   assert.deepEqual(result.initial, { 角色: { 体力: 10, 标签: ['新'] }, 模式: '仙侠' })
   assert.deepEqual(result.diagnostics, [])
 })
+
+test('模板历史读取支持前 N 条、末 N 条及角色过滤，不把负数误当全部历史', () => {
+  const transcript = Array.from({ length: 8 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: String(i) }))
+  const result = runtime.render('<%- JSON.stringify([getChatMessages(-5), getChatMessages(2), getChatMessages(-2,"user"), getChatMessages(1,3), getChatMessages(0)]) %>', { transcript })
+  assert.equal(result.ok, true)
+  assert.deepEqual(JSON.parse(result.text), [['3','4','5','6','7'], ['0','1'], ['4','6'], ['1','2'], []])
+})

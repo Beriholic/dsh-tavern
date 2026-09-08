@@ -257,9 +257,13 @@ function sandboxSource(compiled, context) {
     const __transcript = __input.transcript;
     const __messageIndex = value => { const id = Number(value); return Number.isInteger(id) ? (id < 0 ? __transcript.length + id : id) : -1; };
     const getChatMessage = id => { const item = __transcript[__messageIndex(id)]; return item ? item.content : ''; };
-    const getChatMessages = (count, role = undefined) => {
-      const selected = role ? __transcript.filter(item => item.role === role) : __transcript;
-      return selected.slice(-Math.max(0, Number(count) || 0)).map(item => item.content);
+    const getChatMessages = (count = __transcript.length, endOrRole = undefined, role = undefined) => {
+      const filterRole = typeof endOrRole === 'string' ? endOrRole : role;
+      const selected = filterRole ? __transcript.filter(item => item.role === filterRole) : __transcript;
+      const start = Number(count) || 0;
+      const result = typeof endOrRole === 'number' ? selected.slice(start, endOrRole)
+        : start > 0 ? selected.slice(0, start) : start < 0 ? selected.slice(start) : [];
+      return result.map(item => item.content);
     };
     const __last = role => { for (let i = __transcript.length - 1; i >= 0; i -= 1) if (__transcript[i].role === role) return { id: i, content: __transcript[i].content }; return { id: -1, content: '' }; };
     const __lastUser = __last('user'), __lastChar = __last('assistant');

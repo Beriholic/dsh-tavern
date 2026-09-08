@@ -158,7 +158,7 @@ export async function apply(ctx) {
       return null
     }
   }
-  const tavernExtensionSettings = createTavernExtensionSettings(profileData)
+  const tavernExtensionSettings = createTavernExtensionSettings(profileData, { templateRuntime: promptTemplateRuntime })
   const mvuDiagnostics = createMvuDiagnosticStore(profileData)
   const apiDiagnostics = createTavernApiDiagnostics(profileData)
   const compatibilityDiagnostics = createTavernCompatibilityDiagnosticStore(profileData)
