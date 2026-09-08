@@ -28,13 +28,17 @@ test('command shim bootstrap preserves argv and cwd when loading a Unicode insta
   const args = ['--help', '中文参数 with spaces']
   const result = spawnSync(process.execPath, ['-e', bootstrap, '--', ...args], { cwd: root, encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(JSON.parse(result.stdout), { argv: [script, ...args], cwd: await realpath(root) })
+  const output = JSON.parse(result.stdout)
+  assert.deepEqual(output.argv, [script, ...args])
+  assert.equal(await realpath(output.cwd), await realpath(root))
   if (process.platform === 'win32') {
     const command = path.join(commandDir, 'dsh-tavern.cmd')
     await writeFile(command, shim)
     const actual = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `""${command}" --help "two words""`], { cwd: root, encoding: 'utf8', windowsVerbatimArguments: true })
     assert.equal(actual.status, 0, actual.stderr)
-    assert.deepEqual(JSON.parse(actual.stdout), { argv: [script, '--help', 'two words'], cwd: await realpath(root) })
+    const actualOutput = JSON.parse(actual.stdout)
+    assert.deepEqual(actualOutput.argv, [script, '--help', 'two words'])
+    assert.equal(await realpath(actualOutput.cwd), await realpath(root))
   }
 })
 
