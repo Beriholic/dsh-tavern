@@ -2478,6 +2478,20 @@ export async function apply(ctx) {
 
   const webServer = ctx.get('webServer')
   if (webServer !== undefined) {
+    // Fixed SillyTavern compatibility version for card-script feature probes.
+    ctx.effect(() => {
+      return webServer.register({
+        kind: 'prefix',
+        path: '/version',
+        handler: async (req, res) => {
+          const pathname = new URL(req.url ?? '/', 'http://localhost').pathname
+          if (pathname !== '/version') { res.writeHead(404); res.end('not found'); return }
+          if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); res.end(); return }
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+          res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ pkgVersion: '1.12.14' }))
+        }
+      })
+    })
     ctx.effect(() => webServer.register({
       kind: 'prefix',
       path: '/api/dsh-tavern',
