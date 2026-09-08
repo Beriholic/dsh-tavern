@@ -1,9 +1,30 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { initializationFixture } from './fixtures/conversation-initialization.mjs'
+import { sessionSeedTrajectoryMessages } from '../tavern-plugin/lib/domain/session-seed-trajectory.js'
 import { createUserPreferenceProfile } from '../tavern-plugin/lib/domain/user-preference-profile.js'
 
 const messages = session => session.events.filter(event => event.type === 'assistant/message' && event.data?.message?.source?.model === 'character-card')
+
+test('只有新建修改人物卡任务保存实验快照，重入不重新读取素材', async () => {
+  const h = initializationFixture()
+  const foreground = await h.make().start({ ...h.input, sessionId: 'foreground' })
+  const input = { ...h.input, mode: 'card', cardTask: 'edit' }
+  const chat = await h.make().start(input)
+  assert.deepEqual(chat.cardEditContext, { version: 1 })
+  assert.equal(messages(h.session()).length, 0)
+  assert.equal(chat.openingText, '')
+  assert.equal(h.session().prefix, foreground.cardContextSnapshot)
+  assert.deepEqual(seedMessages(h.session()).map(e => e.type === 'user/message' ? e.data.content[0].text : e.data.message.content[0].text), sessionSeedTrajectoryMessages(h.session().id, 'story').map(s => s.text))
+  assert.ok(h.trace.indexOf('prefix') < h.trace.indexOf('opening.native-append'))
+  h.card.description = '后续修改不重建开局快照'
+  const reopened = await h.make().start(input)
+  assert.equal(reopened.cardContextSnapshot, foreground.cardContextSnapshot)
+  for (const cardTask of ['mvu', 'extract', undefined]) {
+    const other = await h.make().start({ ...input, sessionId: 'other-' + cardTask, cardTask })
+    assert.equal(other.cardEditContext, undefined)
+  }
+})
 const seedMessages = session => session.events.filter(event => {
   const source = event.type === 'assistant/message' ? event.data?.message?.source : event.data?.source
   return source?.form === 'synthetic-trajectory' || source?.model === 'synthetic-trajectory'

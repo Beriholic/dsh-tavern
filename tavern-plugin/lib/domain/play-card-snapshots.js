@@ -3,7 +3,7 @@ import { sanitizeAgentProjectionText } from './runtime-content-projection.js'
 
 const VERSION = 7
 function str(value) { return value === undefined || value === null ? '' : String(value) }
-function isPlay(chat) { return chat && (!chat.mode || chat.mode === 'story' || chat.mode === 'script') }
+function usesFixedContext(chat) { return chat && (!chat.mode || chat.mode === 'story' || chat.mode === 'script' || (chat.mode === 'card' && chat.cardEditContext?.version === 1)) }
 
 /** Owns snapshot preparation, migration, persistence and concurrent build sharing. */
 export function createPlayCardSnapshots({ worldBooks, planner, readCard, writeChat, captureSceneWorldbook, userPreferenceProfile, logger = console }) {
@@ -40,14 +40,14 @@ export function createPlayCardSnapshots({ worldBooks, planner, readCard, writeCh
 
   // A new chat is not published yet; preparation must not create a partial save.
   async function prepare(chat, card) {
-    if (!isPlay(chat)) return ''
+    if (!usesFixedContext(chat)) return ''
     const patch = await build(chat, card === undefined ? await readCard(chat) : card)
     Object.assign(chat, patch)
     return patch.cardContextSnapshot
   }
 
   async function ensure(chat, card) {
-    if (!isPlay(chat)) return ''
+    if (!usesFixedContext(chat)) return ''
     const key = chat.id || chat
     if (pending.has(key)) {
       const patch = await pending.get(key)

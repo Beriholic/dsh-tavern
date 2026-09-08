@@ -78,7 +78,7 @@ export function createConversationInitialization(options) {
     return prepared === undefined ? await presets.fullSnapshot() : prepared
   }
 
-  async function initialize({ cardPath, sessionId, mode, openingId, userName, requestMode, preparation, importDraft = false }) {
+  async function initialize({ cardPath, sessionId, mode, openingId, userName, requestMode, preparation, cardTask, importDraft = false }) {
     const currentSettings = await settings()
     const effectiveRequestMode = requestMode === 'sillytavern' ? 'sillytavern' : 'dsh'
     const requestedMode = mode === 'card' || mode === 'revision' || mode === 'extract' ? 'card' : (mode === 'script' ? 'script' : (mode === 'story' ? 'story' : null))
@@ -102,7 +102,8 @@ export function createConversationInitialization(options) {
     }
     const macroState = { userName: str(userName).trim().slice(0, 80) || '你', local: {}, global: {} }
     const runtimePresetSnapshot = groupOfMode(chatMode) === 'play' ? await playPresetSnapshot() : null
-    const openingSourceText = chatMode === 'card' ? cardGreeting() : resolveCardOpening(card, openingId)
+    const cardEditExperiment = chatMode === 'card' && cardTask === 'edit' && card !== null
+    const openingSourceText = chatMode === 'card' ? (cardEditExperiment ? '' : cardGreeting()) : resolveCardOpening(card, openingId)
     const openingExtensions = chatMode === 'card' ? null : await cards.extensions(cardPath)
     const openingChoices = chatMode === 'card' ? [] : cardOpeningChoices(card)
     const selectedOpeningIndex = str(openingId) === '' ? 0 : Math.max(0, openingChoices.findIndex(function (choice) { return choice.id === str(openingId) }))
@@ -135,9 +136,10 @@ export function createConversationInitialization(options) {
     chat.runtimePresetSnapshot = runtimePresetSnapshot
     chat.runtimePresetPath = str(runtimePresetSnapshot && runtimePresetSnapshot.presetPath)
     chat.macroState = macroState
+    if (cardEditExperiment) chat.cardEditContext = { version: 1 }
     if (preparation && groupOfMode(chatMode) === 'play') chat.openingWorldbookSnapshot = structuredClone(preparation.worldbookSnapshot)
     // The sidebar setting is the sole opt-in; opening previews and legacy clients cannot override it.
-    const profile = groupOfMode(chat.mode) === 'play' && options.userPreferenceProfile
+    const profile = (groupOfMode(chat.mode) === 'play' || chat.cardEditContext?.version === 1) && options.userPreferenceProfile
       ? await options.userPreferenceProfile.read()
       : null
     chat.userProfileEnabled = profile?.hasConfirmed === true && profile.defaultEnabled === true
@@ -156,7 +158,7 @@ export function createConversationInitialization(options) {
         status: 'pending'
       }
     } : { enabled: false }
-    if (groupOfMode(chat.mode) === 'play') {
+    if (groupOfMode(chat.mode) === 'play' || chat.cardEditContext?.version === 1) {
       await snapshots.prepare(chat, card)
     }
     chat.openingText = greeting
@@ -202,7 +204,7 @@ export function createConversationInitialization(options) {
 
 
   function openingText(chat, card) {
-    if ((chat.mode || 'story') === 'card') return cardGreeting()
+    if ((chat.mode || 'story') === 'card') return chat.cardEditContext?.version === 1 ? '' : cardGreeting()
     if (typeof chat.openingText === 'string') return chat.openingText
     const greeting = Array.isArray(chat.messages) ? chat.messages.find(message => message && message.greeting === true && typeof message.text === 'string') : undefined
     if (greeting !== undefined) return greeting.text
@@ -276,7 +278,8 @@ export function createConversationInitialization(options) {
       await native.flush(target.session)
     }
     if (groupOfMode(chat.mode) === 'card') {
-      await ensureSessionSeedTrajectory(target.session, 'card')
+      if (chat.cardEditContext?.version === 1) await native.ensurePrefix(target.session, await snapshots.ensure(chat, card))
+      await ensureSessionSeedTrajectory(target.session, chat.cardEditContext?.version === 1 ? 'story' : 'card')
       await native.flush(target.session)
     }
     if (text !== '') {

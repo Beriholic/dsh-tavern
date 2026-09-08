@@ -3,6 +3,26 @@ import test from 'node:test'
 import { createNativePlayOrchestrationStrategy } from '../tavern-plugin/lib/domain/foreground-orchestration-strategies.js'
 import { ensureSessionSeedTrajectory, sessionSeedTrajectoryMessages } from '../tavern-plugin/lib/domain/session-seed-trajectory.js'
 import { Session } from './fixtures/dsh-session-host.mjs'
+import { ensureSessionStablePrefix, sessionStablePrefixSections } from '../tavern-plugin/lib/domain/session-stable-prefix.js'
+
+test('实验编辑原样使用前台固定 system，工作区说明不混入 system', async () => {
+  const text = '【故事设定 · 人物卡】\n人物设定\n\n【常驻世界书】\n世界设定'
+  let session = Session.create('card-edit-experiment')
+  await ensureSessionStablePrefix(session, text)
+  await ensureSessionSeedTrajectory(session, 'story')
+  session = Session.create(session.id, session.events, session.header)
+  await ensureSessionStablePrefix(session, '不应替换快照')
+  const strategy = createNativePlayOrchestrationStrategy({
+    modeFor: async () => 'card', visibleTools: async () => [], cardSystemPrompt: () => '卡片专用指令',
+    workspaceContext: () => '工作区说明', controlledToolNames: new Set()
+  })
+  const fixedSystemSections = sessionStablePrefixSections(session)
+  const assembly = await strategy.assembleSystemPrompt({ sections: [], tools: [] }, {
+    sessionId: session.id, chat: { cardEditContext: { version: 1 } }, fixedSystemSections
+  })
+  assert.deepEqual(assembly.sections, fixedSystemSections)
+  assert.doesNotMatch(session.deriveMessages().flatMap(m => m.content).map(b => b.text || '').join('\n'), /世界设定/)
+})
 
 test('卡片种子使用原生轨迹，部分写入恢复和重载不会重复', async () => {
   let session = Session.create('card-seed')

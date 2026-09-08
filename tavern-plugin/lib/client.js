@@ -5196,6 +5196,7 @@ window.__ModuleLoader__.load({
 						path: request.card && request.card.path ? request.card.path : "",
 						sessionId: sessionId,
 						mode: request.targetMode,
+						cardTask: request.task || "",
 						openingId: request.openingId || "",
 						preparationId: request.preparationId || "",
 						userName: request.userName || "你",
@@ -5300,7 +5301,7 @@ window.__ModuleLoader__.load({
 				setBusy(true); setError("");
 				try {
 					await conversationLifecycle.start({
-						kind: "card", targetMode: "card", card: card,
+						kind: "card", targetMode: "card", card: card, task: task,
 						pending: { task: task, label: label, card: card, selectedResources: selectedResources || [], debugSource: debugSource || null }
 					});
 				} catch (err) { setError(String(err && err.phase || "创建对话") + "失败：" + String(err && err.message || err)); }
@@ -8624,7 +8625,7 @@ window.__ModuleLoader__.load({
 				const targetSection = targetPath ? "\n\n【目标人物卡】\n@\"" + targetPath + "\"" : "";
 				const resourceSection = hasInitialResources ? (task === "worldbook" || task === "preset" || task === "script" ? "\n\n【编辑目标】\n" : "\n\n【初始剧本】\n") : "";
 				const taskText = "【卡片任务：" + label + "】" + targetSection + "\n\n" + String(result && result.text || "").trim() + resourceSection;
-				input.setDraft(taskText + supplement);
+				input.setDraft((result && result.workspaceText ? String(result.workspaceText) + "\n\n" : "") + taskText + supplement);
 			}
 			playControlsFeature.register({ ctx: ctx, slots: slots });
 			assistantRendererFeature.register({ ctx: ctx, slots: slots });

@@ -559,7 +559,7 @@ test('卡片任务只在创建对话时追加提示词，不占用输入框上�
   assert.match(clientSource, /【目标人物卡】/)
   assert.match(clientSource, /card && card\.path/)
   assert.match(clientSource, /@\\"/)
-  assert.match(clientSource, /input\.setDraft\(taskText \+ supplement\)/)
+  assert.match(clientSource, /input\.setDraft\(\(result && result\.workspaceText[\s\S]*?\+ taskText \+ supplement\)/)
   assert.match(clientSource, /task === "worldbook" \|\| task === "preset"/)
   assert.match(clientSource, /【初始剧本】/)
   assert.match(clientSource, /【编辑目标】/)

@@ -1241,13 +1241,13 @@ export async function apply(ctx) {
     })
     return result.sort(function (left, right) { return Number(left.turn) - Number(right.turn) })
   }
-  async function startChat(cardPath, sessionId, mode, openingId, userName, requestMode, preparationId) {
+  async function startChat(cardPath, sessionId, mode, openingId, userName, requestMode, preparationId, cardTask) {
     const preparation = preparationId ? openingPreparation.resolve(preparationId, cardPath, openingId) : undefined
     if (preparation?.sourceSessionId) {
       const source = await chatForSession(preparation.sourceSessionId)
       if (!source || !sessionOpeningDescriptor(source, await readChatCard(source)) || Number(source.tavernHelperLifecycleRevision || 0) !== preparation.sourceLifecycleRevision) throw new Error('原对话已变化，请重新选择开场')
     }
-    return await conversationInitialization.start({ cardPath, sessionId, mode, openingId, userName, requestMode, preparation })
+    return await conversationInitialization.start({ cardPath, sessionId, mode, openingId, userName, requestMode, preparation, cardTask })
   }
 
   async function scriptPreviewOf(chat) {
@@ -2214,7 +2214,14 @@ export async function apply(ctx) {
         const task = str(args && args.task)
         const promptName = cardTaskPrompts[task]
         if (promptName === undefined) throw new Error('未知卡片任务: ' + task)
-        return { task, text: runtimePrompt(promptName) }
+        const chat = await chatForSession(args && args.sessionId)
+        let workspaceText = ''
+        if (task === 'edit' && chat?.cardEditContext?.version === 1) {
+          const target = await waitForWritableSession({ registry: agentRegistry, sessions: sessionStore, sessionId: chat.sessionId, sleep })
+          const projection = await publishResourceWorkspace(chat.sessionId, chat)
+          workspaceText = resourceWorkspaceContext(target.session.header?.cwd, projection, runtimePrompt('card-workspace'))
+        }
+        return { task, text: runtimePrompt(promptName), workspaceText }
       }
       case 'getResourceWorkspace': return { path: dataRoot + '/resources' }
       case 'listResources': return await listTavernResources()
@@ -2394,7 +2401,7 @@ export async function apply(ctx) {
       case 'importChatHistory': return await chatHistoryImporter.import(args || {})
       case 'startChat': {
         try {
-          return { view: await startChat(args && args.path, args && args.sessionId, args && args.mode, args && args.openingId, args && args.userName, args && args.requestMode, args && args.preparationId) }
+          return { view: await startChat(args && args.path, args && args.sessionId, args && args.mode, args && args.openingId, args && args.userName, args && args.requestMode, args && args.preparationId, args && args.cardTask) }
         } catch (error) {
           console.error('dsh-tavern: 创建对话失败', {
             cardPath: str(args && args.path),
