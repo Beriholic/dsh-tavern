@@ -335,3 +335,18 @@ test('正则生成的状态栏展开本局名称宏，保留原始记录及其�
   const history = projectReplyHistory([{ role: 'assistant', turn: 1, text: source, sourceText: source }], options)
   assert.match(history.projections[0].parts.find(p => p.kind === 'html').content, /主角：测试玩家/)
 })
+
+test('recovers a missing now_plot wrapper only for an active card bubble renderer', () => {
+  const text = '走进教室。\n@bubble:小林|平静|[早上好。]'
+  const renderer = script('bubble renderer', '/<now_plot>([\\s\\S]*?)<\\/now_plot>/g', '<div data-renderer="@bubble">$1</div>', { markdownOnly: true })
+  const result = projectReplyLayers(text, { regexScripts: [renderer] })
+  assert.match(result.displayText, /data-renderer/)
+  assert.equal(result.sourceText, text)
+  assert.equal(result.sessionText, text)
+  for (const override of [{ enabled: false }, { placement: [1] }, { minDepth: 1 }, { promptOnly: true, markdownOnly: false }]) {
+    assert.equal(projectReplyLayers(text, { regexScripts: [{ ...renderer, ...override }] }).displayText, text)
+  }
+  assert.equal(projectReplyLayers(text).displayText, text)
+  const wrapped = '<now_plot>' + text + '</now_plot>'
+  assert.equal(projectReplyLayers(wrapped, { regexScripts: [renderer] }).displayText, '<div data-renderer="@bubble">' + text + '</div>')
+})

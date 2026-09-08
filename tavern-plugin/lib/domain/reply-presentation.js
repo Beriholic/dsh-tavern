@@ -239,7 +239,23 @@ export function projectReplyLayers(value, options = {}) {
     : sourceText
   const scripts = Array.isArray(options.regexScripts) ? options.regexScripts : []
   const session = applyTavernRegexText(projectionText, scripts, targetOptions(options, false))
-  const display = applyTavernRegexText(projectionText, scripts, targetOptions(options, true))
+  const displayOptions = targetOptions(options, true)
+  let display = applyTavernRegexText(projectionText, scripts, displayOptions)
+  // Some cards encode dialogue inside now_plot. Recover an omitted wrapper
+  // only when that card's own active renderer recognizes the repaired text.
+  // Never persist this display repair into model context or editable source.
+  if (/^\s*@bubble:/m.test(projectionText) && !/<\/?now_plot\b/i.test(projectionText)) {
+    const candidates = scripts.filter(script =>
+      str(script.findRegex).includes('<now_plot>') &&
+      str(script.replaceString).includes('@bubble')
+    )
+    const wrapped = '<now_plot>\n' + projectionText + '\n</now_plot>'
+    const probe = applyTavernRegexText(wrapped, candidates, displayOptions)
+    if (probe.applied.length > 0) {
+      display = applyTavernRegexText(wrapped, scripts, displayOptions)
+      display.warnings.push('气泡显示：已为卡片渲染规则补齐缺失的 now_plot 标签（仅显示）')
+    }
+  }
   display.text = resolveDisplayIdentityMacros(display.text, options)
   const displayProjection = projectDisplayParts(display.text)
   const displayMode = displayProjection.parts.some(part => part.kind === 'html') ? 'html' : 'markdown'
