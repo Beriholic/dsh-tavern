@@ -570,3 +570,10 @@ body.dsh-tavern-shell-active [data-ref-chip="file"] { max-width: calc(100% - 4px
 .dsh-tavern-style-guide > button > small { font-size: 11px; opacity: .65; }
 .dsh-tavern-style-guide > button:hover > span { text-decoration: underline; }
 .dsh-tavern-style-guide > button:disabled { opacity: .45; cursor: default; }
+
+.dsh-tavern-style-title { font-size: 17px; font-weight: 700; line-height: 1.5; margin-bottom: 8px; }
+
+/* The sidebar's translated, collapsed bottom panel extends beyond the viewport.
+   hidden still permits focus/scrollIntoView to scroll the whole fixed host,
+   stranding its tab bar above the viewport. Only pane content should scroll. */
+body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
