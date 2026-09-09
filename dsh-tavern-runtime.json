@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "4d3feaaf91dbdb517245ed6f2967fd358f63e82f",
-  "releaseSequence": 129,
+  "revision": "159d7902d7a4478d66be03ec08d8dc81fc9d8fbe",
+  "releaseSequence": 130,
   "version": "1.5.0",
   "files": [
     {
@@ -256,8 +256,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/background-surface.js",
-      "sha256": "c9b5d906b7db10a547fb2419bc41d63c141331d042c515e08c9158fe9cf84f36",
-      "size": 2139
+      "sha256": "a0ae80fe0af0a758f899044b9c6da64f1d0c237a2a757c18a0bb951f24a5561c",
+      "size": 2481
     },
     {
       "path": "tavern-plugin/lib/domain/background-task-coordinator.js",
@@ -791,8 +791,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/story-timeline.js",
-      "sha256": "d86d80fb6fea54da181ca2094e1b402181bcb60e59ff715c08f295fc5e9ed82d",
-      "size": 29217
+      "sha256": "93a22314907f45a13af55962f28d47adba5eb9c478574b6cadab77300b6db352",
+      "size": 29768
     },
     {
       "path": "tavern-plugin/lib/domain/tavern-api-diagnostics.js",
