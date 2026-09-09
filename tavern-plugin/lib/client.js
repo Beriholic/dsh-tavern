@@ -4890,6 +4890,46 @@ window.__ModuleLoader__.load({
 			const chatImportFile = React.useRef(null);
 			const [pendingOpen, setPendingOpen] = React.useState(null);
 			const [menuSession, setMenuSession] = React.useState(null);
+			const [managing, setManaging] = React.useState(false);
+			const [selectedChats, setSelectedChats] = React.useState([]);
+			const [deleteNotice, setDeleteNotice] = React.useState("");
+			React.useEffect(function () { setSelectedChats([]); setManaging(false); setDeleteNotice(""); }, [uiMode, requestMode]);
+			function toggleChatSelection(chatId) {
+				if (busy) return;
+				setSelectedChats(function (ids) { return ids.includes(chatId) ? ids.filter(function (id) { return id !== chatId; }) : ids.concat(chatId); });
+			}
+			async function deleteSelectedConversations() {
+				const items = visibleHistory.filter(function (item) { return selectedChats.includes(item.chatId); });
+				if (busy || !items.length || !window.confirm("删除这 " + items.length + " 个对话？\n删除后无法恢复，人物卡和世界书会保留。")) return;
+				setBusy(true); setError(""); setDeleteNotice("");
+				try {
+					const prepared = await call("prepareDeleteChats", { chatIds: items.map(function (item) { return item.chatId; }) });
+					const failures = prepared.results.filter(function (result) { return !result.ok; });
+					const ready = [];
+					for (const item of items) {
+						if (!prepared.results.some(function (result) { return result.chatId === item.chatId && result.ok; })) continue;
+						try {
+							try { await props.archiveSession(item.sessionId); }
+							catch (archiveError) { if (!isMissingSessionArchiveError(archiveError)) throw archiveError; }
+							ready.push(item.chatId);
+						} catch (error) { failures.push({ chatId: item.chatId, error: String(error.message || error) }); }
+					}
+					const deleted = await call("deleteChats", { chatIds: ready });
+					failures.push.apply(failures, deleted.results.filter(function (result) { return !result.ok; }));
+					const removed = deleted.results.filter(function (result) { return result.ok; }).map(function (result) { return result.chatId; });
+					setSelectedChats(failures.map(function (result) { return result.chatId; }));
+					setDeleteNotice("已删除 " + removed.length + " 个" + (failures.length ? "，" + failures.length + " 个失败，可重试" : ""));
+					if (failures.length) setError(failures.map(function (result) { const item = items.find(function (item) { return item.chatId === result.chatId; }); return (item && (item.title || item.cardName) || result.chatId) + "：" + result.error; }).join("\n"));
+					if (items.some(function (item) { return item.sessionId === current && removed.includes(item.chatId); })) {
+						props.sessions.clear();
+						const next = visibleHistory.find(function (item) { return !removed.includes(item.chatId); });
+						if (next) await openSessionWhenReady(next.sessionId);
+						else openPicker("cards");
+					}
+					await refresh();
+				} catch (error) { setError(String(error.message || error)); await refresh(); }
+				finally { setBusy(false); }
+			}
 			const [updateStatus, setUpdateStatus] = React.useState({ phase: "loading", host: "cli" });
 			const updateStartedAtRef = React.useRef(0);
 			const updateRecoveryRef = React.useRef({ sawOffline: false, reloading: false });
@@ -5402,6 +5442,8 @@ window.__ModuleLoader__.load({
 				if (!window.confirm("确定删除对话“" + (currentTitle || item.cardName + "的新对话") + "”吗？\n删除后将从酒馆历史中移除。")) return;
 				setBusy(true); setError("");
 				try {
+					const prepared = await call("prepareDeleteChats", { chatIds: [item.chatId] });
+					if (!prepared.results[0].ok) throw new Error(prepared.results[0].error);
 					try { await props.archiveSession(item.sessionId); }
 					catch (archiveError) { if (!isMissingSessionArchiveError(archiveError)) throw archiveError; }
 					await call("deleteChat", { chatId: item.chatId });
@@ -5508,7 +5550,9 @@ window.__ModuleLoader__.load({
 				const summary = summaries[item.sessionId];
 				const title = item.title || (summary && summary.displayTitle ? summary.displayTitle : (item.cardName + "的新对话"));
 				return h("div", { key: item.sessionId, className: "dsh-tavern-side-row" + (current === item.sessionId ? " active" : "") },
-					h("button", { className: "dsh-tavern-side-row-main", onClick: async function () {
+					managing ? h("input", { type: "checkbox", checked: selectedChats.includes(item.chatId), disabled: busy, "aria-label": "选择对话：" + title, onChange: function () { toggleChatSelection(item.chatId); } }) : null,
+					h("button", { className: "dsh-tavern-side-row-main", disabled: busy, onClick: async function () {
+					if (managing) { toggleChatSelection(item.chatId); return; }
 					try {
 						if (summary && summary.blank) await call("ensureOpening", { sessionId: item.sessionId });
 						await openSessionWhenReady(item.sessionId);
@@ -5517,8 +5561,8 @@ window.__ModuleLoader__.load({
 					h("div", { className: "dsh-tavern-side-row-name" }, title),
 					h("div", { className: "dsh-tavern-side-row-meta" }, h("span", null, item.mode === "card" ? (item.cardPath ? ("已创建：" + item.cardName) : "尚未创建正式人物卡") : (modeLabel(item.mode || "story") + " · " + item.cardName)), h("span", null, formatTime(item.lastOpenedAt || (summary ? summary.updatedAt : item.updatedAt))))
 					),
-					h("button", { className: "dsh-tavern-side-row-more", title: "对话操作", "aria-expanded": menuSession === item.sessionId ? "true" : "false", onClick: function () { setMenuSession(menuSession === item.sessionId ? null : item.sessionId); } }, "⋯"),
-					menuSession === item.sessionId ? h("div", { className: "dsh-tavern-side-row-menu" },
+					!managing ? h("button", { className: "dsh-tavern-side-row-more", title: "对话操作", "aria-expanded": menuSession === item.sessionId ? "true" : "false", onClick: function () { setMenuSession(menuSession === item.sessionId ? null : item.sessionId); } }, "⋯") : null,
+					!managing && menuSession === item.sessionId ? h("div", { className: "dsh-tavern-side-row-menu" },
 						h("button", { disabled: busy, onClick: function () { renameConversation(item, title); } }, "重命名"),
 						h("button", { className: "danger", disabled: busy, onClick: function () { deleteConversation(item, title); } }, "删除")
 					) : null
@@ -5685,7 +5729,13 @@ window.__ModuleLoader__.load({
 					h("div", null, "按 SillyTavern 语义构造正文请求。未选择外部预设时自动使用内置纯净预设；选择后使用整份外部预设。请与普通游玩分别新建对话做对照。")
 				) : null,
 				h("div", { className: "dsh-tavern-side-title" }, uiMode === "play" ? (requestMode === "sillytavern" ? "兼容对话" : "游玩历史") : "卡片历史"),
+				h("div", { style: { display: "flex", gap: "8px", padding: "4px 12px", alignItems: "center" } },
+					h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { setManaging(!managing); setSelectedChats([]); setMenuSession(null); setDeleteNotice(""); } }, managing ? "取消" : "管理"),
+					managing ? h("button", { className: "dsh-tavern-btn", disabled: busy || !visibleHistory.length, onClick: function () { setSelectedChats(visibleHistory.map(function (item) { return item.chatId; })); } }, "全选") : null,
+					managing ? h("span", null, "已选 " + visibleHistory.filter(function (item) { return selectedChats.includes(item.chatId); }).length) : null),
 				h("div", { className: "dsh-tavern-side-list" }, rows.length ? rows : h("div", { className: "dsh-tavern-side-empty" }, uiMode === "play" ? (requestMode === "sillytavern" ? "还没有兼容对话。\n选择人物卡开始；未选择外部预设时自动使用内置纯净预设。" : "还没有游玩对话。\n选择人物卡开始；绑定剧本的卡会按剧本推进。") : "还没有卡片工作台对话。\n可以空白开始，再按需添加人物卡和剧本。")),
+				managing ? h("button", { className: "dsh-tavern-btn", style: { flexShrink: 0, margin: "8px 12px", color: "#e57373" }, disabled: busy || !visibleHistory.some(function (item) { return selectedChats.includes(item.chatId); }), onClick: deleteSelectedConversations }, busy ? "正在删除…" : "删除所选（" + visibleHistory.filter(function (item) { return selectedChats.includes(item.chatId); }).length + "）") : null,
+				deleteNotice ? h("div", { role: "status", style: { padding: "4px 12px" } }, deleteNotice) : null,
 				!picking && error ? h("div", { className: "dsh-tavern-dock-error", role: "alert" }, error) : null,
 				h("div", { className: "dsh-tavern-update" },
 					h("div", { className: "dsh-tavern-update-identity" }, "DSH Tavern " + currentVersionLabel + " · " + currentCommitLabel + " · " + updateHostLabel),
