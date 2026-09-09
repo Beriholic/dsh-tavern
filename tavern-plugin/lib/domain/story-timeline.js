@@ -110,6 +110,7 @@ export function createStoryTimeline(options = {}) {
       tavernScriptPrompts: chat.tavernScriptPrompts || [],
       runtimeInputs: chat.runtimeInputs === undefined ? null : chat.runtimeInputs,
       posture: str(chat.posture),
+      ledger: chat.ledger || null,
       scriptState: chat.scriptState === undefined ? null : chat.scriptState,
       candidates: chat.candidates === undefined ? null : chat.candidates,
       settleStatus: str(chat.settleStatus) || 'idle',
@@ -131,6 +132,7 @@ export function createStoryTimeline(options = {}) {
     if (Object.hasOwn(source, 'runtimeInputs')) chat.runtimeInputs = clone(source.runtimeInputs)
     chat.tavernScriptPrompts = clone(source.tavernScriptPrompts || [])
     chat.posture = str(source.posture)
+    chat.ledger = clone(source.ledger || null)
     chat.scriptState = clone(source.scriptState === undefined ? null : source.scriptState)
     chat.candidates = clone(source.candidates === undefined ? null : source.candidates)
     chat.settleStatus = str(source.settleStatus) || 'idle'
@@ -460,6 +462,12 @@ export function createStoryTimeline(options = {}) {
     const intent = object(input && input.intent)
     let value
     if (intent.kind === 'ensure') value = { status: 'applied', branchId: chat.timeline.branchId, revision: chat.timeline.revision }
+    else if (intent.kind === 'ledger.edit') {
+      chat.ledger = clone(intent.ledger)
+      chat.timeline.revision++
+      chat.timeline.updatedAt = now()
+      value = { status: 'edited', revision: chat.timeline.revision }
+    }
     else if (intent.kind === 'body.edit') {
       const index = chat.messages.findLastIndex(message => message?.role === 'assistant')
       if (index !== chat.messages.length - 1 || chat.messages[index]?.greeting || Number(chat.messages[index]?.turn) !== Number(intent.turn)) throw new Error('只能编辑最后一轮正文')

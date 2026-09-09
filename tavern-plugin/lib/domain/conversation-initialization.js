@@ -43,6 +43,7 @@ export function createConversationInitialization(options) {
       workspace: chatMode === 'card' ? emptyCardWorkspace() : null,
       messages: [],
       posture: '',
+      ledger: null,
       sessionId: '',
       guides: [],
       bypassPlanId: '',

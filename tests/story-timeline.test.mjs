@@ -489,3 +489,22 @@ test('导入后的旧快照没有后台身份，反复回退仍复用已创建�
     assert.equal(current.timeline.participants.background.rewindTo, -1)
   }
 })
+
+test('台账随正文 checkpoint 回退，旧后台迟到不能恢复撤回的物品，重新推进可重新记账', () => {
+  const { timeline, chat } = harness()
+  chat.ledger = { version: 1, items: [{ name: '药', qty: 3 }] }
+  let current = beginAndCommitBody(timeline, chat, 1, '用药', '用掉一瓶。')
+  let begun = timeline.apply({ chat: current, intent: { kind: 'agent.begin', role: 'settlement' } })
+  current = timeline.complete({ chat: begun.chat, operationId: begun.value.operationId, basedOn: begun.value.basedOn, outcome: { status: 'success', stateChanged: true }, apply(draft) { draft.ledger = { version: 1, items: [{ name: '药', qty: 2 }] } } }).chat
+  current = beginAndCommitBody(timeline, current, 2, '再用药', '又用一瓶。')
+  begun = timeline.apply({ chat: current, intent: { kind: 'agent.begin', role: 'settlement' } })
+  const rolled = rollback(timeline, begun.chat)
+  assert.equal(rolled.chat.ledger.items[0].qty, 2)
+  const late = timeline.complete({ chat: rolled.chat, operationId: begun.value.operationId, basedOn: begun.value.basedOn, outcome: { status: 'success' }, apply(draft) { draft.ledger.items[0].qty = 1 } })
+  assert.notEqual(late.value.status, 'completed')
+  assert.equal(late.chat.ledger.items[0].qty, 2)
+  const fresh = beginAndCommitBody(timeline, late.chat, 3, '重新用药', '用一瓶。')
+  const latest = timeline.apply({ chat: fresh, intent: { kind: 'agent.begin', role: 'settlement' } })
+  const settled = timeline.complete({ chat: latest.chat, operationId: latest.value.operationId, basedOn: latest.value.basedOn, outcome: { status: 'success' }, apply(draft) { draft.ledger.items[0].qty = 1 } })
+  assert.equal(settled.chat.ledger.items[0].qty, 1)
+})

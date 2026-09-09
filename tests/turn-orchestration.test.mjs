@@ -33,6 +33,7 @@ function harness(mode, options = {}) {
   let chat = {
     id: 'chat-1', cardPath: options.draft ? '' : 'cards/阿芙拉.json', cardName: options.draft ? '卡片工作台' : card.name, mode,
     messages: [], posture: '站在窗边', guides: [], nativeCommits: {},
+    ledger: options.ledger || null,
     preparedWorldBookContext: options.preparedWorldBookContext || '',
     webSearchEnabled: options.webSearchEnabled === true,
     runtimePresetSnapshot: clone(options.runtimePresetSnapshot || null),
@@ -750,4 +751,13 @@ test('脚本提示实际走本轮准备、Frame 与一次性消费，重复准�
   assert.deepEqual(run.chat().tavernScriptPrompts, [])
   const repeated = await run.orchestrator.prepare(input)
   assert.deepEqual(repeated.frame, first.frame)
+})
+
+
+test('玩家台账不进入前台 Frame 或原生请求消息', async () => {
+  const run = harness('story', { ledger: { version: 1, items: [{ name: 'LEDGER_PRIVATE_SENTINEL', qty: 9 }], npcs: [], scenes: [] } })
+  const prepared = await run.orchestrator.prepare({ sessionId: 'session-1', turn: 1, userText: '继续', requestId: 'ledger-isolation' })
+  assert.ok(!JSON.stringify(prepared.frame).includes('LEDGER_PRIVATE_SENTINEL'))
+  assert.ok(!foregroundFrameText(prepared.frame).includes('LEDGER_PRIVATE_SENTINEL'))
+  assert.equal(run.chat().ledger.items[0].name, 'LEDGER_PRIVATE_SENTINEL')
 })
