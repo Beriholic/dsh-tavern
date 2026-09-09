@@ -1,3 +1,4 @@
+import { ensureCardWorkspaceMessage } from '../../tavern-plugin/lib/domain/card-workspace-message.js'
 import { createConversationInitialization } from '../../tavern-plugin/lib/domain/conversation-initialization.js'
 import { createPlayCardSnapshots } from '../../tavern-plugin/lib/domain/play-card-snapshots.js'
 import { createContextPlanner } from '../../tavern-plugin/lib/domain/context-planner.js'
@@ -56,6 +57,7 @@ export function initializationFixture(options = {}) {
         async wait(id) { trace.push('wait'); await fail('wait'); const target = session(id); return { session: target, agent: { phase: target.phase } } },
         async ensurePrefix(target, text) { trace.push('prefix'); await fail('prefix'); target.prefix ||= text },
         async flush(target) { trace.push('flush'); await fail('flush', target); target.durable = structuredClone(target.events) },
+        async ensureCardWorkspace(target) { trace.push('workspace'); ensureCardWorkspaceMessage(target, '工作区说明') },
         selection: () => ({ provider: 'fixture', model: 'text' })
       },
       present: async chat => { await fail('present'); return structuredClone(chat) }, logger: { warn() {} }

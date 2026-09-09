@@ -4597,6 +4597,9 @@ window.__ModuleLoader__.load({
 				if (typeof props.openWorldBookLibraryTab === "function") props.openWorldBookLibraryTab(readyCardSession);
 				if (typeof props.openResourcesTab === "function") props.openResourcesTab(readyCardSession);
 			}, [readyCardSession]);
+			React.useEffect(function () {
+				if (current && history.some(entry => entry.sessionId === current && entry.mode === "card") && props.cleanWorkspaceDraft) return props.cleanWorkspaceDraft(current);
+			}, [current, history]);
 			function openPicker() {
 				playPrewarmRef.current.cancel();
 				setMenuSession(null);
@@ -5245,7 +5248,8 @@ window.__ModuleLoader__.load({
 					openWorldBookLibraryTab: function (sessionId) { ctx.betterSidebar.openTab({ type: "dsh-tavern:worldbooks" }, { sessionId: sessionId }); },
 					openResourcesTab: function (sessionId) { ctx.betterSidebar.openTab({ type: "dsh-tavern:resources" }, { sessionId: sessionId }); },
 					appendMention: input.appendMention,
-					injectTaskPrompt: input.injectTaskPrompt
+					injectTaskPrompt: input.injectTaskPrompt,
+					cleanWorkspaceDraft: input.cleanWorkspaceDraft
 				})); }
 			)), "dsh-tavern: Tavern workspace browser");
 		}
@@ -8138,6 +8142,25 @@ window.__ModuleLoader__.load({
 					tavernErrorHub.report("在对话中引用", err);
 				}
 			}
+			function cleanWorkspaceDraft(sessionId) {
+				const input = ctx.get("conversation").input.for(ctx.sessions.scope(sessionId));
+				let busy = false, stopped = false;
+				async function clean() {
+					const draft = String(input.state.getSnapshot().draft || "");
+					const taskStart = draft.indexOf("【卡片任务：");
+					if (busy || stopped || !draft.startsWith("【当前 Tavern 资源工作区】") || taskStart < 0) return;
+					busy = true;
+					try {
+						const result = await rpc("getCardTaskPrompt", { task: "edit" }, sessionId);
+						const normalize = text => String(text || "").replace(/\s+/g, " ").trim();
+						if (!stopped && result.legacyWorkspaceText && normalize(draft.slice(0, taskStart)) === normalize(result.legacyWorkspaceText) && input.state.getSnapshot().draft === draft) input.setDraft(draft.slice(taskStart));
+					} catch (error) { tavernErrorHub.report("整理工作区说明", error); }
+					finally { busy = false; }
+				}
+				const unsubscribe = input.state.subscribe(clean);
+				void clean();
+				return function () { stopped = true; unsubscribe(); };
+			}
 			async function injectTaskPrompt(sessionId, task, label, card, hasInitialResources, taskSupplement) {
 				const actx = ctx.sessions.scope(sessionId);
 				const conversation = ctx.get("conversation");
@@ -8164,7 +8187,7 @@ window.__ModuleLoader__.load({
 				const targetSection = targetPath ? "\n\n【目标人物卡】\n@\"" + targetPath + "\"" : "";
 				const resourceSection = hasInitialResources ? (task === "worldbook" || task === "preset" || task === "script" ? "\n\n【编辑目标】\n" : "\n\n【初始剧本】\n") : "";
 				const taskText = "【卡片任务：" + label + "】" + targetSection + "\n\n" + String(result && result.text || "").trim() + resourceSection;
-				input.setDraft((result && result.workspaceText ? String(result.workspaceText) + "\n\n" : "") + taskText + supplement);
+				input.setDraft(taskText + supplement);
 			}
 			playControlsFeature.register({ ctx: ctx, slots: slots });
 			assistantRendererFeature.register({ ctx: ctx, slots: slots });
@@ -8202,7 +8225,7 @@ window.__ModuleLoader__.load({
 				window.addEventListener("dsh-tavern-data-changed", invalidateLiveView);
 				return function () { window.removeEventListener("dsh-tavern-data-changed", invalidateLiveView); };
 			}, "dsh-tavern: live Tavern view invalidation");
-			tavernShellFeature.register({ ctx: ctx, slots: slots, appendMention: appendMention, injectTaskPrompt: injectTaskPrompt });
+			tavernShellFeature.register({ ctx: ctx, slots: slots, appendMention: appendMention, injectTaskPrompt: injectTaskPrompt, cleanWorkspaceDraft: cleanWorkspaceDraft });
 		}
 
 		exports.TavernMessageFrame = TavernMessageFrame;

@@ -1,3 +1,4 @@
+import { ensureCardWorkspaceMessage } from './domain/card-workspace-message.js'
 import { createPromptTemplateGlobalVariables } from './domain/prompt-template-global-variables.js'
 import { FULL_PROMPT_TEMPLATE_ASSET_PREFIX, readFullPromptTemplateAsset } from './domain/full-prompt-template-assets.js'
 import { createTavernApiDiagnostics } from './domain/tavern-api-diagnostics.js'
@@ -1302,6 +1303,13 @@ export async function apply(ctx) {
     if (prefix && prefix.event !== before?.event) await sessionStore.flush(session)
     return prefix
   }
+  async function ensureNativeCardWorkspace(session, chat) {
+    const projection = await publishResourceWorkspace(session.id, chat)
+    const text = resourceWorkspaceContext(session.header?.cwd, projection, runtimePrompt('card-workspace'))
+    const message = ensureCardWorkspaceMessage(session, text)
+    await sessionStore.flush(session)
+    return message.data.content[0].text
+  }
   const conversationInitialization = createConversationInitialization({
     cards: { read: readCard, readChat: readChatCard, script: readScript, extensions: readCardExtensions },
     chats: { resolve: chatForSession, publish: conversationRegistry.publish, write: writeChat },
@@ -1316,6 +1324,7 @@ export async function apply(ctx) {
     native: {
       wait: function (sessionId) { return waitForWritableSession({ registry: agentRegistry, sessions: sessionStore, sessionId, sleep }) },
       ensurePrefix: function (session, text) { return ensureSessionStablePrefix(session, text, stablePrefixStorage) },
+      ensureCardWorkspace: ensureNativeCardWorkspace,
       flush: function (session) { return sessionStore.flush(session) },
       selection: modelSelection
     },
@@ -2215,13 +2224,12 @@ export async function apply(ctx) {
         const promptName = cardTaskPrompts[task]
         if (promptName === undefined) throw new Error('未知卡片任务: ' + task)
         const chat = await chatForSession(args && args.sessionId)
-        let workspaceText = ''
+        let legacyWorkspaceText = ''
         if (task === 'edit' && chat?.cardEditContext?.version === 1) {
           const target = await waitForWritableSession({ registry: agentRegistry, sessions: sessionStore, sessionId: chat.sessionId, sleep })
-          const projection = await publishResourceWorkspace(chat.sessionId, chat)
-          workspaceText = resourceWorkspaceContext(target.session.header?.cwd, projection, runtimePrompt('card-workspace'))
+          legacyWorkspaceText = await ensureNativeCardWorkspace(target.session, chat)
         }
-        return { task, text: runtimePrompt(promptName), workspaceText }
+        return { task, text: runtimePrompt(promptName), legacyWorkspaceText }
       }
       case 'getResourceWorkspace': return { path: dataRoot + '/resources' }
       case 'listResources': return await listTavernResources()

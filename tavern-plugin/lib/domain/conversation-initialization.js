@@ -280,6 +280,7 @@ export function createConversationInitialization(options) {
     if (groupOfMode(chat.mode) === 'card') {
       if (chat.cardEditContext?.version === 1) await native.ensurePrefix(target.session, await snapshots.ensure(chat, card))
       await ensureSessionSeedTrajectory(target.session, chat.cardEditContext?.version === 1 ? 'story' : 'card')
+      if (chat.cardEditContext?.version === 1) await native.ensureCardWorkspace(target.session, chat)
       await native.flush(target.session)
     }
     if (text !== '') {

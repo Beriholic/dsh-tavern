@@ -14,6 +14,8 @@ test('只有新建修改人物卡任务保存实验快照，重入不重新读�
   assert.deepEqual(chat.cardEditContext, { version: 1 })
   assert.equal(messages(h.session()).length, 0)
   assert.equal(chat.openingText, '')
+  assert.equal(h.session().events.at(-1).data.source.workspaceContextVersion, 1)
+  assert.equal(h.session().events.at(-1).data.role, 'user')
   assert.equal(h.session().prefix, foreground.cardContextSnapshot)
   assert.deepEqual(seedMessages(h.session()).map(e => e.type === 'user/message' ? e.data.content[0].text : e.data.message.content[0].text), sessionSeedTrajectoryMessages(h.session().id, 'story').map(s => s.text))
   assert.ok(h.trace.indexOf('prefix') < h.trace.indexOf('opening.native-append'))
