@@ -1260,3 +1260,31 @@ test('manual stop cancels the active background agent belonging to this game onl
   assert.equal(runner.cancel('game'), 0);
   await runner.dispose();
 });
+
+test('persistent background tools stay fixed across settlement and candidate tasks', async () => {
+  const registered = new Map(), requests = [];
+  let assemble, work;
+  const session = { id: 'task-tools', header: {}, events: [], append(type, data) { this.events.push({ type, data }); } };
+  const catalog = ['ledger_submit', 'posture_submit', 'mvu_submit_update', 'candidate_submit_choices'].map(name => ({ name, description: name, parameters: { type: 'object' } }));
+  const runner = createBackgroundAgentRunner({ backgroundTools: catalog, id: () => session.id, agents: {
+    get: () => ({ session: { header: {} } }),
+    async create(options) {
+      await options.setup({ systemPrompt: { section() {}, suppressRuntimeContext() {} }, on(event, callback) { if (event === 'system-prompt/assemble') assemble = callback; },
+        tools: { restrict() {}, register(tool) { registered.set(tool.name, tool); return () => registered.delete(tool.name); } }
+      });
+      return { agent: { session, followup() { work = (async () => {
+        const result = await assemble({}, {}, async () => ({ tools: [...registered.values()], sections: [...registered.keys()].map(name => ({ name: 'tool:' + name, text: name })) }));
+        requests.push(result);
+
+        session.append('assistant/message', { message: { content: [{ type: 'text', text: '完成' }] } });
+      })(); }, async whenIdle() { await work; } }, async dispose() {} };
+    }
+  } });
+  const selections = [['ledger_submit', 'posture_submit'], ['candidate_submit_choices']];
+  for (const names of selections) await runner.run({ sessionId: 'game', backgroundTasksSnapshot: { variables: false, ledger: true, posture: true, characterDesign: false }, persistent: true, task: names.includes('ledger_submit') ? 'settlement' : 'candidate', selection: { provider: 'fake', model: 'fake' }, messages: [], tools: catalog.filter(tool => names.includes(tool.name)), onToolCall: async () => 'accepted' });
+  requests.forEach((request, i) => {
+    assert.deepEqual(request.tools.map(tool => tool.name), ['ledger_submit', 'posture_submit', 'candidate_submit_choices']);
+    assert.deepEqual(request.sections.filter(s => s.name.startsWith('tool:')).map(s => s.name.slice(5)), ['ledger_submit', 'posture_submit', 'candidate_submit_choices']);
+  });
+  await runner.dispose();
+});

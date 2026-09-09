@@ -1,3 +1,4 @@
+import { normalizeBackgroundTasks } from './tavern-settings.js'
 import { sessionEvents } from './session-events.js'
 import { createHash } from 'node:crypto'
 import { cardOpeningChoices, resolveCardOpening } from './card-openings.js'
@@ -145,6 +146,7 @@ export function createConversationInitialization(options) {
       : null
     chat.userProfileEnabled = profile?.hasConfirmed === true && profile.defaultEnabled === true
     chat.webSearchEnabled = groupOfMode(chat.mode) === 'play' && currentSettings.webSearchEnabled === true
+    chat.backgroundTasksSnapshot = normalizeBackgroundTasks(currentSettings.backgroundTasks)
     chat.backgroundModelSelection = groupOfMode(chat.mode) === 'play'
       ? snapshotBackgroundModel(currentSettings.backgroundModel)
       : null

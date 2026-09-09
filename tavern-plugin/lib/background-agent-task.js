@@ -178,7 +178,15 @@ export function createBackgroundAgentTask(options) {
         return assembly
       })
       if (state.input.task !== 'image') {
-        state.stableToolDisposers = stableBackgroundTools.map(function (tool) {
+        state.stableToolDisposers = stableBackgroundTools.filter(function (tool) {
+          const tasks = state.input.backgroundTasksSnapshot
+          if (!tasks) return true
+          if (tool.name === 'mvu_submit_update') return tasks.variables === true
+          if (tool.name === 'ledger_submit') return tasks.ledger === true
+          if (tool.name === 'posture_submit') return tasks.posture === true
+          if (tool.name.startsWith('character_design_')) return tasks.characterDesign === true
+          return true
+        }).map(function (tool) {
           return childCtx.tools.register({
             name: tool.name,
             description: tool.description,

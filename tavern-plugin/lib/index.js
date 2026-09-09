@@ -122,7 +122,7 @@ import { createProfileDataStore } from './profile-data-store.js'
 import { createChatPersistence } from './domain/chat-persistence.js'
 import { createChatJournalStore } from './domain/chat-journal-store.js'
 import { createResourceGraph } from './domain/resource-graph.js'
-import { applyTavernSettingsPatch, presentTavernSettings, resolveSystemPrompt } from './domain/tavern-settings.js'
+import { normalizeBackgroundTasks, applyTavernSettingsPatch, presentTavernSettings, resolveSystemPrompt } from './domain/tavern-settings.js'
 import { prompt, SYSTEM_PROMPT_DEFINITIONS, SYSTEM_PROMPT_NAMES } from './prompt-catalog.js'
 
 // dsh-tavern 宿主插件（profile 组合行）
@@ -595,7 +595,15 @@ export async function apply(ctx) {
   }
   const chatJournalStore = createChatJournalStore({ dataRoot, legacyData: profileData, now: Date.now, logger: console })
   const chatPersistence = createChatPersistence({ store: chatJournalStore, normalize: normalizeChat, now: Date.now })
-  async function readChat(chatId) { return await chatPersistence.read(chatId) }
+  async function readChat(chatId) {
+    const chat = await chatPersistence.read(chatId)
+    if (!chat || chat.mode === 'card' || chat.backgroundTasksSnapshot) return chat
+    const tasks = normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks)
+    return await chatPersistence.update(chatId, draft => {
+      if (!draft.backgroundTasksSnapshot) draft.backgroundTasksSnapshot = tasks
+      return draft
+    }, { source: 'background-tasks.freeze-legacy', touchUpdatedAt: false })
+  }
   async function readChatRevision(chatId, revision) { return await chatPersistence.readRevision(chatId, revision) }
   async function rawWriteChat(chat, metadata) {
     if (deletedChatIds.has(chat.id)) throw new Error('对话已删除')
@@ -1405,7 +1413,8 @@ export async function apply(ctx) {
   }
   const runtimePresetSnapshots = new Map()
   const backgroundAgentRunner = createBackgroundAgentRunner({
-    backgroundTools: [POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, MVU_SUBMIT_UPDATE_TOOL, CANDIDATE_SUBMIT_TOOL, SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL],
+    resolveBackgroundTasks: async input => (await chatForSession(input.sessionId))?.backgroundTasksSnapshot,
+    backgroundTools: [LEDGER_SUBMIT_TOOL, POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, MVU_SUBMIT_UPDATE_TOOL, CANDIDATE_SUBMIT_TOOL, SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL],
     sharedTools: [{
       tool: HISTORY_RECALL_TOOL,
       async execute({ input, args }) {
@@ -1545,7 +1554,7 @@ export async function apply(ctx) {
     }
   }
   const candidateGenerator = createCandidateGenerator({
-    backgroundTasks: async () => (await readTavernSettings()).backgroundTasks,
+    backgroundTasks: async chat => chat.backgroundTasksSnapshot,
     store: {
       chatForSession: chatForSession,
       readChat: readChat,
@@ -1762,7 +1771,7 @@ export async function apply(ctx) {
       let backgroundBoundary = null
       try {
         const card = await readChatCard(snapshot)
-        const backgroundTasksSettings = (await readTavernSettings()).backgroundTasks
+        const backgroundTasksSettings = normalizeBackgroundTasks(snapshot.backgroundTasksSnapshot)
         const mvuTarget = snapshot.mvu && snapshot.mvu.enabled === true && snapshot.mvu.owner === 'official'
           ? pendingMvuTarget(snapshot)
           : null

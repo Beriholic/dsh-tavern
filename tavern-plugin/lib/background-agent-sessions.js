@@ -86,6 +86,9 @@ export function createBackgroundAgentSessions(options, task) {
     const parent = agents.get(input.sessionId)
     if (parent === undefined || parent.session === undefined) throw new Error('无法创建后台 Agent：前台会话不可用')
     const runtimeInput = Object.assign({}, input)
+    if (options.resolveBackgroundTasks && input.task !== 'image') {
+      runtimeInput.backgroundTasksSnapshot = await options.resolveBackgroundTasks(input)
+    }
     const persistent = input.persistent === true
     const requestedSessionId = str(persistent && typeof input.resolvePersistentSessionId === 'function'
       ? await input.resolvePersistentSessionId() : input.persistentSessionId)

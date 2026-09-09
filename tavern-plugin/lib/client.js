@@ -6199,9 +6199,9 @@ window.__ModuleLoader__.load({
 					)
 				),
 				React.createElement("h3", null, "后台结算"),
-				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "对所有游戏的后续后台任务生效。正在运行的任务完成本轮；关闭后保留已有结果。"),
+				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "仅影响新游戏。游戏开场时，后台任务配置和工具列表已固化，无法通过修改此处配置改变已有游戏。旧版本存档首次加载时固定当前配置。"),
 				React.createElement("div", { className: "dsh-tavern-settings-group" },
-					[["ledger", "台账维护（实验）", "整理物品、角色和地点，供玩家查阅，不注入前台。开启后从后续结算开始，不自动补齐历史；关闭后保留已有记录。"], ["variables", "变量结算", "MVU 卡强烈建议不要关闭。关闭后剧情仍会推进，但变量和状态栏可能不再同步。重新开启仅结算后续轮次，不补算已跳过的历史；普通卡不执行此任务。"], ["posture", "人物姿势结算", "总结本轮结束时人物的位置、动作和姿势。"], ["characterDesign", "人物设计档案", "按需建立、补充人物档案。人物较多时会增加等待时间和 Token 用量；关闭后候选任务也不再自动设计人物。"]].map(function (item) {
+					[["ledger", "台账维护（实验）", "整理物品、角色和地点，供玩家查阅，不注入前台。默认关闭，可在新游戏开场前启用。"], ["variables", "变量结算", "MVU 卡强烈建议不要关闭。关闭后剧情仍会推进，但变量和状态栏可能不再同步。普通卡不执行此任务。"], ["posture", "人物姿势结算", "总结本轮结束时人物的位置、动作和姿势。"], ["characterDesign", "人物设计档案", "按需建立、补充人物档案。人物较多时会增加等待时间和 Token 用量；关闭后候选任务也不再自动设计人物。"]].map(function (item) {
 						return React.createElement("label", { key: item[0], className: "dsh-tavern-settings-row" },
 							React.createElement("span", { className: "dsh-tavern-settings-copy" }, React.createElement("span", { className: "dsh-tavern-settings-title" }, item[1]), React.createElement("span", { className: "dsh-tavern-settings-desc" }, item[2])),
 							React.createElement("span", { className: "dsh-tavern-settings-switch" }, React.createElement("input", { type: "checkbox", checked: state.backgroundTasks[item[0]], disabled: state.loading || state.busy, "aria-label": item[1], onChange: function (event) { void setBackgroundTask(item[0], event.target.checked); } }), React.createElement("span", { className: "dsh-tavern-settings-track", "aria-hidden": "true" })));
