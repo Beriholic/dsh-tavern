@@ -1261,14 +1261,16 @@ test('manual stop cancels the active background agent belonging to this game onl
   await runner.dispose();
 });
 
-test('persistent background tools stay fixed across settlement and candidate tasks', async () => {
+test('persistent background tools change with configuration without creating another agent', async () => {
   const registered = new Map(), requests = [];
-  let assemble, work;
+  let assemble, work, creates = 0;
+  let configured = { variables: false, ledger: true, posture: true, characterDesign: false };
   const session = { id: 'task-tools', header: {}, events: [], append(type, data) { this.events.push({ type, data }); } };
   const catalog = ['ledger_submit', 'posture_submit', 'mvu_submit_update', 'candidate_submit_choices'].map(name => ({ name, description: name, parameters: { type: 'object' } }));
-  const runner = createBackgroundAgentRunner({ backgroundTools: catalog, id: () => session.id, agents: {
+  const runner = createBackgroundAgentRunner({ resolveBackgroundTasks: async () => configured, backgroundTools: catalog, id: () => session.id, agents: {
     get: () => ({ session: { header: {} } }),
     async create(options) {
+      creates++;
       await options.setup({ systemPrompt: { section() {}, suppressRuntimeContext() {} }, on(event, callback) { if (event === 'system-prompt/assemble') assemble = callback; },
         tools: { restrict() {}, register(tool) { registered.set(tool.name, tool); return () => registered.delete(tool.name); } }
       });
@@ -1286,5 +1288,9 @@ test('persistent background tools stay fixed across settlement and candidate tas
     assert.deepEqual(request.tools.map(tool => tool.name), ['ledger_submit', 'posture_submit', 'candidate_submit_choices']);
     assert.deepEqual(request.sections.filter(s => s.name.startsWith('tool:')).map(s => s.name.slice(5)), ['ledger_submit', 'posture_submit', 'candidate_submit_choices']);
   });
+  configured = { variables: true, ledger: false, posture: false, characterDesign: false };
+  await runner.run({ sessionId: 'game', persistent: true, task: 'settlement', selection: { provider: 'fake', model: 'fake' }, messages: [], tools: [catalog[2]], onToolCall: async () => 'accepted' });
+  assert.equal(creates, 1);
+  assert.deepEqual(requests.at(-1).tools.map(t => t.name), ['mvu_submit_update', 'candidate_submit_choices']);
   await runner.dispose();
 });

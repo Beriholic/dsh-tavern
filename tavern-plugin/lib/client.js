@@ -6199,7 +6199,7 @@ window.__ModuleLoader__.load({
 					)
 				),
 				React.createElement("h3", null, "后台结算"),
-				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "仅影响新游戏。游戏开场时，后台任务配置和工具列表已固化，无法通过修改此处配置改变已有游戏。旧版本存档首次加载时固定当前配置。"),
+				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "修改后对已有游戏的下一次后台任务生效，正在运行的任务不变，可手动中断。更改任务开关会影响提示词缓存，下一次请求可能增加耗时和费用。"),
 				React.createElement("div", { className: "dsh-tavern-settings-group" },
 					[["variables", "变量结算", "MVU 卡强烈建议不要关闭。关闭后剧情仍会推进，但变量和状态栏可能不再同步。普通卡不执行此任务。"], ["posture", "人物姿势结算", "总结本轮结束时人物的位置、动作和姿势。"], ["characterDesign", "人物设计档案", "按需建立、补充人物档案。人物较多时会增加等待时间和 Token 用量；关闭后候选任务也不再自动设计人物。"]].map(function (item) {
 						return React.createElement("label", { key: item[0], className: "dsh-tavern-settings-row" },

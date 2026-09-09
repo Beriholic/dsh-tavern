@@ -180,6 +180,7 @@ export function createBackgroundAgentSessions(options, task) {
       }
     }
     state.input = runtimeInput
+    state.refreshConfiguredTools?.()
     activeSessions.add(traceSessionId)
     requestSessions.set(traceSessionId, handle.agent.session)
     requestContexts.set(traceSessionId, {

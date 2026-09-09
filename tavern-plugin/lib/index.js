@@ -595,15 +595,7 @@ export async function apply(ctx) {
   }
   const chatJournalStore = createChatJournalStore({ dataRoot, legacyData: profileData, now: Date.now, logger: console })
   const chatPersistence = createChatPersistence({ store: chatJournalStore, normalize: normalizeChat, now: Date.now })
-  async function readChat(chatId) {
-    const chat = await chatPersistence.read(chatId)
-    if (!chat || chat.mode === 'card' || chat.backgroundTasksSnapshot) return chat
-    const tasks = normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks)
-    return await chatPersistence.update(chatId, draft => {
-      if (!draft.backgroundTasksSnapshot) draft.backgroundTasksSnapshot = tasks
-      return draft
-    }, { source: 'background-tasks.freeze-legacy', touchUpdatedAt: false })
-  }
+  async function readChat(chatId) { return await chatPersistence.read(chatId) }
   async function readChatRevision(chatId, revision) { return await chatPersistence.readRevision(chatId, revision) }
   async function rawWriteChat(chat, metadata) {
     if (deletedChatIds.has(chat.id)) throw new Error('对话已删除')
@@ -1413,7 +1405,7 @@ export async function apply(ctx) {
   }
   const runtimePresetSnapshots = new Map()
   const backgroundAgentRunner = createBackgroundAgentRunner({
-    resolveBackgroundTasks: async input => (await chatForSession(input.sessionId))?.backgroundTasksSnapshot,
+    resolveBackgroundTasks: async () => normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks),
     backgroundTools: [LEDGER_SUBMIT_TOOL, POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, MVU_SUBMIT_UPDATE_TOOL, CANDIDATE_SUBMIT_TOOL, SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL],
     sharedTools: [{
       tool: HISTORY_RECALL_TOOL,
@@ -1554,7 +1546,7 @@ export async function apply(ctx) {
     }
   }
   const candidateGenerator = createCandidateGenerator({
-    backgroundTasks: async chat => chat.backgroundTasksSnapshot,
+    backgroundTasks: async () => normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks),
     store: {
       chatForSession: chatForSession,
       readChat: readChat,
@@ -1771,7 +1763,7 @@ export async function apply(ctx) {
       let backgroundBoundary = null
       try {
         const card = await readChatCard(snapshot)
-        const backgroundTasksSettings = normalizeBackgroundTasks(snapshot.backgroundTasksSnapshot)
+        const backgroundTasksSettings = normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks)
         const mvuTarget = snapshot.mvu && snapshot.mvu.enabled === true && snapshot.mvu.owner === 'official'
           ? pendingMvuTarget(snapshot)
           : null

@@ -391,18 +391,3 @@ test('开局草稿世界书在第一次保存前固化，再次打开不覆盖�
   const reopened = await h.make().start({ ...h.input, preparation: { worldbookSnapshot: { version: 99 } } })
   assert.deepEqual(reopened.openingWorldbookSnapshot, snapshot)
 })
-
-
-test('后台任务开场固化，重入保留快照，新游戏采用新设置', async () => {
-  const h = initializationFixture()
-  h.state.settings.backgroundTasks = { variables: false, ledger: true }
-  const first = await h.make().start(h.input)
-  assert.equal(first.backgroundTasksSnapshot.variables, false)
-  assert.equal(first.backgroundTasksSnapshot.ledger, true)
-  h.state.settings.backgroundTasks = { variables: true, ledger: false }
-  const reopened = await h.make().start(h.input)
-  assert.deepEqual(reopened.backgroundTasksSnapshot, first.backgroundTasksSnapshot)
-  const next = await h.make().start({ ...h.input, sessionId: 'new-game' })
-  assert.equal(next.backgroundTasksSnapshot.variables, true)
-  assert.equal(next.backgroundTasksSnapshot.ledger, false)
-})

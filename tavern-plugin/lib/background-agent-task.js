@@ -177,7 +177,12 @@ export function createBackgroundAgentTask(options) {
         assembly.tools = (assembly.tools || []).filter(function (tool) { return tool && tool.name !== 'web_search' })
         return assembly
       })
-      if (state.input.task !== 'image') {
+      state.refreshConfiguredTools = function () {
+        if (state.input.task === 'image') return
+        const key = JSON.stringify(state.input.backgroundTasksSnapshot || null)
+        if (state.configuredToolsKey === key) return
+        for (const dispose of state.stableToolDisposers || []) dispose()
+        state.configuredToolsKey = key
         state.stableToolDisposers = stableBackgroundTools.filter(function (tool) {
           const tasks = state.input.backgroundTasksSnapshot
           if (!tasks) return true
@@ -205,6 +210,7 @@ export function createBackgroundAgentTask(options) {
           })
         }).filter(function (dispose) { return typeof dispose === 'function' })
       }
+      state.refreshConfiguredTools()
       childCtx.on('agent/request', async function (_payload, next) {
         const input = state.input || {}
         const request = await next()
