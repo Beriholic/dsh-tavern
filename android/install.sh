@@ -2,6 +2,8 @@
 set -euo pipefail
 
 export npm_config_registry="${DSH_TAVERN_NPM_REGISTRY:-https://registry.npmmirror.com}"
+# pnpm 11 reads pnpm_config_* instead of npm_config_*.
+export pnpm_config_registry="$npm_config_registry"
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)"
