@@ -6959,6 +6959,8 @@ window.__ModuleLoader__.load({
 			const [busy, setBusy] = React.useState(false);
 			const [error, setError] = usePersistentError("人物卡库");
 			const importInput = React.useRef(null);
+			const [importStatus, setImportStatus] = React.useState("");
+			const importing = React.useRef(false);
 			const cardRequest = React.useRef(0);
 			const visibleRef = React.useRef(Boolean(props.visible));
 			const refreshModule = React.useRef(null);
@@ -7018,12 +7020,31 @@ window.__ModuleLoader__.load({
 				setLoading(false);
 				props.ctx.betterSidebar.updateTab(props.tab.id, { meta: null });
 			}
-			async function importCardFile(file) {
-				if (!file) return;
+			async function importCardFiles(files) {
+				if (!files.length || busy || importing.current) return;
+				importing.current = true;
 				setBusy(true); setError("");
-				try { const result = await rpc("importCard", { payload: await parseCardFile(file) }); await refreshCards(); await loadCard(result.card.path); notifyTavernDataChanged(["cards"], "cards"); }
-				catch (err) { setError(String(err && err.message || err)); }
-				finally { setBusy(false); }
+				let imported = 0;
+				let lastPath = "";
+				const failures = [];
+				try {
+					for (let index = 0; index < files.length; index++) {
+						const file = files[index];
+						setImportStatus("正在导入 " + (index + 1) + "/" + files.length + "：" + file.name);
+						try {
+							const result = await rpc("importCard", { payload: await parseCardFile(file) });
+							imported += 1; lastPath = result.card.path;
+						} catch (err) { failures.push(file.name + "：" + String(err && err.message || err)); }
+					}
+					setImportStatus("已导入 " + imported + " 张" + (failures.length ? "，" + failures.length + " 张失败" : ""));
+					if (failures.length) setError(failures.join("\n"));
+					if (imported) {
+						notifyTavernDataChanged(["cards"], "cards");
+						await refreshCards();
+						if (files.length === 1) await loadCard(lastPath);
+					}
+				} catch (err) { setError(failures.concat("刷新人物卡库失败：" + String(err && err.message || err)).join("\n")); }
+				finally { importing.current = false; setBusy(false); }
 			}
 			async function renameCard() {
 				if (!card) return;
@@ -7059,7 +7080,8 @@ window.__ModuleLoader__.load({
 			const needle = query.trim().toLocaleLowerCase();
 			const visible = cards.filter(function (item) { return !needle || (item.name + " " + item.path).toLocaleLowerCase().includes(needle); });
 			return h("div", { className: "dsh-tavern-library" },
-				h("div", { className: "dsh-tavern-status-head" }, h("div", { className: "dsh-tavern-status-title" }, "人物卡库"), h("div", { className: "dsh-tavern-question-sub" }, cards.length + " 张人物卡"), h("div", { className: "dsh-tavern-library-head-actions" }, h(MobileCardImportButton, { inputRef: importInput, disabled: busy, onImported: async function (imported) { await refreshCards(); await loadCard(imported.path); notifyTavernDataChanged(["cards"], "cards"); } }), h("input", { ref: importInput, type: "file", accept: ".png,.json", style: { display: "none" }, onChange: function (event) { const file = event.target.files && event.target.files[0]; importCardFile(file); event.target.value = ""; } }))),
+				h("div", { className: "dsh-tavern-status-head" }, h("div", { className: "dsh-tavern-status-title" }, "人物卡库"), h("div", { className: "dsh-tavern-question-sub" }, cards.length + " 张人物卡"), h("div", { className: "dsh-tavern-library-head-actions" }, h(MobileCardImportButton, { inputRef: importInput, disabled: busy, onImported: async function (imported) { await refreshCards(); await loadCard(imported.path); notifyTavernDataChanged(["cards"], "cards"); } }), h("input", { ref: importInput, type: "file", multiple: true, accept: ".png,.json", style: { display: "none" }, onChange: function (event) { const files = Array.from(event.target.files || []); importCardFiles(files); event.target.value = ""; } }))),
+				h("div", { className: "dsh-tavern-question-sub", role: "status" }, importStatus || "支持多选 PNG、JSON 人物卡一起导入"),
 				h("input", { className: "dsh-tavern-library-search", value: query, placeholder: "搜索名称或文件名", onChange: function (event) { setQuery(event.target.value); } }),
 				h("div", { className: "dsh-tavern-resource-body" }, error ? h("div", { className: "dsh-tavern-dock-error" }, error) : null, visible.length ? visible.map(function (item) { return h("div", { key: item.path, className: "dsh-tavern-library-card-row" },
 					h("button", { className: "dsh-tavern-library-card" + (item.hasImage ? " with-image" : ""), onClick: function () { loadCard(item.path); } }, h(TavernCardListContent, { card: item, detail: item.path.split("/").pop(), extra: item.script ? "已绑定剧本：" + item.script.title : "" })),
