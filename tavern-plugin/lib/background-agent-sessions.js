@@ -264,5 +264,16 @@ export function createBackgroundAgentSessions(options, task) {
     if (failures.length > 0) throw new AggregateError(failures, '常驻后台 Agent 释放失败')
   }
 
-  return Object.freeze({ run, owns, requestContext, requestSession, compact, dispose })
+  function cancel(parentSessionId) {
+    let count = 0
+    for (const sessionId of activeSessions) {
+      const context = requestContexts.get(sessionId)
+      if (context?.parentSessionId !== parentSessionId || ['image', 'phone'].includes(context.task)) continue
+      const agent = residentHandles.get(sessionId)?.handle?.agent || agents.get(sessionId)
+      if (typeof agent?.cancel === 'function') { agent.cancel({ kind: 'user' }); count++ }
+    }
+    return count
+  }
+
+  return Object.freeze({ run, owns, requestContext, requestSession, compact, cancel, dispose })
 }

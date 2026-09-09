@@ -8090,6 +8090,7 @@ window.__ModuleLoader__.load({
 			const [guideError, setGuideError] = usePersistentError("Guide");
 			const [debugBusy, setDebugBusy] = React.useState(false);
 			const [settlementRetryBusy, setSettlementRetryBusy] = React.useState(false);
+			const [backgroundStopBusy, setBackgroundStopBusy] = React.useState(false);
 			const running = props.useSession(function (snapshot) { return snapshot.running; });
 			const latestMessageId = props.useChat(latestTavernAssistantMessageId);
 			const stateKey = String(running) + ":" + String(latestMessageId || "");
@@ -8128,6 +8129,15 @@ window.__ModuleLoader__.load({
 				} catch (err) { setGuideError(String(err && err.message || err)); }
 				finally { setGuideBusy(false); }
 			}
+			async function stopBackground() {
+				if (!view || backgroundStopBusy) return;
+				setBackgroundStopBusy(true);
+				try {
+					await rpc("stopBackground", { operationId: view.activity.operationId }, props.sessionId);
+					liveTavernView.invalidate(props.sessionId);
+				} catch (error) { tavernErrorHub.report("停止后台", error); }
+				finally { setBackgroundStopBusy(false); }
+			}
 			async function retrySettlement() {
 				if (!view || settlementRetryBusy) return;
 				setSettlementRetryBusy(true);
@@ -8155,6 +8165,7 @@ window.__ModuleLoader__.load({
 			return h("aside", { className: "dsh-tavern-status" },
 				h("div", { className: "dsh-tavern-status-head" },
 					h("div", { className: "dsh-tavern-status-title" }, "酒馆状态"),
+					view.activity && view.activity.busy ? h("button", { className: "dsh-tavern-btn", disabled: backgroundStopBusy, onClick: stopBackground }, backgroundStopBusy ? "正在停止…" : "停止后台") : null,
 					h("div", { className: "dsh-tavern-status-role" }, view.card.name),
 					(view.card.tags || []).length ? h("div", { className: "dsh-tavern-status-tags" }, (view.card.tags || []).slice(0, 8).map(function (tag) { return h("span", { key: tag, className: "dsh-tavern-status-tag" }, tag); })) : null,
 					h("div", { className: "dsh-tavern-status-settle" }, h("span", { className: "dsh-tavern-status-dot " + (view.settleStatus || "idle") }), statusText)

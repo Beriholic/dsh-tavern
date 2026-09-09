@@ -1235,3 +1235,28 @@ test('后台代理首次运行前即具有目录描述，失败也保留身份',
     assert.equal(events.find(e => e.type === 'subagent/descriptor').data.label, '酒馆后台 Agent')
   } finally { await runner.dispose() }
 })
+
+test('manual stop cancels the active background agent belonging to this game only', async () => {
+  let ready, finish, cancelled = 0;
+  const started = new Promise(resolve => { ready = resolve; });
+  const idle = new Promise(resolve => { finish = resolve; });
+  const session = { id: 'stop-background', header: {}, events: [], append(type, data) { this.events.push({ type, data }); } };
+  const runner = createBackgroundAgentRunner({ id: () => session.id, agents: {
+    get: () => ({ session: { header: {} } }),
+    async create(options) {
+      await options.setup({ systemPrompt: { section() {}, suppressRuntimeContext() {} }, on() {}, tools: { restrict() {}, register() { return () => {}; } } });
+      return { agent: { session, followup() { ready(); }, whenIdle: () => idle,
+        cancel(reason) { assert.equal(reason.kind, 'user'); cancelled++; finish(); }
+      }, async dispose() {} };
+    }
+  } });
+  const run = runner.run({ sessionId: 'game', persistent: true, task: 'settlement', selection: { provider: 'fake', model: 'fake' }, messages: [], tools: [] });
+  const rejected = assert.rejects(run);
+  await started;
+  assert.equal(runner.cancel('other-game'), 0);
+  assert.equal(runner.cancel('game'), 1);
+  await rejected;
+  assert.equal(cancelled, 1);
+  assert.equal(runner.cancel('game'), 0);
+  await runner.dispose();
+});

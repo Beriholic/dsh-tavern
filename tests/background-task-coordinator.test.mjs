@@ -316,3 +316,19 @@ test('运行前保存代理身份，重启恢复后重试复用，但不冒充�
   const retry = await h.coordinator.begin(h.current(), 'settlement')
   assert.equal(retry.participantRequest.sessionId, 'background-started')
 })
+
+test('manual interruption unlocks background and rejects late state writes and stale stop requests', async () => {
+  const h = coordinatorHarness();
+  const task = await h.coordinator.begin(h.current(), 'settlement');
+  const stopped = await h.coordinator.recover(h.current(), { operationId: task.operationId });
+  assert.equal(stopped.activity.busy, false);
+  assert.equal(stopped.activity.reason, 'interrupted');
+  const late = await task.commit({ apply(chat) { chat.posture = 'late write'; } });
+  assert.equal(late.status, 'stale');
+  assert.equal(h.current().posture, '');
+  const next = await h.coordinator.begin(h.current(), 'settlement');
+  const stale = await h.coordinator.recover(h.current(), { operationId: task.operationId });
+  assert.equal(stale.status, 'stale');
+  assert.equal(stale.activity.busy, true);
+  assert.equal(stale.activity.operationId, next.operationId);
+});

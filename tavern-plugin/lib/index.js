@@ -2018,6 +2018,18 @@ export async function apply(ctx) {
     unsubscribeMvuRuntimeReady()
     mvuSettlementReconciler.dispose()
   }, 'dsh-tavern: reconcile deferred MVU settlement')
+  async function stopBackground(sessionId, operationId) {
+    const chat = await chatForSession(sessionId)
+    if (!chat) throw new Error('对话不存在')
+    const activity = backgroundTasks.activity(chat)
+    if (!operationId || activity.operationId !== operationId || !activity.busy) return view(chat, await readChatCard(chat))
+    // Abort the provider request first; interrupted operations reject late commits.
+    backgroundAgentRunner.cancel(chat.sessionId)
+    await cancelSettlement(chat.id, { wait: false })
+    const stopped = await backgroundTasks.recover(chat, { operationId })
+    return view(stopped.chat, await readChatCard(stopped.chat))
+  }
+
   async function retrySettlement(sessionId, turn) {
     const chat = await chatForSession(sessionId)
     if (chat === undefined) throw new Error('当前会话没有绑定人物卡')
@@ -2523,6 +2535,7 @@ export async function apply(ctx) {
       case 'saveBodyEdit': return { view: await bodyEditor.save(args && args.sessionId, args) }
       case 'regenBody': return { view: await regenBody(args && args.chatId, args && args.guidance, args && args.sessionId) }
       case 'rollbackTurn': return { view: await rollbackTurn(args && args.sessionId, args && args.chatId) }
+      case 'stopBackground': return { view: await stopBackground(args && args.sessionId, args && args.operationId) }
       case 'retrySettlement': return { view: await retrySettlement(args && args.sessionId, args && args.turn) }
       case 'retryMvuSettlement': return { view: await retrySettlement(args && args.sessionId, args && args.turn) }
       default: throw new Error('未知方法: ' + method)

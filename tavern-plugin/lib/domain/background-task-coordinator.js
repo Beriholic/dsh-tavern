@@ -199,11 +199,14 @@ export function createBackgroundTaskCoordinator(options = {}) {
     return Object.freeze(task)
   }
 
-  async function recover(chat) {
+  async function recover(chat, options = {}) {
     const chatId = str(chat && chat.id)
     return await serialize(chatId, async function () {
       const latest = await store.readChat(chatId)
       const source = latest === undefined ? chat : latest
+      if (options.operationId && activity(source).operationId !== options.operationId) {
+        return { chat: source, status: 'stale', activity: activity(source) }
+      }
       const next = timeline.apply({ chat: source, intent: { kind: 'background.recover' } })
       if (next.value.status !== 'unchanged') await store.writeChat(next.chat, { source: 'background.recover' })
       return { chat: next.chat, status: next.value.status, activity: activity(next.chat) }
