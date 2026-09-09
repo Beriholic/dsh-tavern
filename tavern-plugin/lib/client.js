@@ -6176,8 +6176,8 @@ window.__ModuleLoader__.load({
 				React.createElement("div", { className: "dsh-tavern-settings-group" },
 					React.createElement("label", { className: "dsh-tavern-settings-row" },
 						React.createElement("span", { className: "dsh-tavern-settings-copy" },
-							React.createElement("span", { className: "dsh-tavern-settings-title" }, "联网搜索（仅新游戏）"),
-							React.createElement("span", { className: "dsh-tavern-settings-desc" }, "开启后，需要新建游戏才能联网。已有游戏不会生效，刷新或重启也不会改变；新游戏的前台与后台 Agent 均可按需搜索。")
+							React.createElement("span", { className: "dsh-tavern-settings-title" }, "联网搜索"),
+							React.createElement("span", { className: "dsh-tavern-settings-desc" }, "修改后对已有游戏的后续请求生效，前台与后台 Agent 均可按需搜索。", React.createElement("span", { style: { color: "#dc4545", display: "block" } }, "改变配置，会导致缓存失效，请注意。"))
 						),
 						React.createElement("span", { className: "dsh-tavern-settings-switch" },
 							React.createElement("input", { type: "checkbox", checked: state.webSearchEnabled, disabled: state.loading || state.busy, onChange: function (event) { void setWebSearchEnabled(event.target.checked); }, "aria-label": "开启联网搜索" }),

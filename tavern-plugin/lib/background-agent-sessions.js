@@ -89,6 +89,9 @@ export function createBackgroundAgentSessions(options, task) {
     if (options.resolveBackgroundTasks && input.task !== 'image') {
       runtimeInput.backgroundTasksSnapshot = await options.resolveBackgroundTasks(input)
     }
+    if (options.resolveWebSearch && input.task !== 'image' && input.task !== 'phone') {
+      runtimeInput.webSearchEnabled = await options.resolveWebSearch()
+    }
     const persistent = input.persistent === true
     const requestedSessionId = str(persistent && typeof input.resolvePersistentSessionId === 'function'
       ? await input.resolvePersistentSessionId() : input.persistentSessionId)

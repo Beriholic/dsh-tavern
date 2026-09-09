@@ -595,7 +595,14 @@ export async function apply(ctx) {
   }
   const chatJournalStore = createChatJournalStore({ dataRoot, legacyData: profileData, now: Date.now, logger: console })
   const chatPersistence = createChatPersistence({ store: chatJournalStore, normalize: normalizeChat, now: Date.now })
-  async function readChat(chatId) { return await chatPersistence.read(chatId) }
+  async function readChat(chatId) {
+    const chat = await chatPersistence.read(chatId)
+    if (chat && chat.mode !== 'card') {
+      // Runtime preference: ignore legacy opening snapshots without rewriting history.
+      chat.webSearchEnabled = (await readTavernSettings()).webSearchEnabled === true
+    }
+    return chat
+  }
   async function readChatRevision(chatId, revision) { return await chatPersistence.readRevision(chatId, revision) }
   async function rawWriteChat(chat, metadata) {
     if (deletedChatIds.has(chat.id)) throw new Error('对话已删除')
@@ -1405,6 +1412,7 @@ export async function apply(ctx) {
   }
   const runtimePresetSnapshots = new Map()
   const backgroundAgentRunner = createBackgroundAgentRunner({
+    resolveWebSearch: async () => (await readTavernSettings()).webSearchEnabled === true,
     resolveBackgroundTasks: async () => normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks),
     backgroundTools: [LEDGER_SUBMIT_TOOL, POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, MVU_SUBMIT_UPDATE_TOOL, CANDIDATE_SUBMIT_TOOL, SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL],
     sharedTools: [{
