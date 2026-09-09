@@ -1076,7 +1076,7 @@ test('常驻后台 Agent 每轮只挂载本轮工具', async () => {
   assert.equal(disposed, 1)
 })
 
-test('回退后在同一个后台 Agent 中遮蔽 checkpoint 之后的 Surface', async () => {
+for (const rewindFails of [false, true]) test('后台 Surface 尽力回退，失败也继续任务: ' + rewindFails, async () => {
   const parent = { id: 'parent-session', session: { header: { cwd: '/tmp/tavern', delegationDepth: 0 } } }
   const sourceEvents = [
     { seq: 0, type: 'user/message', data: { text: '有效正文' } },
@@ -1107,6 +1107,7 @@ test('回退后在同一个后台 Agent 中遮蔽 checkpoint 之后的 Surface',
           events,
           surface: { nodes: [0, 1, 3, 4] },
           append(type, data, options) {
+            if (rewindFails) throw new Error('fixture: 历史消息面不可回退')
             appendCalls.push({ type, data, options })
             events.push({ seq: events.length, type, data, ...(options || {}) })
           }
@@ -1135,9 +1136,10 @@ test('回退后在同一个后台 Agent 中遮蔽 checkpoint 之后的 Surface',
   })
 
   assert.equal(result.traceSessionId, 'old-candidate')
-  assert.equal(result.traceBoundary, 8)
+  assert.equal(result.traceBoundary, rewindFails ? 7 : 8)
   assert.equal(resumeCalls, 1)
   assert.equal(createCalls, 0)
+  if (rewindFails) { assert.equal(appendCalls.length, 0); return }
   assert.equal(appendCalls.length, 1)
   assert.equal(appendCalls[0].type, 'assistant/message')
   assert.deepEqual(appendCalls[0].data.message.content, [])

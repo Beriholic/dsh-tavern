@@ -1,3 +1,4 @@
+import { backgroundSuppressedTurns } from './domain/background-surface.js'
 import { ensureCardWorkspaceMessage } from './domain/card-workspace-message.js'
 import { createPromptTemplateGlobalVariables } from './domain/prompt-template-global-variables.js'
 import { FULL_PROMPT_TEMPLATE_ASSET_PREFIX, readFullPromptTemplateAsset } from './domain/full-prompt-template-assets.js'
@@ -594,21 +595,30 @@ export async function apply(ctx) {
   const chatPersistence = createChatPersistence({ store: chatJournalStore, normalize: normalizeChat, now: Date.now })
   async function readChat(chatId) { return await chatPersistence.read(chatId) }
   async function readChatRevision(chatId, revision) { return await chatPersistence.readRevision(chatId, revision) }
-  async function rawWriteChat(chat, metadata) { return await chatPersistence.write(chat, metadata) }
-  async function rawUpdateChat(chatId, mutation, metadata) { return await chatPersistence.update(chatId, mutation, metadata) }
+  async function rawWriteChat(chat, metadata) {
+    if (deletedChatIds.has(chat.id)) throw new Error('对话已删除')
+    return await chatPersistence.write(chat, metadata)
+  }
+  async function rawUpdateChat(chatId, mutation, metadata) {
+    if (deletedChatIds.has(chatId)) throw new Error('对话已删除')
+    return await chatPersistence.update(chatId, mutation, metadata)
+  }
   let conversationRegistry
   async function syncChatSummary(chat) {
     if (!conversationRegistry || chat === undefined) return
     try { await conversationRegistry.sync(chat) }
     catch (error) { console.warn('dsh-tavern: 会话摘要索引同步失败，将在下次启动修复:', str(error && error.message || error)) }
   }
+  const deletedChatIds = new Set()
   async function writeChat(chat, metadata) {
+    if (deletedChatIds.has(chat.id)) throw new Error('对话已删除')
     const saved = await rawWriteChat(chat, metadata)
     await syncChatSummary(saved)
     void coordinationEvents?.publish(saved.sessionId)
     return saved
   }
   async function updateChat(chatId, mutation, metadata) {
+    if (deletedChatIds.has(chatId)) throw new Error('对话已删除')
     const saved = await rawUpdateChat(chatId, mutation, metadata)
     await syncChatSummary(saved)
     if (saved !== undefined) void coordinationEvents?.publish(saved.sessionId)
@@ -839,8 +849,37 @@ export async function apply(ctx) {
   async function deleteCard(cardPath) {
     return await cardDeletion.remove(cardPath)
   }
+  async function stopChatForDeletion(chatId) {
+    const chat = await readChat(str(chatId))
+    if (!chat) return
+    const ids = new Set([chat.sessionId, ...Object.values(storyTimeline.inspect({ chat }).participants || {}).map(item => item.sessionId)])
+    const workers = [...ids].map(id => agentRegistry.get(id)).filter(Boolean)
+    for (const worker of workers) {
+      if (typeof worker.cancel === 'function') worker.cancel({ kind: 'user' })
+    }
+    await cancelSettlement(chat.id)
+    for (const worker of workers) {
+      if (typeof worker.whenIdle === 'function') await worker.whenIdle()
+    }
+  }
+  async function deleteChats(chatIds, prepareOnly = false) {
+    if (!Array.isArray(chatIds) || chatIds.some(id => typeof id !== 'string' || !id.trim())) throw new Error('请选择有效的对话')
+    const results = []
+    // Registry index updates must remain sequential.
+    for (const chatId of new Set(chatIds)) {
+      try {
+        if (prepareOnly) await stopChatForDeletion(chatId)
+        else await deleteChat(chatId)
+        results.push({ chatId, ok: true })
+      } catch (error) { results.push({ chatId, ok: false, error: String(error?.message || error) }) }
+    }
+    return { results }
+  }
   async function deleteChat(chatId) {
-    return await conversationRegistry.remove(chatId)
+    await stopChatForDeletion(chatId)
+    const result = await conversationRegistry.remove(chatId)
+    deletedChatIds.add(chatId)
+    return result
   }
   async function exportConversation(chatId, sessionId, title) {
     const chat = str(chatId) === '' ? await chatForSession(str(sessionId)) : await readChat(str(chatId))
@@ -1932,11 +1971,13 @@ export async function apply(ctx) {
     settlementJobs.set(chatId, job)
     return job.promise
   }
-  async function cancelSettlement(chatId) {
+  async function cancelSettlement(chatId, options = {}) {
     const job = settlementJobs.get(chatId)
     if (job === undefined) return false
     job.controller.abort()
-    await job.promise.catch(function () {})
+    if (options.wait === false) {
+      if (settlementJobs.get(chatId) === job) settlementJobs.delete(chatId)
+    } else await job.promise.catch(function () {})
     return true
   }
   const mvuSettlementReconciler = createMvuSettlementReconciler({
@@ -2147,7 +2188,10 @@ export async function apply(ctx) {
     diagnostics: mvuDiagnostics,
     chats: { read: readChat, forSession: chatForSession, readCard: readChatCard,
       readRevision: readChatRevision, write: writeChat, update: updateChat },
-    sessions: { get: function (sessionId) { return ctx.get('agents')?.get(sessionId) } },
+    sessions: { get: function (sessionId) { return ctx.get('agents')?.get(sessionId) },
+      getSession: sessionId => sessionStore.get(sessionId),
+      resume: sessionId => agentRegistry.resume({ resumeSessionId: sessionId }),
+      flush: session => sessionStore.flush(session) },
     scripts: { read: readScript, continuity: scriptContinuity,
       dispatchEvent: function (event) { return tavernScriptHostAdapter.dispatchEvent(event) } },
     timeline: storyTimeline,
@@ -2354,6 +2398,8 @@ export async function apply(ctx) {
       case 'importMobileCard': return { card: await importCard(await mobileCardImport.read(args && args.id)) }
       case 'importCard': return { card: await importCard(args && args.payload) }
       case 'deleteCard': return await deleteCard(args && args.path)
+      case 'prepareDeleteChats': return await deleteChats(args && args.chatIds, true)
+      case 'deleteChats': return await deleteChats(args && args.chatIds)
       case 'deleteChat': return await deleteChat(args && args.chatId)
       case 'forkChat': return { fork: await forkChat(args && args.chatId, args && args.sessionId, args && args.targetSessionId, args && args.turn) }
       case 'exportConversation': return await exportConversation(args && args.chatId, args && args.sessionId, args && args.title)
@@ -2420,6 +2466,15 @@ export async function apply(ctx) {
           })
           throw error
         }
+      }
+      case 'getBackgroundSuppressedTurns': {
+        const id = str(args && args.sessionId)
+        if (!id.startsWith('background-')) return { turns: [] }
+        const evidence = sessionDebugEvidence(id)
+        if (evidence.loaded) return { turns: backgroundSuppressedTurns(evidence.events) }
+        const handle = await agentRegistry.resume({ resumeSessionId: id })
+        try { return { turns: backgroundSuppressedTurns(sessionEvents(handle.agent.session)) } }
+        finally { await handle.dispose() }
       }
       case 'getSession': return { view: await sessionView(args && args.sessionId) }
       case 'sendPhoneMessage': return { phoneChat: await phoneChat.send(args || {}) }

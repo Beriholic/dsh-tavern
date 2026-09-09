@@ -562,3 +562,17 @@ test('Android 入口链接跨越宿主 rootfs 与 proot 路径后仍可解析', 
   const linkedEntry = JSON.parse(await readFile(path.join(movedRootfs, 'root', '.dsh', 'profiles', 'web', 'node_modules', 'dsh-tavern-entry', 'package.json'), 'utf8'))
   assert.equal(linkedEntry.name, 'dsh-tavern-entry')
 })
+
+test('Android 入口不复用本次启动之前的旧鉴权地址', async (t) => {
+  const home = await mkdtemp(path.join(tmpdir(), 'dsh-android-log-offset-'))
+  t.after(() => rm(home, { recursive: true, force: true }))
+  const logs = path.join(home, '.dsh', 'logs')
+  await mkdir(logs, { recursive: true })
+  const old = 'dsh web: http://127.0.0.1:3088/?token=old\n'
+  await writeFile(path.join(logs, 'tavern.log'), old + 'starting new service\n')
+  await writeFile(path.join(logs, 'tavern.pid.json'), JSON.stringify({ port: 3088, logOffset: Buffer.byteLength(old) }))
+  const calls = []
+  const manager = createEntryManager({ home, env: {}, portProbe: async () => true, request: async url => { calls.push(url); return { status: 200 } } })
+  assert.equal(await manager.accessUrl(), 'http://127.0.0.1:3088/')
+  assert.deepEqual(calls, ['http://127.0.0.1:3088/'])
+})

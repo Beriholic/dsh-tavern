@@ -1,3 +1,4 @@
+import { rewindBackgroundSurface } from './background-surface.js'
 import { sessionEvents } from './session-events.js'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
@@ -53,13 +54,16 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
   const view = present
   const pendingRollbacks = new Set()
 
-  function assertRollbackIdle(chat) {
+  async function stopRollbackGeneration(chat) {
     const agent = sessions.get(chat.sessionId)
-    const unfinished = Object.values(storyTimeline.inspect({ chat }).operations || {}).some(function (operation) {
-      return operation && (operation.status === 'running' || (operation.kind === 'body' && operation.status === 'completed' &&
-        operation.background && ['pending', 'running'].includes(str(operation.background.phase))))
-    })
-    if (agent?.phase?.kind === 'running' || unfinished || chat.regenInProgress === true) throw new Error('当前轮次尚未完成生成或后台处理，请等待完成后再回退')
+    if (agent?.phase?.kind !== 'running') return
+    if (typeof agent.cancel !== 'function') throw new Error('当前宿主不支持停止生成，请先停止后再回退')
+    agent.cancel({ kind: 'user' })
+    await agent.whenIdle()
+  }
+
+  function rollbackBodyMessages(chat) {
+    return (chat.messages || []).map(({ role, turn, text, sourceText, content, greeting, swipes, swipeId }) => ({ role, turn, text, sourceText, content, greeting, swipes, swipeId }))
   }
 
   function assertRollbackSnapshot(current, expected) {
@@ -111,6 +115,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       const abortedTurns = regenerationAttemptTurns({ events: sessionEvents(session), eventStart })
       await updateChat(chat.id, function (current) {
         if (!current || typeof current !== 'object') return current
+        if (Number(current.tavernHelperLifecycleRevision || 0) > Number(originalChat.tavernHelperLifecycleRevision || 0) + 1) return current
         const next = storyTimeline.apply({ chat: current, intent: { kind: 'replacement.abort', restoreChat: originalChat } }).chat
         next.suppressedDshTurns = Array.from(new Set((Array.isArray(next.suppressedDshTurns) ? next.suppressedDshTurns : []).concat(abortedTurns))).sort(function (left, right) { return left - right })
         return next
@@ -260,7 +265,8 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
   }
 
   async function rollbackChat(chat) {
-    assertRollbackIdle(chat)
+    await stopRollbackGeneration(chat)
+    chat = await readChat(chat.id)
     const originalChat = structuredClone(chat)
     const mode = chat.mode || 'story'
     if (mode !== 'story' && mode !== 'script') throw new Error('仅游玩模式支持回退本轮')
@@ -330,10 +336,28 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       const reference = rollbackCommit !== null && rollbackCommit.scriptReference !== null && typeof rollbackCommit.scriptReference === 'object' ? rollbackCommit.scriptReference : null
       legacyBefore.scriptState = scriptContinuity.transition({ script: script, state: chat.scriptState, event: { kind: 'restore', revision: revision, reference: reference } }).state
     }
-    const rollbackIntent = await prepareRollbackIntent(chat, { kind: 'turn.rollback', turn: hiddenTurn, legacyBefore })
-    assertRollbackIdle(chat)
+    let rollbackWarning = ''
+    let rollbackIntent
+    try {
+      rollbackIntent = await prepareRollbackIntent(chat, { kind: 'turn.rollback', turn: hiddenTurn, legacyBefore })
+    } catch (error) {
+      rollbackWarning = '正文已回退，后台历史快照不可用，保留当前状态：' + str(error?.message || error)
+      rollbackIntent = { kind: 'turn.rollback', turn: hiddenTurn, legacyBefore: { ...chat, messages: msgs.slice(0, assistantIndex - 1), candidates: null, settleStatus: 'idle', settleError: null }, allowMissingHistory: true }
+    }
+    await stopRollbackGeneration(chat)
+    if (typeof cancelSettlement === 'function') {
+      try { await cancelSettlement(chat.id, { wait: false }) }
+      catch (error) { rollbackWarning = '正文已回退，后台停止请求失败：' + str(error?.message || error) }
+    }
+    for (const participant of Object.values(storyTimeline.inspect({ chat }).participants || {})) {
+      const worker = sessions.get(participant.sessionId)
+      if (worker && worker !== agent && typeof worker.cancel === 'function') {
+        try { worker.cancel({ kind: 'parent' }) } catch { /* Old results are rejected by the new branch. */ }
+      }
+    }
     const rolled = storyTimeline.apply({ chat, intent: rollbackIntent })
     chat = rolled.chat
+    chat.regenInProgress = false
     if (rollbackCommitKey !== '') delete chat.nativeCommits[rollbackCommitKey]
     chat.tavernHelperLifecycleRevision = Math.max(0, Number(chat.tavernHelperLifecycleRevision) || 0) + 1
     chat.suppressedDshTurns = Array.from(new Set((Array.isArray(chat.suppressedDshTurns) ? chat.suppressedDshTurns : []).concat(
@@ -343,14 +367,12 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     delete chat.regeneratedDshTurns[String(hiddenTurn)]
     chat.updatedAt = Date.now()
     chat = await updateChat(chat.id, current => {
-      assertRollbackSnapshot(current, originalChat)
-      assertRollbackIdle(current)
+      if (!isDeepStrictEqual(rollbackBodyMessages(current), rollbackBodyMessages(originalChat)) || current.timeline?.branchId !== originalChat.timeline?.branchId) throw new Error('回退期间正文已被其他操作修改，请刷新后重试')
       return chat
     }, { source: 'rollback' })
 
     // 3) 原生消息面：用空消息替换最近一轮的所有 surface 节点（模型不再看到），UI 由客户端隐藏对应 turn tail
     try {
-      assertRollbackIdle(chat)
       session.append('assistant/message', {
         turn: rollbackSurface.turn,
         step: rollbackSurface.step,
@@ -376,8 +398,44 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       }
       throw error
     }
+    // Rewind immediately after the foreground commit; retain the timeline's retry
+    // boundary so the next task can safely retry if this best-effort step fails.
+    for (const participant of Object.values(storyTimeline.inspect({ chat }).participants || {})) {
+      if (participant.status !== 'needs-rewind' || !participant.sessionId) continue
+      let restoredHandle
+      try {
+        let worker = sessions.get(participant.sessionId)
+        let background = worker?.session || sessions.getSession?.(participant.sessionId)
+        if (!background && typeof sessions.resume === 'function') {
+          restoredHandle = await sessions.resume(participant.sessionId)
+          worker = restoredHandle.agent
+          background = worker?.session
+        }
+        if (!background) throw new Error('后台会话尚未加载，将在下次后台任务启动时重试')
+        if (worker?.phase?.kind === 'running') {
+          worker.cancel({ kind: 'parent' })
+        }
+        if (typeof worker?.whenIdle === 'function') {
+          let timeout
+          try {
+            await Promise.race([worker.whenIdle(), new Promise((_, reject) => {
+              timeout = setTimeout(() => reject(new Error('后台尚未停止，将在下次任务启动时重试')), 3000)
+            })])
+          } finally { clearTimeout(timeout) }
+        }
+        if (typeof sessions.flush !== 'function') throw new Error('当前宿主未提供后台会话保存接口')
+        rewindBackgroundSurface(background, participant.rewindTo)
+        await sessions.flush(background)
+      } catch (error) {
+        rollbackWarning = [rollbackWarning, '正文已回退，后台上下文回退未完成：' + str(error?.message || error)].filter(Boolean).join('；')
+      } finally {
+        if (restoredHandle) {
+          try { await restoredHandle.dispose() }
+          catch (error) { rollbackWarning = [rollbackWarning, '后台回退临时会话释放失败：' + str(error?.message || error)].filter(Boolean).join('；') }
+        }
+      }
+    }
     // Notify scripts only after both authoritative story and native surface have committed.
-    let rollbackWarning = ''
     try {
       await tavernScriptHostAdapter.dispatchEvent({ sessionId: chat.sessionId, chat, name: 'MESSAGE_DELETED', args: [(chat.messages || []).length] })
     } catch (error) { rollbackWarning = '回退已完成，但脚本联动失败：' + str(error?.message || error) }

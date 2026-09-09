@@ -392,6 +392,7 @@ export function createStoryTimeline(options = {}) {
     const operations = chat.timeline.operations
     for (const operation of Object.values(operations)) {
       if (operation.status === 'running' || (operation.kind === 'body' && operation.status === 'foreground-completed')) operation.status = 'cancelled'
+      if (['pending', 'running'].includes(operation.background?.phase)) operation.background = { ...operation.background, phase: 'cancelled' }
     }
     let restoredState
     if (checkpoint.before !== undefined) {
@@ -399,13 +400,17 @@ export function createStoryTimeline(options = {}) {
     } else {
       const beforeChat = object(intent.beforeChat)
       const expectedRevision = Math.max(0, Number(checkpoint.beforeRevision) || 0)
-      if (str(beforeChat.id) !== str(chat.id) || storageRevision(beforeChat) !== expectedRevision) {
-        const error = new Error('剧情 checkpoint 需要 storage revision ' + expectedRevision + ' 的历史 Chat')
-        error.code = 'CHECKPOINT_HISTORY_REQUIRED'
-        error.beforeRevision = expectedRevision
-        throw error
+      if (intent.allowMissingHistory === true) {
+        restoredState = snapshot(object(intent.legacyBefore))
+      } else {
+        if (str(beforeChat.id) !== str(chat.id) || storageRevision(beforeChat) !== expectedRevision) {
+          const error = new Error('剧情 checkpoint 需要 storage revision ' + expectedRevision + ' 的历史 Chat')
+          error.code = 'CHECKPOINT_HISTORY_REQUIRED'
+          error.beforeRevision = expectedRevision
+          throw error
+        }
+        restoredState = snapshot(beforeChat)
       }
-      restoredState = snapshot(beforeChat)
     }
     restore(chat, restoredState)
     const branchId = makeId('branch')
@@ -492,6 +497,7 @@ export function createStoryTimeline(options = {}) {
       chat.timeline.participants = participants
       for (const operation of Object.values(chat.timeline.operations)) {
         if (operation.status === 'running' || (operation.kind === 'body' && operation.status === 'foreground-completed')) operation.status = 'cancelled'
+      if (['pending', 'running'].includes(operation.background?.phase)) operation.background = { ...operation.background, phase: 'cancelled' }
       }
       chat.candidateAgent = null
       value = { status: 'restored', branchId, revision: chat.timeline.revision }

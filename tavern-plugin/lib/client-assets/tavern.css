@@ -577,3 +577,9 @@ body.dsh-tavern-shell-active [data-ref-chip="file"] { max-width: calc(100% - 4px
    hidden still permits focus/scrollIntoView to scroll the whole fixed host,
    stranding its tab bar above the viewport. Only pane content should scroll. */
 body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
+
+.dsh-tavern-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dsh-tavern-history-action { appearance: none; border: 0; background: transparent; color: inherit; font: inherit; padding: 4px 6px; border-radius: 4px; cursor: pointer; }
+.dsh-tavern-history-action:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: rgba(128, 128, 128, .12); }
+.dsh-tavern-history-action:disabled { opacity: .45; cursor: default; }
+.dsh-tavern-history-selection { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 7px; color: var(--dsw-alias-label-secondary); font-size: 12px; }

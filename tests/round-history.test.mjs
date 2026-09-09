@@ -233,14 +233,15 @@ test('读取 checkpoint 期间重新开始生成时，提交前再次拒绝回�
   assert.ok(!h.calls.includes('rollback'))
 })
 
-for (const kind of ['body', 'settlement', 'candidate']) test(kind + ' 时间线任务未完成时不依赖前台运行标记也能拦截', async () => {
+for (const kind of ['body', 'settlement', 'candidate']) test(kind + ' 未完成任务不阻塞回退，旧结果失效', async () => {
   const h = harness({ checkpoint: true })
   await h.options.chats.update('chat', current => h.timeline.apply({ chat: current, intent: kind === 'body'
     ? { kind: 'body.begin', turn: 3, userText: '继续' } : { kind: 'agent.begin', role: kind } }).chat, { source: 'fixture' })
   const before = structuredClone(h.chat)
-  await assert.rejects(h.create().rollback('session', 'chat'), /未完成/)
-  assert.deepEqual(h.chat, before)
-  assert.deepEqual(h.session.surface.nodes, [0, 1])
+  const operation = Object.values(h.timeline.inspect({ chat: before }).operations).find(op => op.status === 'running')
+  assert.equal((await h.create().rollback('session', 'chat')).messages.length, 1)
+  const late = h.timeline.complete({ chat: h.chat, operationId: operation.id, basedOn: operation.basedOn, outcome: { status: 'success' }, apply() { throw new Error('迟到结果不应执行') } })
+  assert.notEqual(late.value?.status, 'applied')
 })
 
 test('读取 checkpoint 时聊天变化不会被旧回退覆盖', async () => {
@@ -248,12 +249,12 @@ test('读取 checkpoint 时聊天变化不会被旧回退覆盖', async () => {
   const read = h.options.chats.readRevision
   h.options.chats.readRevision = async (...args) => {
     const result = await read(...args)
-    await h.options.chats.update('chat', current => ({ ...current, posture: '新的状态' }), { source: 'fixture' })
+    await h.options.chats.update('chat', current => ({ ...current, messages: [...current.messages, { role: 'user', text: '并发输入' }] }), { source: 'fixture' })
     return result
   }
   await assert.rejects(h.create().rollback('session', 'chat'), /其他操作修改/)
-  assert.equal(h.chat.posture, '新的状态')
-  assert.equal(h.chat.messages.length, 3)
+  assert.equal(h.chat.messages.at(-1).text, '并发输入')
+  assert.equal(h.chat.messages.length, 4)
   assert.deepEqual(h.session.surface.nodes, [0, 1])
 })
 
@@ -438,4 +439,75 @@ test('旧剧本回退保留迁移恢复路径；非游玩模式拒绝回退', as
   const card = harness({ mode: 'card' })
   await assert.rejects(card.create().rollback('session', 'chat'), /仅游玩模式/)
   assert.deepEqual(card.calls, [])
+})
+
+test('回退中断前台并重新读取结束后的聊天，不等待后台退出', async () => {
+  const h = harness({ checkpoint: true })
+  h.agent.phase.kind = 'running'
+  h.agent.cancel = cause => { assert.equal(cause.kind, 'user'); h.calls.push('cancel-front') }
+  h.agent.whenIdle = async () => { h.agent.phase.kind = 'idle' }
+  h.options.cancelSettlement = async (_id, options) => { assert.equal(options.wait, false); h.calls.push('cancel-background') }
+  const result = await h.create().rollback('session', 'chat')
+  assert.equal(result.messages.length, 1)
+  assert.ok(h.calls.indexOf('cancel-front') < h.calls.indexOf('rollback'))
+  assert.ok(h.calls.includes('cancel-background'))
+})
+
+test('后台历史快照缺失时仍回退正文，保留当前状态并提示', async () => {
+  const h = harness({ checkpoint: true })
+  h.options.chats.readRevision = async () => undefined
+  const result = await h.create().rollback('session', 'chat')
+  assert.equal(result.messages.length, 1)
+  assert.equal(result.posture, '门内')
+  assert.match(result.rollbackWarning, /后台历史快照不可用/)
+})
+
+test('历史后台 pending 标记不会永久锁住连续回退', async () => {
+  const h = harness({ checkpoint: true })
+  await h.options.chats.update('chat', current => { current.timeline.operations.old = { id: 'old', kind: 'body', status: 'completed', background: { phase: 'pending' } }; return current }, { source: 'fixture' })
+  assert.equal((await h.create().rollback('session', 'chat')).messages.length, 1)
+  assert.equal(h.chat.timeline.operations.old.background.phase, 'cancelled')
+})
+
+test('读取历史期间后台更新变量不阻塞正文回退', async () => {
+  const h = harness({ checkpoint: true })
+  const read = h.options.chats.readRevision
+  h.options.chats.readRevision = async (...args) => {
+    const result = await read(...args)
+    await h.options.chats.update('chat', current => { current.messages.at(-1).variables = [{ hp: 9 }]; current.posture = '后台刚更新'; return current }, { source: 'fixture' })
+    return result
+  }
+  assert.equal((await h.create().rollback('session', 'chat')).messages.length, 1)
+})
+
+test('rollback immediately rewinds and flushes background surface, failure only warns', async () => {
+  for (const [fail, unloaded] of [[false, false], [true, false], [false, true]]) {
+    const h = harness({ checkpoint: true })
+    const participant = { role: 'background', lifetime: 'chat', sessionId: 'bg', boundary: 0, status: 'current', branchId: h.chat.timeline.branchId }
+    h.chat.timeline.checkpoints[0].participants = { background: participant }
+    h.chat.timeline.participants.background = participant
+    const source = { kind: 'model', provider: 'fixture', model: 'fixture' }
+    const bg = { events: [{ seq: 0, type: 'turn/end' }, { seq: 1, type: 'assistant/message', data: { turn: 2, message: { source, content: [] } } }], surface: { nodes: [1] }, append(type, data, options) {
+      if (fail) throw new Error('background unavailable')
+      h.calls.push('background.rewind')
+      assert.equal(options.surfaceOp.start, 1)
+      this.surface.nodes = []
+    } }
+    const worker = { session: bg, cancel() {}, async whenIdle() {} }
+    h.options.sessions = { get: id => id === 'bg' ? (unloaded ? undefined : worker) : h.agent,
+      resume: async id => { assert.equal(id, 'bg'); h.calls.push('background.resume'); return { agent: worker, dispose: async () => h.calls.push('background.dispose') } },
+      flush: async () => h.calls.push('background.flush') }
+    const result = await h.create().rollback('session')
+    assert.equal(result.messages.length, 1)
+    if (fail) assert.match(result.rollbackWarning, /background unavailable/)
+    else {
+      assert.ok(h.calls.includes('background.rewind'))
+      assert.ok(h.calls.includes('background.flush'))
+      if (unloaded) {
+        assert.ok(h.calls.includes('background.resume'))
+        assert.ok(h.calls.indexOf('background.dispose') > h.calls.indexOf('background.flush'))
+      }
+      assert.ok(h.calls.indexOf('surface:assistant/message') < h.calls.indexOf('background.rewind'))
+    }
+  }
 })
