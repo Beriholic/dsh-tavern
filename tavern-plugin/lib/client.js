@@ -4108,7 +4108,7 @@ window.__ModuleLoader__.load({
 				const body = hostWindow.document && hostWindow.document.body;
 				if (!body || typeof hostWindow.getComputedStyle !== "function") return;
 				const value = parseFloat(hostWindow.getComputedStyle(body).getPropertyValue("--dsh-content-font-size"));
-				const fontSize = Number.isFinite(value) && value >= 8 && value <= 48 ? value : 14;
+				const fontSize = props.followContentFont !== false && Number.isFinite(value) && value >= 8 && value <= 48 ? value : 14;
 				if (!document && fontSize === lastFontSize) return;
 				lastFontSize = fontSize;
 				channels.forEach(function (channel, token) {
@@ -7358,6 +7358,7 @@ window.__ModuleLoader__.load({
 				trustedCardMode: Boolean(view.tavernRuntimePolicy && view.tavernRuntimePolicy.trustedCardMode),
 				eager: true,
 				persistent: true,
+				followContentFont: false,
 				executeSlash: props.executeSlash,
 				observeMvuView: false,
 				runtimeReporting: true
