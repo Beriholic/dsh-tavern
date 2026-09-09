@@ -48,9 +48,12 @@ function Assert-LastCommand([string]$Message) {
 }
 
 $PreviousNpmRegistry = $env:npm_config_registry
+$PreviousPnpmRegistry = $env:pnpm_config_registry
 try {
   # Child npm/pnpm processes, including Profile and plugin installs, inherit this.
   $env:npm_config_registry = if ($env:DSH_TAVERN_NPM_REGISTRY) { $env:DSH_TAVERN_NPM_REGISTRY } else { 'https://registry.npmmirror.com' }
+  # pnpm 11 reads pnpm_config_* instead of npm_config_*.
+  $env:pnpm_config_registry = $env:npm_config_registry
   if (-not (Test-Command 'node')) {
     Start-Process 'https://nodejs.org/'
     throw '未找到 Node.js。请安装 Node.js 22.19 或更高版本，然后重新运行本命令。'
@@ -249,6 +252,7 @@ catch {
 }
 finally {
   $env:npm_config_registry = $PreviousNpmRegistry
+  $env:pnpm_config_registry = $PreviousPnpmRegistry
   if (Test-Path $TempDir) {
     Remove-Item -LiteralPath $TempDir -Recurse -Force
   }
