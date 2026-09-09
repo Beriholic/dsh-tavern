@@ -475,3 +475,17 @@ test('旧 checkpoint 丢失直接来源时向前恢复最近的有效后台边�
   assert.equal(begun.value.participant.sessionId, 'background-old')
   assert.equal(begun.value.participant.rewindTo, 42)
 })
+
+test('导入后的旧快照没有后台身份，反复回退仍复用已创建的后台', () => {
+  const { timeline, chat } = harness()
+  let current = timeline.apply({ chat, intent: { kind: 'ensure' } }).chat
+  current.timeline.participants.background = { role: 'background', lifetime: 'chat', sessionId: '', boundary: null, status: 'needs-session' }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    current = beginAndCommitBody(timeline, current, 2, '行动', '正文')
+    current.timeline.participants.background = { role: 'background', lifetime: 'chat', sessionId: 'same-background', boundary: 42 + attempt, status: 'current' }
+    current = rollback(timeline, current).chat
+    assert.equal(current.timeline.participants.background.sessionId, 'same-background')
+    assert.equal(current.timeline.participants.background.status, 'needs-rewind')
+    assert.equal(current.timeline.participants.background.rewindTo, -1)
+  }
+})

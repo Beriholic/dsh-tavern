@@ -5,6 +5,14 @@ export function rewindBackgroundSurface(session, boundary) {
   if (!Number.isSafeInteger(boundary)) return 0
   const events = sessionEvents(session)
   const nodes = session && session.surface && Array.isArray(session.surface.nodes) ? session.surface.nodes : []
+  if (boundary === -1) {
+    // Preserve the fixed system-context seed while discarding previous task work.
+    for (const seq of nodes) {
+      const event = events[seq]
+      const id = event?.data?.message?.id || event?.data?.id || ''
+      if (String(id).startsWith('tavern-session-prefix:')) boundary = Math.max(boundary, seq)
+    }
+  }
   const shadowed = nodes.filter(function (seq) { return Number.isSafeInteger(seq) && seq > boundary })
   if (shadowed.length === 0) return 0
   let source = null

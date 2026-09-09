@@ -416,12 +416,18 @@ export function createStoryTimeline(options = {}) {
     const branchId = makeId('branch')
     const restoredParticipants = object(checkpoint.participants || restoredState && restoredState.participants)
     const nextParticipants = {}
-    for (const role of Object.keys(restoredParticipants)) {
+    for (const role of new Set([...Object.keys(restoredParticipants), ...Object.keys(currentParticipants)])) {
+      const currentParticipant = object(currentParticipants[role])
       const participant = object(restoredParticipants[role])
-      if (!persistentParticipant(participant.lifetime)) continue
+      if (!persistentParticipant(participant.lifetime) && !persistentParticipant(currentParticipant.lifetime)) continue
       let source = participantCheckpointSource(participant) || earlierParticipantSource(checkpoints, role)
       source = sourceSurvivesCompaction(participant, source)
       source = sourceSurvivesCompaction(object(currentParticipants[role]), source)
+      // A checkpoint owns story state, not the identity of the resident worker.
+      // Imported history may precede its first task: reset task context in place.
+      if (source === null && str(currentParticipant.sessionId) !== '' && currentParticipant.requiresNewSessionOnRewind !== true) {
+        source = { sessionId: currentParticipant.sessionId, boundary: -1 }
+      }
       nextParticipants[role] = {
         role,
         lifetime: 'chat',

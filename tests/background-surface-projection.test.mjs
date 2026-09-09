@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { backgroundSuppressedTurns } from '../tavern-plugin/lib/domain/background-surface.js'
+import { backgroundSuppressedTurns, rewindBackgroundSurface } from '../tavern-plugin/lib/domain/background-surface.js'
 test('durable rollback excludes tool and reasoning turns including older rollback records', () => {
   const events = [
     { type: "projection-cache", data: { turn: 1 } },
@@ -14,4 +14,15 @@ test('durable rollback excludes tool and reasoning turns including older rollbac
   ]
   assert.deepEqual(backgroundSuppressedTurns(events), [3, 4, 5])
   assert.deepEqual(backgroundSuppressedTurns(events.slice(0, 5)), [])
+})
+
+test('reset reuses the session and retains its fixed prefix while removing task context', () => {
+  let replacement
+  const session = { surface: { nodes: [0, 1, 2] }, events: [
+    { type: 'user/message', data: { id: 'tavern-session-prefix:bg' } },
+    { type: 'user/message', data: { id: 'task' } },
+    { type: 'assistant/message', data: { turn: 1, message: { source: { kind: 'model' } } } }
+  ], append(type, data, options) { replacement = options.surfaceOp } }
+  assert.equal(rewindBackgroundSurface(session, -1), 2)
+  assert.deepEqual(replacement, { op: 'replace', start: 1, end: 2 })
 })
