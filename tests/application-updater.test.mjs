@@ -789,3 +789,24 @@ test('Windows UI 更新通过短生命周期 helper 与服务进程树脱钩', a
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('更新诊断跨检查保留回退和网络原因，并可在重启后读取', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'tavern-update-diagnostics-'))
+  try {
+    const options = { dataRoot: root, sourceRoot: root, runtimeHost: 'desktop', ...verifiedUpdate,
+      fetchCdnMetadata: async () => { throw new Error('清单缺少发布序号') },
+      fetchManifest: async () => { throw Object.assign(new Error('fetch failed https://user:secret@example.test/meta?token=secret'), { cause: Object.assign(new Error('connect timeout'), { code: 'ETIMEDOUT' }) }) },
+    }
+    const updater = createApplicationUpdater(options)
+    assert.equal((await updater.check()).phase, 'check-failed')
+    const recovered = createApplicationUpdater({ ...options, fetchManifest: verifiedUpdate.fetchManifest })
+    assert.equal((await recovered.check()).phase, 'update-available')
+    const records = recovered.diagnostics().records
+    assert.equal(new Set(records.filter(r => r.event === 'check.started').map(r => r.attemptId)).size, 2)
+    assert.ok(records.some(r => r.event === 'fallback.github' && r.reason.includes('发布序号')))
+    assert.ok(records.some(r => r.event === 'github.version.failed' && r.cause.code === 'ETIMEDOUT' && r.durationMs >= 0))
+    assert.ok(records.some(r => r.event === 'status' && r.phase === 'check-failed'))
+    assert.ok(records.some(r => r.event === 'status' && r.phase === 'update-available'))
+    assert.ok(!JSON.stringify(records).includes('secret'))
+  } finally { await rm(root, { recursive: true, force: true }) }
+})

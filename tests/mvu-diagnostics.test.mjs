@@ -214,3 +214,9 @@ test('诊断包包含界面按钮错误并脱敏', async () => {
   assert.match(result.buffer.toString(), /journey failed/)
   assert.doesNotMatch(result.buffer.toString(), /PRIVATE_TOKEN/)
 })
+
+test('现有日志 ZIP 包含独立更新诊断，不要求当前会话触发更新', async () => {
+  const result = await createMvuDiagnosticExport({ sessionId: 's', store: createMvuDiagnosticStore(storage()), updateDiagnostics: { version: 1, records: [{ event: 'github.version.failed', cause: { code: 'ETIMEDOUT' } }] } })
+  assert.match(result.buffer.toString(), /update\/diagnostics.json/)
+  assert.match(result.buffer.toString(), /ETIMEDOUT/)
+})
