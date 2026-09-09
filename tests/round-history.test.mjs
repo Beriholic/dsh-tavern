@@ -511,3 +511,71 @@ test('rollback immediately rewinds and flushes background surface, failure only 
     }
   }
 })
+
+test('真实重新生成与后台调度联动：连续三次只创建一个后台，撤回内容不进入下一请求', async () => {
+  const { createBackgroundAgentRunner } = await import('../tavern-plugin/lib/background-agent-runner.js')
+  const h = harness({ checkpoint: true })
+  const initial = { role: 'background', lifetime: 'chat', sessionId: '', boundary: null, status: 'needs-session' }
+  h.chat.timeline.checkpoints[0].participants = { background: initial }
+  h.chat.timeline.participants.background = initial
+  const requests = [], children = new Map()
+  let creates = 0, task = 0
+  const parent = { ...h.agent, id: 'session' }
+  const agents = {
+    get(id) { return id === 'session' ? parent : children.get(id) },
+    async create(options) {
+      creates++
+      await options.setup({ systemPrompt: { section() {}, variable() {}, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on() {} })
+      const events = []
+      const session = { id: options.sessionId, header: {}, events, surface: { nodes: [] }, append(type, data, options = {}) {
+        const seq = events.length
+        events.push({ seq, type, data, ...options })
+        if (options.surfaceOp === 'append') this.surface.nodes.push(seq)
+        else if (options.surfaceOp?.op === 'replace') {
+          const start = this.surface.nodes.indexOf(options.surfaceOp.start), end = this.surface.nodes.indexOf(options.surfaceOp.end)
+          assert.ok(start >= 0 && end >= start)
+          this.surface.nodes.splice(start, end - start + 1, seq)
+        }
+        return seq
+      } }
+      const agent = { session, followup(input) {
+        task++
+        session.append('user/message', { ...input, turn: task }, { surfaceOp: 'append' })
+        requests.push(JSON.stringify(session.surface.nodes.map(seq => events[seq].data)))
+        session.append('assistant/message', { turn: task, step: 1, message: { role: 'assistant', source: { kind: 'model', provider: 'test', model: 'fake' }, content: [{ type: 'text', text: 'obsolete-result-' + task }] } }, { surfaceOp: 'append' })
+        session.append('turn/end', { turn: task })
+      }, async whenIdle() {}, cancel() {} }
+      children.set(options.sessionId, agent)
+      return { agent, async dispose() {} }
+    },
+    async resume() { throw new Error('resident background should be reused') }
+  }
+  const runner = createBackgroundAgentRunner({ agents, id: () => 'background-' + (creates + 1), needsNewBackgroundSession: async () => h.chat.timeline.participants.background?.status === 'needs-session' })
+  h.options.queueSettlement = async () => {
+    const begun = h.timeline.apply({ chat: h.chat, intent: { kind: 'agent.begin', role: 'settlement' } })
+    await h.options.chats.write(begun.chat, { source: 'test.begin-background' })
+    const participant = begun.value.participant
+    const result = await runner.run({ sessionId: 'session', selection: { provider: 'test', model: 'fake' }, task: 'settlement', persistent: true,
+      persistentSessionId: participant.sessionId, rewindTo: participant.rewindTo,
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'current-work-' + (task + 1) }] }], system: 'test task', tools: [] })
+    const completed = h.timeline.complete({ chat: h.chat, operationId: begun.value.operationId, basedOn: begun.value.basedOn,
+      outcome: { status: 'success', participant: { sessionId: result.traceSessionId, boundary: result.traceBoundary, lifetime: 'chat' } } })
+    await h.options.chats.write(completed.chat, { source: 'test.complete-background' })
+  }
+  try {
+    await h.options.queueSettlement()
+    for (let index = 0; index < 3; index++) {
+      await h.create().regenerate('session', '')
+      assert.equal(h.chat.timeline.participants.background.sessionId, 'background-1')
+      assert.equal(creates, 1)
+    }
+    assert.equal(requests.length, 4)
+    for (let i = 1; i < requests.length; i++) {
+      for (let old = 1; old <= i; old++) {
+        assert.ok(!requests[i].includes('obsolete-result-' + old))
+        assert.ok(!requests[i].includes('current-work-' + old))
+      }
+      assert.ok(requests[i].includes('current-work-' + (i + 1)))
+    }
+  } finally { await runner.dispose() }
+})
