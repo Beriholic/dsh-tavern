@@ -84,3 +84,26 @@ function createWorldBookLibraryRefreshModule(options) {
 		}
 	});
 }
+
+function createUserProfileRefreshModule(options) {
+	let epoch = 0;
+	let fingerprint = null;
+	const refresh = createWorldBookLibraryRefreshModule({
+		load: async function () {
+			const started = epoch;
+			return { started: started, value: await options.load() };
+		},
+		onValue: function (result) {
+			if (result.started !== epoch) return;
+			if (options.onSuccess) options.onSuccess();
+			const next = JSON.stringify([result.value.userProfile, result.value.currentConversation]);
+			if (next === fingerprint) return;
+			fingerprint = next;
+			options.onValue(result.value);
+		},
+		onError: options.onError
+	});
+	return Object.freeze({ request: refresh.request, whenIdle: refresh.whenIdle, dispose: refresh.dispose,
+		invalidate: function () { epoch++; fingerprint = null; }
+	});
+}

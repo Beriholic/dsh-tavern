@@ -335,6 +335,29 @@ window.__ModuleLoader__.load({
 			});
 		}
 
+		function createUserProfileRefreshModule(options) {
+			let epoch = 0;
+			let fingerprint = null;
+			const refresh = createWorldBookLibraryRefreshModule({
+				load: async function () {
+					const started = epoch;
+					return { started: started, value: await options.load() };
+				},
+				onValue: function (result) {
+					if (result.started !== epoch) return;
+					if (options.onSuccess) options.onSuccess();
+					const next = JSON.stringify([result.value.userProfile, result.value.currentConversation]);
+					if (next === fingerprint) return;
+					fingerprint = next;
+					options.onValue(result.value);
+				},
+				onError: options.onError
+			});
+			return Object.freeze({ request: refresh.request, whenIdle: refresh.whenIdle, dispose: refresh.dispose,
+				invalidate: function () { epoch++; fingerprint = null; }
+			});
+		}
+
 		function openPlayChatDebugWorkspace(sourceSessionId, turn) {
 			return new Promise(function (resolve, reject) {
 				let settled = false;
@@ -6145,26 +6168,32 @@ window.__ModuleLoader__.load({
 			const [editing, setEditing] = React.useState(false);
 			const [injectionText, setInjectionText] = React.useState("");
 			const [busy, setBusy] = React.useState(false);
+			const [dimensionsOpen, setDimensionsOpen] = React.useState(false);
+			const [answersOpen, setAnswersOpen] = React.useState(false);
+			const editingRef = React.useRef(editing);
+			editingRef.current = editing;
+			const refreshRef = React.useRef(null);
 			const [error, setError] = usePersistentError("用户画像");
 			function applyResult(result) {
 				const next = result && result.userProfile || null;
 				setRecord(next);
 				if (result && Object.prototype.hasOwnProperty.call(result, "currentConversation")) setCurrentConversation(result.currentConversation || null);
-				if (!editing && next && next.confirmed) {
+				if (!editingRef.current && next && next.confirmed) {
 					setInjectionText(String(next.confirmed.injectionText || ""));
 				}
 			}
-			async function refresh() {
-				try {
-					applyResult(await rpc("getUserPreferenceProfile", { sessionId: sessionId }, sessionId));
-					setError("");
-				} catch (err) { setError(String(err && err.message || err)); }
-			}
 			React.useEffect(function () {
-				refresh();
-				function onData(event) { if (tavernDataChangeAffects(event, ["user-profile", "sessions"], "user-profile")) refresh(); }
+				const refresh = createUserProfileRefreshModule({
+					load: function () { return rpc("getUserPreferenceProfile", { sessionId: sessionId }, sessionId); },
+					onValue: applyResult,
+					onSuccess: function () { setError(""); },
+					onError: function (err) { setError(String(err && err.message || err)); }
+				});
+				refreshRef.current = refresh;
+				refresh.request();
+				function onData(event) { if (tavernDataChangeAffects(event, ["user-profile", "sessions"], "user-profile")) refresh.request(); }
 				window.addEventListener("dsh-tavern-data-changed", onData);
-				return function () { window.removeEventListener("dsh-tavern-data-changed", onData); };
+				return function () { refresh.dispose(); if (refreshRef.current === refresh) refreshRef.current = null; window.removeEventListener("dsh-tavern-data-changed", onData); };
 			}, [sessionId]);
 			function openAgentTask() {
 				window.dispatchEvent(new CustomEvent("dsh-tavern-open-user-profile-task"));
@@ -6172,8 +6201,10 @@ window.__ModuleLoader__.load({
 			async function toggleDefault() {
 				if (!record || !record.hasConfirmed || busy) return;
 				setBusy(true); setError("");
+				if (refreshRef.current) refreshRef.current.invalidate();
 				try {
 					const result = await rpc("setUserPreferenceProfileDefaultEnabled", { enabled: record.defaultEnabled !== true }, sessionId);
+					if (refreshRef.current) refreshRef.current.invalidate();
 					applyResult(result);
 					notifyTavernDataChanged(["user-profile"], "user-profile");
 				} catch (err) { setError(String(err && err.message || err)); }
@@ -6188,8 +6219,10 @@ window.__ModuleLoader__.load({
 				if (!injectionText.trim() || busy) return;
 				if (!window.confirm("保存后将成为新的已确认用户画像，仅影响以后新开的游戏。继续吗？")) return;
 				setBusy(true); setError("");
+				if (refreshRef.current) refreshRef.current.invalidate();
 				try {
 					const result = await rpc("updateUserPreferenceProfile", { expectedRevision: record.confirmedRevision, summary: record.confirmed.summary, injectionText: injectionText }, sessionId);
+					if (refreshRef.current) refreshRef.current.invalidate();
 					applyResult(result);
 					setEditing(false);
 					notifyTavernDataChanged(["user-profile"], "user-profile");
@@ -6230,24 +6263,24 @@ window.__ModuleLoader__.load({
 					) : h(React.Fragment, null,
 						h("div", { className: "dsh-tavern-status-label", style: { marginTop: "14px" } }, "实际生效的偏好"),
 						h("div", { className: "dsh-tavern-user-profile-text" }, String(confirmed.injectionText || "")),
-						dimensions.length ? h("details", null,
+						dimensions.length ? h("details", { open: dimensionsOpen, onToggle: function (event) { setDimensionsOpen(event.currentTarget.open); } },
 							h("summary", null, "偏好维度 · " + dimensions.length),
-							dimensions.map(function (item, index) {
+							dimensionsOpen ? dimensions.map(function (item, index) {
 								return h("div", { key: item.id || index, className: "dsh-tavern-user-profile-dimension" },
 									h("b", null, String(item.label || item.id || "偏好")),
 									h("p", null, String(item.conclusion || "")),
 									h("div", { className: "dsh-tavern-user-profile-meta" }, "置信度：" + String(item.confidence || "uncertain") + (item.evidence ? " · 依据：" + String(item.evidence) : ""))
 								);
-							})
+							}) : null
 						) : null,
-						rawAnswers.length ? h("details", null,
+						rawAnswers.length ? h("details", { open: answersOpen, onToggle: function (event) { setAnswersOpen(event.currentTarget.open); } },
 							h("summary", null, "原始回答 · " + rawAnswers.length),
-							rawAnswers.map(function (item, index) {
+							answersOpen ? rawAnswers.map(function (item, index) {
 								return h("div", { key: index, className: "dsh-tavern-user-profile-dimension" },
 									h("b", null, String(item.question || "问题")),
 									h("p", null, String(item.answer || ""))
 								);
-							})
+							}) : null
 						) : null,
 						h("div", { className: "dsh-tavern-user-profile-actions" },
 							h("button", { className: "dsh-tavern-script-primary", onClick: beginEdit }, "直接修改"),
