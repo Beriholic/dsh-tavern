@@ -7707,10 +7707,13 @@ window.__ModuleLoader__.load({
 			candidatePanel.listeners.forEach(function (listener) { listener(value); });
 		}
 		function useCandidatePanel() {
-			const [value, setValue] = React.useState(candidatePanel.value);
-			React.useEffect(function () { candidatePanel.listeners.add(setValue); return function () { candidatePanel.listeners.delete(setValue); }; }, []);
-			return value;
+			return React.useSyncExternalStore(subscribeCandidatePanel, candidatePanelSnapshot, candidatePanelSnapshot);
 		}
+		function subscribeCandidatePanel(listener) {
+			candidatePanel.listeners.add(listener);
+			return function () { candidatePanel.listeners.delete(listener); };
+		}
+		function candidatePanelSnapshot() { return candidatePanel.value; }
 		function readyCandidatePanel(sessionId, messageId, candidates) {
 			const value = candidates && typeof candidates === "object" ? candidates : {};
 			return {
