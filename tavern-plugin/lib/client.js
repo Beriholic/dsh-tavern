@@ -6201,7 +6201,7 @@ window.__ModuleLoader__.load({
 				React.createElement("h3", null, "后台结算"),
 				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "仅影响新游戏。游戏开场时，后台任务配置和工具列表已固化，无法通过修改此处配置改变已有游戏。旧版本存档首次加载时固定当前配置。"),
 				React.createElement("div", { className: "dsh-tavern-settings-group" },
-					[["ledger", "台账维护（实验）", "整理物品、角色和地点，供玩家查阅，不注入前台。默认关闭，可在新游戏开场前启用。"], ["variables", "变量结算", "MVU 卡强烈建议不要关闭。关闭后剧情仍会推进，但变量和状态栏可能不再同步。普通卡不执行此任务。"], ["posture", "人物姿势结算", "总结本轮结束时人物的位置、动作和姿势。"], ["characterDesign", "人物设计档案", "按需建立、补充人物档案。人物较多时会增加等待时间和 Token 用量；关闭后候选任务也不再自动设计人物。"]].map(function (item) {
+					[["variables", "变量结算", "MVU 卡强烈建议不要关闭。关闭后剧情仍会推进，但变量和状态栏可能不再同步。普通卡不执行此任务。"], ["posture", "人物姿势结算", "总结本轮结束时人物的位置、动作和姿势。"], ["characterDesign", "人物设计档案", "按需建立、补充人物档案。人物较多时会增加等待时间和 Token 用量；关闭后候选任务也不再自动设计人物。"]].map(function (item) {
 						return React.createElement("label", { key: item[0], className: "dsh-tavern-settings-row" },
 							React.createElement("span", { className: "dsh-tavern-settings-copy" }, React.createElement("span", { className: "dsh-tavern-settings-title" }, item[1]), React.createElement("span", { className: "dsh-tavern-settings-desc" }, item[2])),
 							React.createElement("span", { className: "dsh-tavern-settings-switch" }, React.createElement("input", { type: "checkbox", checked: state.backgroundTasks[item[0]], disabled: state.loading || state.busy, "aria-label": item[1], onChange: function (event) { void setBackgroundTask(item[0], event.target.checked); } }), React.createElement("span", { className: "dsh-tavern-settings-track", "aria-hidden": "true" })));
@@ -7975,7 +7975,7 @@ window.__ModuleLoader__.load({
 		function TavernLedger(props) {
 		  const h = React.createElement;
 		  const ledger = props.ledger || { items: [], npcs: [], scenes: [], itemLog: [], locationPath: [], updatedTurn: null };
-		  const [open, setOpen] = React.useState(false);
+		  const [open, setOpen] = React.useState(true);
 		  const [tab, setTab] = React.useState("items");
 		  const [editing, setEditing] = React.useState(null);
 		  const [busy, setBusy] = React.useState(false);
@@ -8059,12 +8059,12 @@ window.__ModuleLoader__.load({
 		  return h("section", { className: "dsh-tavern-status-section dsh-ledger", "aria-label": "游玩台账" },
 		    h("button", { type: "button", className: "dsh-ledger-toggle", "aria-expanded": open, onClick: () => setOpen(!open) }, "游玩台账", h("span", null, open ? "收起" : "查看")),
 		    open ? h("div", null,
-		      h("p", { className: "dsh-tavern-status-empty" }, "玩家备忘录，不发送给前台 AI。" + (ledger.updatedTurn === null ? "在设置 → 后台任务中开启台账维护；从后续轮次开始记录。" : "整理至第 " + ledger.updatedTurn + " 轮。")),
+		      h("p", { className: "dsh-tavern-status-empty" }, "玩家备忘录，不发送给前台 AI。" + (ledger.updatedTurn === null ? "暂无后台整理记录，可手动添加。" : "整理至第 " + ledger.updatedTurn + " 轮。")),
 		      ledger.location ? h("p", null, "当前地点：" + ledger.location) : null,
 		      h("div", { className: "dsh-ledger-tabs", role: "tablist", "aria-label": "台账分类" }, [["items", "物品"], ["npcs", "角色"], ["scenes", "地点"]].map(function ([id, label]) {
-		        return h("button", { key: id, type: "button", role: "tab", "aria-selected": tab === id, onClick: () => { setTab(id); setEditing(null); setError(""); } }, label + " " + ledger[id].length);
+		        return h("button", { key: id, type: "button", role: "tab", "aria-selected": tab === id, onClick: () => { setTab(id); setEditing(null); setError(""); } }, label, h("span", { className: "dsh-ledger-count" }, ledger[id].length));
 		      })),
-		      h("button", { type: "button", className: "dsh-tavern-btn", disabled: blocked, onClick: () => begin(null) }, "添加记录"),
+		      h("button", { type: "button", className: "dsh-ledger-add", disabled: blocked, onClick: () => begin(null) }, "＋ 添加记录"),
 		      error ? h("p", { className: "dsh-card-error", role: "alert" }, error) : null,
 		      editing ? h("form", { className: "dsh-ledger-form", onSubmit: e => { e.preventDefault(); save(); } },
 		        fields[editing.kind].map(function (key) {

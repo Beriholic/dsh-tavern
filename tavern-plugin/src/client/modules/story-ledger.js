@@ -2,7 +2,7 @@
 function TavernLedger(props) {
   const h = React.createElement;
   const ledger = props.ledger || { items: [], npcs: [], scenes: [], itemLog: [], locationPath: [], updatedTurn: null };
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = React.useState(true);
   const [tab, setTab] = React.useState("items");
   const [editing, setEditing] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
@@ -86,12 +86,12 @@ function TavernLedger(props) {
   return h("section", { className: "dsh-tavern-status-section dsh-ledger", "aria-label": "游玩台账" },
     h("button", { type: "button", className: "dsh-ledger-toggle", "aria-expanded": open, onClick: () => setOpen(!open) }, "游玩台账", h("span", null, open ? "收起" : "查看")),
     open ? h("div", null,
-      h("p", { className: "dsh-tavern-status-empty" }, "玩家备忘录，不发送给前台 AI。" + (ledger.updatedTurn === null ? "在设置 → 后台任务中开启台账维护；从后续轮次开始记录。" : "整理至第 " + ledger.updatedTurn + " 轮。")),
+      h("p", { className: "dsh-tavern-status-empty" }, "玩家备忘录，不发送给前台 AI。" + (ledger.updatedTurn === null ? "暂无后台整理记录，可手动添加。" : "整理至第 " + ledger.updatedTurn + " 轮。")),
       ledger.location ? h("p", null, "当前地点：" + ledger.location) : null,
       h("div", { className: "dsh-ledger-tabs", role: "tablist", "aria-label": "台账分类" }, [["items", "物品"], ["npcs", "角色"], ["scenes", "地点"]].map(function ([id, label]) {
-        return h("button", { key: id, type: "button", role: "tab", "aria-selected": tab === id, onClick: () => { setTab(id); setEditing(null); setError(""); } }, label + " " + ledger[id].length);
+        return h("button", { key: id, type: "button", role: "tab", "aria-selected": tab === id, onClick: () => { setTab(id); setEditing(null); setError(""); } }, label, h("span", { className: "dsh-ledger-count" }, ledger[id].length));
       })),
-      h("button", { type: "button", className: "dsh-tavern-btn", disabled: blocked, onClick: () => begin(null) }, "添加记录"),
+      h("button", { type: "button", className: "dsh-ledger-add", disabled: blocked, onClick: () => begin(null) }, "＋ 添加记录"),
       error ? h("p", { className: "dsh-card-error", role: "alert" }, error) : null,
       editing ? h("form", { className: "dsh-ledger-form", onSubmit: e => { e.preventDefault(); save(); } },
         fields[editing.kind].map(function (key) {
