@@ -104,6 +104,7 @@ window.__ModuleLoader__.load({
 								react.createElement("span", { className: "dsh-tavern-entry-state" }, state.online === true ? "在线" : (state.online === false ? "未启动" : "检测中…"))),
 							react.createElement("button", { type: "button", className: "dsh-tavern-entry-btn dsh-tavern-entry-manage", disabled: updating, onClick: startUpdate }, updating ? "更新中…" : "更新/修复")
 						),
+						react.createElement("div", { className: "dsh-tavern-entry-message" }, "点击无反应？复制安装完成时显示的完整酒馆地址，到手机浏览器地址栏打开；保持 DSHA 运行。"),
 						message || error ? react.createElement("div", { className: "dsh-tavern-entry-message" + (error || updateFailed ? " error" : "") }, error || message) : null
 					);
 				}

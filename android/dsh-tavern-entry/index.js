@@ -65,8 +65,8 @@ async function resolveAccessUrl({ dshHome, port, request }) {
   let offset = 0
   try { log = readFileSync(path.join(dshHome, 'logs', 'tavern.log')) } catch {}
   try {
-    const record = record(JSON.parse(readFileSync(path.join(dshHome, 'logs', 'tavern.pid.json'), 'utf8')))
-    if (Number(record.port) === port && Number.isSafeInteger(record.logOffset) && record.logOffset >= 0) offset = record.logOffset
+    const processRecord = record(JSON.parse(readFileSync(path.join(dshHome, 'logs', 'tavern.pid.json'), 'utf8')))
+    if (Number(processRecord.port) === port && Number.isSafeInteger(processRecord.logOffset) && processRecord.logOffset >= 0) offset = processRecord.logOffset
   } catch {}
   const candidate = webUrlFromLogChunk(log.subarray(offset).toString('utf8'))
   const candidates = []
