@@ -7480,7 +7480,6 @@ window.__ModuleLoader__.load({
 			const [guideError, setGuideError] = usePersistentError("Guide");
 			const [debugBusy, setDebugBusy] = React.useState(false);
 			const [settlementRetryBusy, setSettlementRetryBusy] = React.useState(false);
-			const [backgroundStopBusy, setBackgroundStopBusy] = React.useState(false);
 			const running = props.useSession(function (snapshot) { return snapshot.running; });
 			const latestMessageId = props.useChat(latestTavernAssistantMessageId);
 			const stateKey = String(running) + ":" + String(latestMessageId || "");
@@ -7519,15 +7518,6 @@ window.__ModuleLoader__.load({
 				} catch (err) { setGuideError(String(err && err.message || err)); }
 				finally { setGuideBusy(false); }
 			}
-			async function stopBackground() {
-				if (!view || backgroundStopBusy) return;
-				setBackgroundStopBusy(true);
-				try {
-					await rpc("stopBackground", { operationId: view.activity.operationId }, props.sessionId);
-					liveTavernView.invalidate(props.sessionId);
-				} catch (error) { tavernErrorHub.report("停止后台", error); }
-				finally { setBackgroundStopBusy(false); }
-			}
 			async function retrySettlement() {
 				if (!view || settlementRetryBusy) return;
 				setSettlementRetryBusy(true);
@@ -7555,7 +7545,6 @@ window.__ModuleLoader__.load({
 			return h("aside", { className: "dsh-tavern-status" },
 				h("div", { className: "dsh-tavern-status-head" },
 					h("div", { className: "dsh-tavern-status-title" }, "酒馆状态"),
-					view.activity && view.activity.busy ? h("button", { className: "dsh-tavern-btn", disabled: backgroundStopBusy, onClick: stopBackground }, backgroundStopBusy ? "正在停止…" : "停止后台") : null,
 					h("div", { className: "dsh-tavern-status-role" }, view.card.name),
 					(view.card.tags || []).length ? h("div", { className: "dsh-tavern-status-tags" }, (view.card.tags || []).slice(0, 8).map(function (tag) { return h("span", { key: tag, className: "dsh-tavern-status-tag" }, tag); })) : null,
 					h("div", { className: "dsh-tavern-status-settle" }, h("span", { className: "dsh-tavern-status-dot " + (view.settleStatus || "idle") }), statusText)
@@ -7953,6 +7942,24 @@ window.__ModuleLoader__.load({
 					h("button", { className: "dsh-tavern-question-free", disabled: panel.busy, onClick: function () { setBodyEditPanel(null); } }, "取消")));
 		}
 
+		function TavernStopBackgroundAction(props) {
+			const [busy, setBusy] = React.useState(false);
+			const state = useTavernCoordination(props.sessionId);
+			const activity = state.view && state.view.activity;
+			if (!activity || !activity.busy) return null;
+			async function stop() {
+				if (busy) return;
+				setBusy(true);
+				try {
+					await rpc("stopBackground", { operationId: activity.operationId }, props.sessionId);
+					liveTavernView.invalidate(props.sessionId);
+					tavernCoordination.invalidate(props.sessionId);
+				} catch (error) { tavernErrorHub.report("停止后台", error); }
+				finally { setBusy(false); }
+			}
+			return React.createElement("button", { type: "button", className: "dsh-tavern-choice-trigger", role: props.inMenu ? "menuitem" : undefined, disabled: busy, onClick: stop }, busy ? "正在停止…" : "停止后台");
+		}
+
 		function TavernMoreActions(props) {
 			const [open, setOpen] = React.useState(false);
 			const root = React.useRef(null);
@@ -7967,6 +7974,7 @@ window.__ModuleLoader__.load({
 			return React.createElement("div", { className: "dsh-tavern-more-actions", ref: root },
 				React.createElement("button", { type: "button", className: "dsh-tavern-choice-trigger", "aria-haspopup": "menu", "aria-expanded": open, onClick: function () { setOpen(function (value) { return !value; }); } }, "更多 ▾"),
 				React.createElement("div", { className: "dsh-tavern-more-menu", role: "menu", hidden: !open, onClick: function (event) { if (event.target && event.target.closest && event.target.closest("button:not(:disabled)")) setOpen(false); } },
+					React.createElement(TavernStopBackgroundAction, Object.assign({}, props, { inMenu: true })),
 					React.createElement(TavernEditBodyAction, props),
 					React.createElement(TavernRollbackAction, props),
 					React.createElement(TavernCompactionAction, Object.assign({}, props, { inMenu: true })))
@@ -7974,13 +7982,16 @@ window.__ModuleLoader__.load({
 		}
 
 		function CandidateDockActions(props) {
-			const sessionMode = useTavernSessionMode(props.sessionId);
+			const address = props.sessions && props.sessions.subagentAddress(props.sessionId);
+			const ownerSessionId = address ? address.parentSessionId : props.sessionId;
+			const sessionMode = useTavernSessionMode(ownerSessionId);
 			const latestMessageId = props.useChat(latestTavernAssistantMessageId);
 			const running = props.useSession(function (snapshot) { return snapshot.running === true; });
-			const live = useLiveTavernView(props.sessionId, String(running) + ":" + String(latestMessageId || ""));
+			const live = useLiveTavernView(ownerSessionId, String(running) + ":" + String(latestMessageId || ""));
 			const imageTurn = live.view && Array.isArray(live.view.replyProjections) ? live.view.replyProjections.reduce(function (latest, item) { return Math.max(latest, Number(item.turn) || 0); }, 0) : 0;
 			const h = React.createElement;
 			if (!sessionMode) return null;
+			if (address) return isPlayMode(sessionMode) ? h("div", { className: "dsh-tavern-dock-actions" }, h(TavernStopBackgroundAction, { sessionId: ownerSessionId })) : null;
 			return h("div", { className: "dsh-tavern-dock-actions" },
 				isPlayMode(sessionMode) && latestMessageId ? React.createElement(CandidateAction, Object.assign({}, props, { messageId: latestMessageId })) : null,
 				isPlayMode(sessionMode) && live.view && live.view.releaseCapabilities && live.view.releaseCapabilities.sceneImages ? React.createElement(SceneImageAction, { key: props.sessionId + ":" + imageTurn, sessionId: props.sessionId, turn: imageTurn, running: running }) : null,
@@ -8230,6 +8241,7 @@ window.__ModuleLoader__.load({
 			ctx.effect(() => slots.inject("conversation.input.dock", () => slots.register(
 				{ name: "conversation.input.dock", id: "dsh-tavern-candidate-actions", order: -130, label: "候选项操作" },
 				function (props) { return React.createElement(CandidateDockActions, Object.assign({}, props, {
+					sessions: ctx.sessions,
 					refreshSessions: function () { return typeof ctx.sessions.refresh === "function" ? ctx.sessions.refresh() : Promise.resolve(); },
 					executeCompact: function (sessionId) { return ctx.remote.commands.execute(sessionId, "/compact", []); }
 				})); }
