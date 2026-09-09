@@ -3040,6 +3040,55 @@ window.__ModuleLoader__.load({
 			});
 		}
 
+		// jQuery captures its owning document. Sharing the iframe's instance with
+		// the host would still send $('body') into the hidden script iframe.
+		function ensureTavernHostJQuery(host) {
+			if (host.jQuery && host.jQuery.fn && host.jQuery.fn.jquery) return Promise.resolve();
+			const doc = host.document;
+			const existing = doc.querySelector('script[data-dsh-tavern-host-jquery]');
+			if (existing && existing.tavernReady) return existing.tavernReady;
+			const script = doc.createElement('script');
+			script.setAttribute('data-dsh-tavern-host-jquery', '');
+			script.src = '/api/dsh-tavern/vendor/runtime-assets/jquery/jquery.min.js';
+			const previousDollar = host.$;
+			script.tavernReady = new Promise(function (resolve, reject) {
+				const timer = host.setTimeout(function () { finish(new Error('宿主 jQuery 加载超时')); }, 15000);
+				function finish(error) {
+					host.clearTimeout(timer);
+					script.onload = script.onerror = null;
+					script.remove();
+					if (error) reject(error); else resolve();
+				}
+				script.onload = function () {
+					if (!host.jQuery || !host.jQuery.fn || !host.jQuery.fn.jquery) return finish(new Error('宿主 jQuery 未初始化'));
+					if (previousDollar !== undefined && host.$ === host.jQuery) host.jQuery.noConflict();
+					finish();
+				};
+				script.onerror = function () { finish(new Error('宿主 jQuery 加载失败')); };
+			});
+			doc.head.appendChild(script);
+			return script.tavernReady;
+		}
+
+		function releaseTavernHostJQueryHandlers(host, frameWindow) {
+			const jq = host.jQuery;
+			if (!jq || !jq._data || !jq.event || !frameWindow || !frameWindow.Function) return;
+			// Callback realm identifies the retiring script even on shared document
+			// targets. Never remove a whole namespace owned by another component.
+			const targets = [host, host.document].concat(Array.from(host.document.querySelectorAll('*')));
+			for (const target of targets) {
+				if (!jq.hasData(target)) continue;
+				const events = jq._data(target, 'events') || {};
+				for (const handlers of Object.values(events)) {
+					for (const entry of Array.from(handlers)) {
+						if (entry.handler instanceof frameWindow.Function) {
+							jq.event.remove(target, entry.origType + (entry.namespace ? '.' + entry.namespace : ''), entry.handler, entry.selector);
+						}
+					}
+				}
+			}
+		}
+
 		function buildTavernHelperScriptParts(input) {
 			const scripts = Array.isArray(input && input.scripts)
 				? input.scripts
@@ -3075,13 +3124,15 @@ window.__ModuleLoader__.load({
 				+ 'const createMvuLoader=' + createMvuBundleLoader.toString() + ';\n'
 				+ 'const scripts=' + JSON.stringify(modules).replace(/</g, "\\u003c") + ';\n'
 				+ 'const token=' + JSON.stringify(metadata.token) + ';\n'
-				+ 'try{for(const script of scripts){window.__dshTavernHelperSetCurrentScript(script.id);try{'
+				+ 'try{'
+				+ (input && input.trustedCardMode ? 'const ensureHostJQuery=' + ensureTavernHostJQuery.toString() + ';await ensureHostJQuery(window.parent);\n' : '')
+				+ 'for(const script of scripts){window.__dshTavernHelperSetCurrentScript(script.id);try{'
 				+ 'if(script.system==="official-mvu"&&script.assetUrl){const loader=createMvuLoader({fetch:window.fetch.bind(window),evaluate:loadModule,onDiagnostic(diagnostic){parent.postMessage({type:"dsh-tavern-mvu-load-diagnostic",token,diagnostic},"*");},onState(state){parent.postMessage({type:"dsh-tavern-mvu-load-state",token,state},"*");}});'
 				+ 'const retry=event=>{if(event.source===parent&&event.data?.token===token&&event.data.type==="dsh-tavern-mvu-reload")loader.retry();};'
 				+ 'window.addEventListener("message",retry);window.addEventListener("pagehide",()=>loader.dispose(),{once:true});'
 				+ 'try{await loader.load(new URL(script.assetUrl,document.baseURI).href);}finally{window.removeEventListener("message",retry);}}else await loadModule(script.content);'
 				+ 'if(script.system==="official-mvu")await window.waitGlobalInitialized("Mvu");window.__dshTavernHelperSubscriptionsReady(script.id);'
-				+ '}catch(error){window.__dshTavernHelperSubscriptionsFailed(script.id,error);if(script.system==="official-mvu")break;}}}finally{window.__dshTavernResolveCompanionScriptsReady();}';
+				+ '}catch(error){window.__dshTavernHelperSubscriptionsFailed(script.id,error);if(script.system==="official-mvu")break;}}}catch(error){for(const script of scripts)window.__dshTavernHelperSubscriptionsFailed(script.id,error);}finally{window.__dshTavernResolveCompanionScriptsReady();}';
 			const moduleUrl = "data:text/javascript;base64," + encodeTavernScriptSource(loaderSource);
 			return {
 				head: tavernIconDependencies()
@@ -3264,6 +3315,7 @@ window.__ModuleLoader__.load({
 				}
 				if (record.initializationTimer) hostWindow.clearTimeout(record.initializationTimer);
 				if (record.mvuDataTimer) hostWindow.clearTimeout(record.mvuDataTimer);
+				if (record.trustedCardMode) releaseTavernHostJQueryHandlers(hostWindow, record.frame.contentWindow);
 				record.frame.remove();
 				if (record.hostArtifacts) record.hostArtifacts.dispose();
 				records.delete(id);
@@ -3418,7 +3470,7 @@ window.__ModuleLoader__.load({
 				frame.title = "人物卡共享脚本沙箱";
 				if (!trustedCardMode) frame.sandbox = "allow-scripts";
 				frame.referrerPolicy = "no-referrer";
-				frame.srcdoc = buildTavernHelperScriptDocument({ token: record.token, scripts: scripts, context: context });
+				frame.srcdoc = buildTavernHelperScriptDocument({ token: record.token, scripts: scripts, context: context, trustedCardMode: trustedCardMode });
 				frame.addEventListener("load", function () {
 					if (records.get(record.id) !== record) return;
 					record.loaded = true;
@@ -8963,6 +9015,8 @@ window.__ModuleLoader__.load({
 		exports.createTavernCardAppPresence = createTavernCardAppPresence;
 		exports.createTavernCardAppDock = createTavernCardAppDock;
 		exports.createTavernHelperScriptRuntime = createTavernHelperScriptRuntime;
+		exports.ensureTavernHostJQuery = ensureTavernHostJQuery;
+		exports.releaseTavernHostJQueryHandlers = releaseTavernHostJQueryHandlers;
 		exports.tavernScriptRuntimeReady = tavernScriptRuntimeReady;
 		exports.clampTavernFrameHeight = clampTavernFrameHeight;
 		exports.createTavernHelperContextUpdate = createTavernHelperContextUpdate;
