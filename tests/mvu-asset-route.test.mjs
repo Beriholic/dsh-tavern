@@ -135,7 +135,7 @@ test('RPC keeps malformed JSON rejection and scene-image byte limits before disp
     async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ text: '中'.repeat(6000) })) }
   })
   assert.equal(JSON.parse(large.body).ok, false)
-  assert.match(JSON.parse(large.body).error, /生图请求过大/)
+  assert.match(JSON.parse(large.body).error, /生图请求数据超过当前 16 KB/)
   assert.equal(calls, 0)
 })
 
@@ -148,4 +148,29 @@ test('完整模板产物通过正式路由发布，错误返回可读且不缓�
   const failed=await request(route({readFullPromptTemplateAsset:async()=>{throw new Error('asset mismatch')}}),{url:FULL_PROMPT_TEMPLATE_ASSET_PREFIX+'index.js'})
   assert.equal(failed.status,503)
   assert.equal(failed.headers['Cache-Control'],'no-store')
+})
+
+
+test('保存生图配置接受最多 2 MiB 的工作流请求，超过上限在 dispatch 前拒绝', async () => {
+  const calls = []
+  const handler = route({ TAVERN_RELEASE_CAPABILITIES: { sceneImages: true }, dispatch: async (method, args) => { calls.push({ method, args }); return { saved: true } } })
+  const overhead = Buffer.byteLength(JSON.stringify({ workflow: '' }))
+  for (const size of [32 * 1024, 2 * 1024 * 1024, 2 * 1024 * 1024 + 1]) {
+    const bytes = Buffer.from(JSON.stringify({ workflow: 'x'.repeat(size - overhead) }))
+    assert.equal(bytes.length, size)
+    const previous = calls.length
+    const result = await request(handler, { method: 'POST', url: '/api/dsh-tavern/saveSceneImageSettings', headers: {},
+      async *[Symbol.asyncIterator]() { yield bytes.subarray(0, 16000); yield bytes.subarray(16000) }
+    })
+    if (size <= 2 * 1024 * 1024) {
+      assert.equal(JSON.parse(result.body).ok, true)
+      assert.equal(calls.length, previous + 1)
+      assert.equal(calls.at(-1).method, 'saveSceneImageSettings')
+      assert.equal(calls.at(-1).args.workflow.length, size - overhead)
+    } else {
+      assert.equal(JSON.parse(result.body).ok, false)
+      assert.match(JSON.parse(result.body).error, /工作流与配置数据超过当前 2 MB/)
+      assert.equal(calls.length, previous)
+    }
+  }
 })
