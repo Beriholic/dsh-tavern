@@ -338,7 +338,8 @@ export function createBackgroundAgentTask(options) {
 
   async function execute({ agent, state, traceSessionId, persistent }, input) {
     const runtimeInput = state.input
-    rewindSurface(agent.session, input.rewindTo)
+    try { rewindSurface(agent.session, input.rewindTo) }
+    catch (error) { console.warn('dsh-tavern: 后台历史回退未完成，继续当前任务:', str(error?.message || error)) }
     const removeTaskTools = installTaskTools(state, runtimeInput, agent.session)
     const cancel = function () { agent.cancel?.({ kind: 'user' }) }
     input.signal?.addEventListener('abort', cancel, { once: true })

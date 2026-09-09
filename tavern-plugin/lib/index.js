@@ -1932,11 +1932,13 @@ export async function apply(ctx) {
     settlementJobs.set(chatId, job)
     return job.promise
   }
-  async function cancelSettlement(chatId) {
+  async function cancelSettlement(chatId, options = {}) {
     const job = settlementJobs.get(chatId)
     if (job === undefined) return false
     job.controller.abort()
-    await job.promise.catch(function () {})
+    if (options.wait === false) {
+      if (settlementJobs.get(chatId) === job) settlementJobs.delete(chatId)
+    } else await job.promise.catch(function () {})
     return true
   }
   const mvuSettlementReconciler = createMvuSettlementReconciler({
