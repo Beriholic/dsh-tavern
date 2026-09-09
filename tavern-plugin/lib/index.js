@@ -1823,6 +1823,7 @@ export async function apply(ctx) {
           const ledger = createLedgerSubmission({ enabled: backgroundTasksSettings.ledger, current: snapshot.ledger, turn: settlementTurn(snapshot) })
           let settlementToolTail = Promise.resolve()
           const run = await backgroundAgentRunner.run({
+            onPersistentSessionReady: id => taskRun.bindSession(id),
             task: 'settlement',
             persistent: true,
             persistentSessionId: backgroundSessionId,

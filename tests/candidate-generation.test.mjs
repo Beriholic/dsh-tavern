@@ -676,3 +676,13 @@ test('候选 Agent 使用宏解析后的 Session 正文而不是原始 sourceTex
   assert.match(JSON.stringify(run.modelRequests[0].messages), /叶天邪走进白伊甸校园/)
   assert.doesNotMatch(JSON.stringify(run.modelRequests[0].messages), /\{\{user\}\}/)
 })
+
+test('first candidate interrupted before a result keeps its bound session for retry', async () => {
+  const run = harness({ outputs: [async input => {
+    await input.onPersistentSessionReady('background-bound-before-result');
+    throw new Error('interrupted');
+  }, JSON.stringify({ choices: storyChoices })] });
+  await assert.rejects(run.candidates.generate({ sessionId: 'session-1', messageId: 'first' }));
+  await run.candidates.generate({ sessionId: 'session-1', messageId: 'first' });
+  assert.equal(run.modelRequests[1].persistentSessionId, 'background-bound-before-result');
+});

@@ -306,3 +306,18 @@ test('MVU 三项全关不会发起任何后台模型请求', async () => {
   assert.equal(run.get().settleStatus, 'done')
   assert.equal(run.get().messages.at(-1).mvu.receipt.status, 'skipped')
 })
+
+test('non-MVU settlement binds session before first response so interruption can reuse it', async () => {
+  const h = await harness({ beginRunning: false, mvu: false });
+  let bound = false;
+  h.sandbox.backgroundAgentRunner.run = async input => {
+    await input.onPersistentSessionReady('background-first-interrupted');
+    bound = true;
+    throw new Error('first request interrupted before response');
+  };
+  await h.sandbox.queueSettlement('chat');
+  assert.equal(bound, true);
+  const restarted = createBackgroundTaskCoordinator({ timeline: h.timeline, store: h.store });
+  const next = await restarted.begin(h.get(), 'candidate');
+  assert.equal(next.participantRequest.sessionId, 'background-first-interrupted');
+});
