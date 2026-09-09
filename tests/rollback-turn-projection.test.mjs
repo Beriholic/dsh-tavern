@@ -15,7 +15,7 @@ function row(kind, turn, alpha) {
     style: { display: '' }, previousElementSibling: null,
     getAttribute(name) { return attrs[name] ?? null },
     querySelector(selector) {
-      return kind === 'turn-tail' && selector === '[data-turn-tail]'
+      return !alpha && kind === 'turn-tail' && selector === '[data-turn-tail]'
         ? { getAttribute() { return String(turn) } } : null
     }
   }

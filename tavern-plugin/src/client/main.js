@@ -7105,6 +7105,7 @@ window.__ModuleLoader__.load({
 		}
 		function tailTurnOf(el) {
 			if (!el) return "";
+			if (el.getAttribute("data-chat-turn")) return el.getAttribute("data-chat-turn");
 			if (el.getAttribute("data-turn-tail")) return el.getAttribute("data-turn-tail");
 			const inner = el.querySelector("[data-turn-tail]");
 			return inner ? inner.getAttribute("data-turn-tail") : "";
