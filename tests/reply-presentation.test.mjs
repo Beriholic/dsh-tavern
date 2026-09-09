@@ -350,3 +350,18 @@ test('recovers a missing now_plot wrapper only for an active card bubble rendere
   const wrapped = '<now_plot>' + text + '</now_plot>'
   assert.equal(projectReplyLayers(wrapped, { regexScripts: [renderer] }).displayText, '<div data-renderer="@bubble">' + text + '</div>')
 })
+
+test('模型协议标记夹在前言、思考与正文之间时仍保留 Markdown 分段', () => {
+  const source = '前言\n<thinking>简短分析</thinking>\n<content>\n第一段。\n\n第二段。\n</content>'
+  const result = projectReplyLayers(source)
+  assert.equal(result.sessionText, source)
+  assert.ok(result.displayParts.every(part => part.kind === 'markdown'))
+  assert.match(result.displayParts.map(part => part.text).join(''), /第一段。\n\n第二段。/)
+  assert.doesNotMatch(result.displayParts.map(part => part.text).join(''), /<\/?(?:thinking|content)>/)
+})
+
+ test('正文中的独立注释不创建空 iframe，真正 HTML 内的注释保留', () => {
+  const result = projectDisplayParts('<thinking>分析</thinking>\n<content><!-- 写作备注 -->\n第一段。\n\n第二段。</content>')
+  assert.ok(result.parts.every(part => part.kind === 'markdown'))
+  assert.deepEqual(projectDisplayParts('<div><!-- UI 注释 -->面板</div>').parts, [{ kind: 'html', content: '<div><!-- UI 注释 -->面板</div>' }])
+})

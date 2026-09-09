@@ -110,7 +110,13 @@ function splitHtmlBoundaries(source, editing = false) {
     if (token[2]) continue // Inline code is prose, never executable HTML.
     const tag = (token[1] || '').toLowerCase()
     const closing = /^<\//.test(token[0])
-    if (editing && isNarrativeTag(tag, token[0])) {
+    if (!editing && start < 0 && /^<!--/.test(token[0])) {
+      append('text', source.slice(cursor, token.index))
+      append('marker', token[0])
+      cursor = tokens.lastIndex
+      continue
+    }
+    if (isNarrativeTag(tag, token[0]) && (editing || ['content', 'gametxt', 'thinking', 'think', 'analysis'].includes(tag))) {
       if (start < 0) {
         append('text', source.slice(cursor, token.index))
         append('marker', token[0])
@@ -198,7 +204,7 @@ export function projectDisplayParts(value) {
   return {
     parts: segments.flatMap(function (segment) {
       if (segment.kind === 'html') return { kind: 'html', content: segment.content }
-      return splitPlainSegment(segment.text).map(function (part) {
+      return splitPlainSegment(segment.text).filter(part => part.kind !== 'marker').map(function (part) {
         return part.kind === 'html'
           ? { kind: 'html', content: part.content }
           : { kind: 'markdown', text: part.text }
