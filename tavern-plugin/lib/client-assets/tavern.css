@@ -583,3 +583,25 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-history-action:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: rgba(128, 128, 128, .12); }
 .dsh-tavern-history-action:disabled { opacity: .45; cursor: default; }
 .dsh-tavern-history-selection { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 7px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+
+/* Player notebook: fixed UI typography, independent of story font settings. */
+.dsh-ledger { font-size: 13px; line-height: 1.55; }
+.dsh-ledger button { cursor: pointer; color: inherit; }
+.dsh-ledger-toggle { display: flex; justify-content: space-between; width: 100%; padding: 0; border: 0; background: transparent; font-size: 14px; font-weight: 600; }
+.dsh-ledger-toggle span { font-size: 12px; font-weight: 400; opacity: .65; }
+.dsh-ledger-tabs { display: flex; gap: 6px; margin: 12px 0; }
+.dsh-ledger-tabs button, .dsh-ledger-actions button { border: 1px solid var(--dsw-alias-border-subtle, #555); background: transparent; border-radius: 5px; padding: 4px 8px; font: inherit; }
+.dsh-ledger-tabs [aria-selected="true"] { color: #c68c50; border-color: #a66b35; }
+.dsh-ledger-card { margin: 8px 0; padding: 10px; border: 1px solid var(--dsw-alias-border-subtle, #555); border-radius: 7px; overflow-wrap: anywhere; }
+.dsh-ledger-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.dsh-ledger-actions { display: flex; flex-shrink: 0; gap: 5px; font-size: 12px; }
+.dsh-ledger p { margin: 5px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dsh-ledger small, .dsh-ledger-field-label { opacity: .65; }
+.dsh-ledger h4 { margin: 14px 0 6px; }
+.dsh-ledger-scene { margin: 8px 0 8px 8px; padding-left: 10px; border-left: 1px solid #a66b35; }
+.dsh-ledger-scene summary { cursor: pointer; overflow-wrap: anywhere; }
+.dsh-ledger-scene-content { padding: 5px 0; }
+.dsh-ledger-form { margin: 10px 0; padding: 10px; border: 1px solid #a66b35; border-radius: 6px; }
+.dsh-ledger-form label { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.dsh-ledger-form input:not([type="checkbox"]) { box-sizing: border-box; width: 100%; min-width: 0; padding: 6px; border: 1px solid #555; border-radius: 4px; color: inherit; background: transparent; font: inherit; }
+.dsh-ledger button:disabled { opacity: .45; cursor: default; }

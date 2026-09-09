@@ -2539,6 +2539,55 @@ window.__ModuleLoader__.load({
 			});
 		}
 
+		// jQuery captures its owning document. Sharing the iframe's instance with
+		// the host would still send $('body') into the hidden script iframe.
+		function ensureTavernHostJQuery(host) {
+			if (host.jQuery && host.jQuery.fn && host.jQuery.fn.jquery) return Promise.resolve();
+			const doc = host.document;
+			const existing = doc.querySelector('script[data-dsh-tavern-host-jquery]');
+			if (existing && existing.tavernReady) return existing.tavernReady;
+			const script = doc.createElement('script');
+			script.setAttribute('data-dsh-tavern-host-jquery', '');
+			script.src = '/api/dsh-tavern/vendor/runtime-assets/jquery/jquery.min.js';
+			const previousDollar = host.$;
+			script.tavernReady = new Promise(function (resolve, reject) {
+				const timer = host.setTimeout(function () { finish(new Error('宿主 jQuery 加载超时')); }, 15000);
+				function finish(error) {
+					host.clearTimeout(timer);
+					script.onload = script.onerror = null;
+					script.remove();
+					if (error) reject(error); else resolve();
+				}
+				script.onload = function () {
+					if (!host.jQuery || !host.jQuery.fn || !host.jQuery.fn.jquery) return finish(new Error('宿主 jQuery 未初始化'));
+					if (previousDollar !== undefined && host.$ === host.jQuery) host.jQuery.noConflict();
+					finish();
+				};
+				script.onerror = function () { finish(new Error('宿主 jQuery 加载失败')); };
+			});
+			doc.head.appendChild(script);
+			return script.tavernReady;
+		}
+
+		function releaseTavernHostJQueryHandlers(host, frameWindow) {
+			const jq = host.jQuery;
+			if (!jq || !jq._data || !jq.event || !frameWindow || !frameWindow.Function) return;
+			// Callback realm identifies the retiring script even on shared document
+			// targets. Never remove a whole namespace owned by another component.
+			const targets = [host, host.document].concat(Array.from(host.document.querySelectorAll('*')));
+			for (const target of targets) {
+				if (!jq.hasData(target)) continue;
+				const events = jq._data(target, 'events') || {};
+				for (const handlers of Object.values(events)) {
+					for (const entry of Array.from(handlers)) {
+						if (entry.handler instanceof frameWindow.Function) {
+							jq.event.remove(target, entry.origType + (entry.namespace ? '.' + entry.namespace : ''), entry.handler, entry.selector);
+						}
+					}
+				}
+			}
+		}
+
 		function buildTavernHelperScriptParts(input) {
 			const scripts = Array.isArray(input && input.scripts)
 				? input.scripts
@@ -2574,13 +2623,15 @@ window.__ModuleLoader__.load({
 				+ 'const createMvuLoader=' + createMvuBundleLoader.toString() + ';\n'
 				+ 'const scripts=' + JSON.stringify(modules).replace(/</g, "\\u003c") + ';\n'
 				+ 'const token=' + JSON.stringify(metadata.token) + ';\n'
-				+ 'try{for(const script of scripts){window.__dshTavernHelperSetCurrentScript(script.id);try{'
+				+ 'try{'
+				+ (input && input.trustedCardMode ? 'const ensureHostJQuery=' + ensureTavernHostJQuery.toString() + ';await ensureHostJQuery(window.parent);\n' : '')
+				+ 'for(const script of scripts){window.__dshTavernHelperSetCurrentScript(script.id);try{'
 				+ 'if(script.system==="official-mvu"&&script.assetUrl){const loader=createMvuLoader({fetch:window.fetch.bind(window),evaluate:loadModule,onDiagnostic(diagnostic){parent.postMessage({type:"dsh-tavern-mvu-load-diagnostic",token,diagnostic},"*");},onState(state){parent.postMessage({type:"dsh-tavern-mvu-load-state",token,state},"*");}});'
 				+ 'const retry=event=>{if(event.source===parent&&event.data?.token===token&&event.data.type==="dsh-tavern-mvu-reload")loader.retry();};'
 				+ 'window.addEventListener("message",retry);window.addEventListener("pagehide",()=>loader.dispose(),{once:true});'
 				+ 'try{await loader.load(new URL(script.assetUrl,document.baseURI).href);}finally{window.removeEventListener("message",retry);}}else await loadModule(script.content);'
 				+ 'if(script.system==="official-mvu")await window.waitGlobalInitialized("Mvu");window.__dshTavernHelperSubscriptionsReady(script.id);'
-				+ '}catch(error){window.__dshTavernHelperSubscriptionsFailed(script.id,error);if(script.system==="official-mvu")break;}}}finally{window.__dshTavernResolveCompanionScriptsReady();}';
+				+ '}catch(error){window.__dshTavernHelperSubscriptionsFailed(script.id,error);if(script.system==="official-mvu")break;}}}catch(error){for(const script of scripts)window.__dshTavernHelperSubscriptionsFailed(script.id,error);}finally{window.__dshTavernResolveCompanionScriptsReady();}';
 			const moduleUrl = "data:text/javascript;base64," + encodeTavernScriptSource(loaderSource);
 			return {
 				head: tavernIconDependencies()
@@ -2763,6 +2814,7 @@ window.__ModuleLoader__.load({
 				}
 				if (record.initializationTimer) hostWindow.clearTimeout(record.initializationTimer);
 				if (record.mvuDataTimer) hostWindow.clearTimeout(record.mvuDataTimer);
+				if (record.trustedCardMode) releaseTavernHostJQueryHandlers(hostWindow, record.frame.contentWindow);
 				record.frame.remove();
 				if (record.hostArtifacts) record.hostArtifacts.dispose();
 				records.delete(id);
@@ -2917,7 +2969,7 @@ window.__ModuleLoader__.load({
 				frame.title = "人物卡共享脚本沙箱";
 				if (!trustedCardMode) frame.sandbox = "allow-scripts";
 				frame.referrerPolicy = "no-referrer";
-				frame.srcdoc = buildTavernHelperScriptDocument({ token: record.token, scripts: scripts, context: context });
+				frame.srcdoc = buildTavernHelperScriptDocument({ token: record.token, scripts: scripts, context: context, trustedCardMode: trustedCardMode });
 				frame.addEventListener("load", function () {
 					if (records.get(record.id) !== record) return;
 					record.loaded = true;
@@ -5575,11 +5627,11 @@ window.__ModuleLoader__.load({
 		}
 
 		function TavernSettingsSection() {
-			const [state, setState] = React.useState({ loading: true, busy: false, webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: true, variables: true }, modelCatalog: [], sceneImages: false, error: "" });
+			const [state, setState] = React.useState({ loading: true, busy: false, webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: true, variables: true, ledger: false }, modelCatalog: [], sceneImages: false, error: "" });
 			React.useEffect(function () {
 				let active = true;
 				rpc("getTavernSettings").then(function (result) {
-					if (active) setState({ loading: false, busy: false, webSearchEnabled: Boolean(result.settings && result.settings.webSearchEnabled), backgroundModel: result.settings && result.settings.backgroundModel || null, backgroundTasks: result.settings && result.settings.backgroundTasks || { posture: true, characterDesign: true, variables: true }, modelCatalog: Array.isArray(result.modelCatalog) ? result.modelCatalog : [], sceneImages: Boolean(result.releaseCapabilities && result.releaseCapabilities.sceneImages), error: "" });
+					if (active) setState({ loading: false, busy: false, webSearchEnabled: Boolean(result.settings && result.settings.webSearchEnabled), backgroundModel: result.settings && result.settings.backgroundModel || null, backgroundTasks: result.settings && result.settings.backgroundTasks || { posture: true, characterDesign: true, variables: true, ledger: false }, modelCatalog: Array.isArray(result.modelCatalog) ? result.modelCatalog : [], sceneImages: Boolean(result.releaseCapabilities && result.releaseCapabilities.sceneImages), error: "" });
 				}, function (error) {
 					if (active) setState(function (current) { return Object.assign({}, current, { loading: false, busy: false, error: String(error && error.message || error) }); });
 				});
@@ -5648,7 +5700,7 @@ window.__ModuleLoader__.load({
 				React.createElement("h3", null, "后台结算"),
 				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "对所有游戏的后续后台任务生效。正在运行的任务完成本轮；关闭后保留已有结果。"),
 				React.createElement("div", { className: "dsh-tavern-settings-group" },
-					[["variables", "变量结算", "MVU 卡强烈建议不要关闭。关闭后剧情仍会推进，但变量和状态栏可能不再同步。重新开启仅结算后续轮次，不补算已跳过的历史；普通卡不执行此任务。"], ["posture", "人物姿势结算", "总结本轮结束时人物的位置、动作和姿势。"], ["characterDesign", "人物设计档案", "按需建立、补充人物档案。人物较多时会增加等待时间和 Token 用量；关闭后候选任务也不再自动设计人物。"]].map(function (item) {
+					[["ledger", "台账维护（实验）", "整理物品、角色和地点，供玩家查阅，不注入前台。开启后从后续结算开始，不自动补齐历史；关闭后保留已有记录。"], ["variables", "变量结算", "MVU 卡强烈建议不要关闭。关闭后剧情仍会推进，但变量和状态栏可能不再同步。重新开启仅结算后续轮次，不补算已跳过的历史；普通卡不执行此任务。"], ["posture", "人物姿势结算", "总结本轮结束时人物的位置、动作和姿势。"], ["characterDesign", "人物设计档案", "按需建立、补充人物档案。人物较多时会增加等待时间和 Token 用量；关闭后候选任务也不再自动设计人物。"]].map(function (item) {
 						return React.createElement("label", { key: item[0], className: "dsh-tavern-settings-row" },
 							React.createElement("span", { className: "dsh-tavern-settings-copy" }, React.createElement("span", { className: "dsh-tavern-settings-title" }, item[1]), React.createElement("span", { className: "dsh-tavern-settings-desc" }, item[2])),
 							React.createElement("span", { className: "dsh-tavern-settings-switch" }, React.createElement("input", { type: "checkbox", checked: state.backgroundTasks[item[0]], disabled: state.loading || state.busy, "aria-label": item[1], onChange: function (event) { void setBackgroundTask(item[0], event.target.checked); } }), React.createElement("span", { className: "dsh-tavern-settings-track", "aria-hidden": "true" })));
@@ -7418,6 +7470,8 @@ window.__ModuleLoader__.load({
 				);
 			}
 
+		// @include modules/story-ledger.js
+
 			function TavernStatusPanel(props) {
 			const [error, setError] = usePersistentError("酒馆状态");
 			const [guideDraft, setGuideDraft] = React.useState("");
@@ -7497,6 +7551,7 @@ window.__ModuleLoader__.load({
 				),
 					h("div", { className: "dsh-tavern-status-body" },
 					h(TavernCardAppDock, { sessionId: props.sessionId }),
+					h(TavernLedger, { key: props.sessionId, sessionId: props.sessionId, ledger: view.ledger, busy: running || ["pending", "running", "waiting-runtime"].includes(view.settleStatus) }),
 					view.settleStatus === "error" ? h("div", { className: "dsh-card-error" },
 						h("div", null, view.settleError || "后台结算失败，请重试。"),
 						h("button", { className: "dsh-tavern-btn", disabled: settlementRetryBusy, onClick: retrySettlement }, settlementRetryBusy ? "重试中…" : "重试后台结算")
@@ -8350,6 +8405,8 @@ window.__ModuleLoader__.load({
 		exports.createTavernCardAppPresence = createTavernCardAppPresence;
 		exports.createTavernCardAppDock = createTavernCardAppDock;
 		exports.createTavernHelperScriptRuntime = createTavernHelperScriptRuntime;
+		exports.ensureTavernHostJQuery = ensureTavernHostJQuery;
+		exports.releaseTavernHostJQueryHandlers = releaseTavernHostJQueryHandlers;
 		exports.tavernScriptRuntimeReady = tavernScriptRuntimeReady;
 		exports.clampTavernFrameHeight = clampTavernFrameHeight;
 		exports.createTavernHelperContextUpdate = createTavernHelperContextUpdate;

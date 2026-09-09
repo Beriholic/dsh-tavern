@@ -546,6 +546,7 @@ export function createTurnOrchestrator(options) {
     if (operation === undefined) throw new Error('找不到本轮正文 operation，请重新生成本轮正文')
     const before = {
       posture: chat.posture || '',
+      ledger: chat.ledger ? structuredClone(chat.ledger) : null,
       preparedWorldBookContext: str(chat.preparedWorldBookContext),
       preparedWorldBook: clone(chat.preparedWorldBook === undefined ? null : chat.preparedWorldBook)
     }

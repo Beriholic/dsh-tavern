@@ -134,7 +134,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       }
       const before = rollbackCommit && rollbackCommit.before && typeof rollbackCommit.before === 'object' ? rollbackCommit.before : {}
       legacyBefore = {
-        messages: msgs0.slice(0, oldAssistantIndex - 1), posture: str(before.posture), scriptState: chat.scriptState,
+        messages: msgs0.slice(0, oldAssistantIndex - 1), posture: str(before.posture), ledger: before.ledger || null, scriptState: chat.scriptState,
         candidates: null, settleStatus: 'idle', settleError: null, lastSettle: null,
         preparedWorldBookContext: str(before.preparedWorldBookContext),
         preparedWorldBook: before.preparedWorldBook || null,
@@ -320,6 +320,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     const legacyBefore = {
       messages: msgs.slice(0, assistantIndex - 1),
       posture: before !== null && typeof before.posture === 'string' ? before.posture : '',
+      ledger: before?.ledger || null,
       scriptState: chat.scriptState,
       candidates: null,
       settleStatus: 'idle',

@@ -3040,6 +3040,55 @@ window.__ModuleLoader__.load({
 			});
 		}
 
+		// jQuery captures its owning document. Sharing the iframe's instance with
+		// the host would still send $('body') into the hidden script iframe.
+		function ensureTavernHostJQuery(host) {
+			if (host.jQuery && host.jQuery.fn && host.jQuery.fn.jquery) return Promise.resolve();
+			const doc = host.document;
+			const existing = doc.querySelector('script[data-dsh-tavern-host-jquery]');
+			if (existing && existing.tavernReady) return existing.tavernReady;
+			const script = doc.createElement('script');
+			script.setAttribute('data-dsh-tavern-host-jquery', '');
+			script.src = '/api/dsh-tavern/vendor/runtime-assets/jquery/jquery.min.js';
+			const previousDollar = host.$;
+			script.tavernReady = new Promise(function (resolve, reject) {
+				const timer = host.setTimeout(function () { finish(new Error('宿主 jQuery 加载超时')); }, 15000);
+				function finish(error) {
+					host.clearTimeout(timer);
+					script.onload = script.onerror = null;
+					script.remove();
+					if (error) reject(error); else resolve();
+				}
+				script.onload = function () {
+					if (!host.jQuery || !host.jQuery.fn || !host.jQuery.fn.jquery) return finish(new Error('宿主 jQuery 未初始化'));
+					if (previousDollar !== undefined && host.$ === host.jQuery) host.jQuery.noConflict();
+					finish();
+				};
+				script.onerror = function () { finish(new Error('宿主 jQuery 加载失败')); };
+			});
+			doc.head.appendChild(script);
+			return script.tavernReady;
+		}
+
+		function releaseTavernHostJQueryHandlers(host, frameWindow) {
+			const jq = host.jQuery;
+			if (!jq || !jq._data || !jq.event || !frameWindow || !frameWindow.Function) return;
+			// Callback realm identifies the retiring script even on shared document
+			// targets. Never remove a whole namespace owned by another component.
+			const targets = [host, host.document].concat(Array.from(host.document.querySelectorAll('*')));
+			for (const target of targets) {
+				if (!jq.hasData(target)) continue;
+				const events = jq._data(target, 'events') || {};
+				for (const handlers of Object.values(events)) {
+					for (const entry of Array.from(handlers)) {
+						if (entry.handler instanceof frameWindow.Function) {
+							jq.event.remove(target, entry.origType + (entry.namespace ? '.' + entry.namespace : ''), entry.handler, entry.selector);
+						}
+					}
+				}
+			}
+		}
+
 		function buildTavernHelperScriptParts(input) {
 			const scripts = Array.isArray(input && input.scripts)
 				? input.scripts
@@ -3075,13 +3124,15 @@ window.__ModuleLoader__.load({
 				+ 'const createMvuLoader=' + createMvuBundleLoader.toString() + ';\n'
 				+ 'const scripts=' + JSON.stringify(modules).replace(/</g, "\\u003c") + ';\n'
 				+ 'const token=' + JSON.stringify(metadata.token) + ';\n'
-				+ 'try{for(const script of scripts){window.__dshTavernHelperSetCurrentScript(script.id);try{'
+				+ 'try{'
+				+ (input && input.trustedCardMode ? 'const ensureHostJQuery=' + ensureTavernHostJQuery.toString() + ';await ensureHostJQuery(window.parent);\n' : '')
+				+ 'for(const script of scripts){window.__dshTavernHelperSetCurrentScript(script.id);try{'
 				+ 'if(script.system==="official-mvu"&&script.assetUrl){const loader=createMvuLoader({fetch:window.fetch.bind(window),evaluate:loadModule,onDiagnostic(diagnostic){parent.postMessage({type:"dsh-tavern-mvu-load-diagnostic",token,diagnostic},"*");},onState(state){parent.postMessage({type:"dsh-tavern-mvu-load-state",token,state},"*");}});'
 				+ 'const retry=event=>{if(event.source===parent&&event.data?.token===token&&event.data.type==="dsh-tavern-mvu-reload")loader.retry();};'
 				+ 'window.addEventListener("message",retry);window.addEventListener("pagehide",()=>loader.dispose(),{once:true});'
 				+ 'try{await loader.load(new URL(script.assetUrl,document.baseURI).href);}finally{window.removeEventListener("message",retry);}}else await loadModule(script.content);'
 				+ 'if(script.system==="official-mvu")await window.waitGlobalInitialized("Mvu");window.__dshTavernHelperSubscriptionsReady(script.id);'
-				+ '}catch(error){window.__dshTavernHelperSubscriptionsFailed(script.id,error);if(script.system==="official-mvu")break;}}}finally{window.__dshTavernResolveCompanionScriptsReady();}';
+				+ '}catch(error){window.__dshTavernHelperSubscriptionsFailed(script.id,error);if(script.system==="official-mvu")break;}}}catch(error){for(const script of scripts)window.__dshTavernHelperSubscriptionsFailed(script.id,error);}finally{window.__dshTavernResolveCompanionScriptsReady();}';
 			const moduleUrl = "data:text/javascript;base64," + encodeTavernScriptSource(loaderSource);
 			return {
 				head: tavernIconDependencies()
@@ -3264,6 +3315,7 @@ window.__ModuleLoader__.load({
 				}
 				if (record.initializationTimer) hostWindow.clearTimeout(record.initializationTimer);
 				if (record.mvuDataTimer) hostWindow.clearTimeout(record.mvuDataTimer);
+				if (record.trustedCardMode) releaseTavernHostJQueryHandlers(hostWindow, record.frame.contentWindow);
 				record.frame.remove();
 				if (record.hostArtifacts) record.hostArtifacts.dispose();
 				records.delete(id);
@@ -3418,7 +3470,7 @@ window.__ModuleLoader__.load({
 				frame.title = "人物卡共享脚本沙箱";
 				if (!trustedCardMode) frame.sandbox = "allow-scripts";
 				frame.referrerPolicy = "no-referrer";
-				frame.srcdoc = buildTavernHelperScriptDocument({ token: record.token, scripts: scripts, context: context });
+				frame.srcdoc = buildTavernHelperScriptDocument({ token: record.token, scripts: scripts, context: context, trustedCardMode: trustedCardMode });
 				frame.addEventListener("load", function () {
 					if (records.get(record.id) !== record) return;
 					record.loaded = true;
@@ -6076,11 +6128,11 @@ window.__ModuleLoader__.load({
 		}
 
 		function TavernSettingsSection() {
-			const [state, setState] = React.useState({ loading: true, busy: false, webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: true, variables: true }, modelCatalog: [], sceneImages: false, error: "" });
+			const [state, setState] = React.useState({ loading: true, busy: false, webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: true, variables: true, ledger: false }, modelCatalog: [], sceneImages: false, error: "" });
 			React.useEffect(function () {
 				let active = true;
 				rpc("getTavernSettings").then(function (result) {
-					if (active) setState({ loading: false, busy: false, webSearchEnabled: Boolean(result.settings && result.settings.webSearchEnabled), backgroundModel: result.settings && result.settings.backgroundModel || null, backgroundTasks: result.settings && result.settings.backgroundTasks || { posture: true, characterDesign: true, variables: true }, modelCatalog: Array.isArray(result.modelCatalog) ? result.modelCatalog : [], sceneImages: Boolean(result.releaseCapabilities && result.releaseCapabilities.sceneImages), error: "" });
+					if (active) setState({ loading: false, busy: false, webSearchEnabled: Boolean(result.settings && result.settings.webSearchEnabled), backgroundModel: result.settings && result.settings.backgroundModel || null, backgroundTasks: result.settings && result.settings.backgroundTasks || { posture: true, characterDesign: true, variables: true, ledger: false }, modelCatalog: Array.isArray(result.modelCatalog) ? result.modelCatalog : [], sceneImages: Boolean(result.releaseCapabilities && result.releaseCapabilities.sceneImages), error: "" });
 				}, function (error) {
 					if (active) setState(function (current) { return Object.assign({}, current, { loading: false, busy: false, error: String(error && error.message || error) }); });
 				});
@@ -6149,7 +6201,7 @@ window.__ModuleLoader__.load({
 				React.createElement("h3", null, "后台结算"),
 				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "对所有游戏的后续后台任务生效。正在运行的任务完成本轮；关闭后保留已有结果。"),
 				React.createElement("div", { className: "dsh-tavern-settings-group" },
-					[["variables", "变量结算", "MVU 卡强烈建议不要关闭。关闭后剧情仍会推进，但变量和状态栏可能不再同步。重新开启仅结算后续轮次，不补算已跳过的历史；普通卡不执行此任务。"], ["posture", "人物姿势结算", "总结本轮结束时人物的位置、动作和姿势。"], ["characterDesign", "人物设计档案", "按需建立、补充人物档案。人物较多时会增加等待时间和 Token 用量；关闭后候选任务也不再自动设计人物。"]].map(function (item) {
+					[["ledger", "台账维护（实验）", "整理物品、角色和地点，供玩家查阅，不注入前台。开启后从后续结算开始，不自动补齐历史；关闭后保留已有记录。"], ["variables", "变量结算", "MVU 卡强烈建议不要关闭。关闭后剧情仍会推进，但变量和状态栏可能不再同步。重新开启仅结算后续轮次，不补算已跳过的历史；普通卡不执行此任务。"], ["posture", "人物姿势结算", "总结本轮结束时人物的位置、动作和姿势。"], ["characterDesign", "人物设计档案", "按需建立、补充人物档案。人物较多时会增加等待时间和 Token 用量；关闭后候选任务也不再自动设计人物。"]].map(function (item) {
 						return React.createElement("label", { key: item[0], className: "dsh-tavern-settings-row" },
 							React.createElement("span", { className: "dsh-tavern-settings-copy" }, React.createElement("span", { className: "dsh-tavern-settings-title" }, item[1]), React.createElement("span", { className: "dsh-tavern-settings-desc" }, item[2])),
 							React.createElement("span", { className: "dsh-tavern-settings-switch" }, React.createElement("input", { type: "checkbox", checked: state.backgroundTasks[item[0]], disabled: state.loading || state.busy, "aria-label": item[1], onChange: function (event) { void setBackgroundTask(item[0], event.target.checked); } }), React.createElement("span", { className: "dsh-tavern-settings-track", "aria-hidden": "true" })));
@@ -7919,6 +7971,117 @@ window.__ModuleLoader__.load({
 				);
 			}
 
+		// Player-only notebook. No prompt construction or model access in this view.
+		function TavernLedger(props) {
+		  const h = React.createElement;
+		  const ledger = props.ledger || { items: [], npcs: [], scenes: [], itemLog: [], locationPath: [], updatedTurn: null };
+		  const [open, setOpen] = React.useState(false);
+		  const [tab, setTab] = React.useState("items");
+		  const [editing, setEditing] = React.useState(null);
+		  const [busy, setBusy] = React.useState(false);
+		  const [error, setError] = React.useState("");
+		  const blocked = busy || props.busy;
+		  const labels = { name: "名称", qty: "数量", desc: "描述", carried: "随身携带", location: "所在地", gender: "性别", age: "年龄", title: "身份", relation: "与玩家的关系", ties: "与其他角色的关系", personality: "性格", outfit: "当前穿着", condition: "当前状态", important: "主要角色", follow: "随行", path: "地点路径（用 / 分隔）" };
+		  const fields = { items: ["name", "qty", "desc", "carried", "location"], npcs: ["name", "title", "relation", "ties", "gender", "age", "desc", "personality", "outfit", "condition", "important", "follow", "location"], scenes: ["path", "desc"] };
+		  function begin(row) {
+		    const draft = {};
+		    fields[tab].forEach(function (key) { draft[key] = key === "path" ? (row?.path || []).join(" / ") : (row?.[key] ?? (["carried", "important", "follow"].includes(key) ? key === "carried" : "")); });
+		    setEditing({ original: row, draft: draft, expected: JSON.stringify(ledger), kind: tab }); setError("");
+		  }
+		  async function submit(delta, expected) {
+		    if (blocked) return;
+		    setBusy(true); setError("");
+		    try {
+		      const result = await rpc("editLedger", { sessionId: props.sessionId, expected: expected, delta: delta });
+		      liveTavernView.setView(props.sessionId, result.view);
+		      setEditing(null);
+		    } catch (e) { setError(String(e.message || e)); }
+		    finally { setBusy(false); }
+		  }
+		  function save() {
+		    const e = editing, item = {};
+		    fields[e.kind].forEach(function (key) {
+		      const value = e.draft[key];
+		      if (key === "path") item.path = value.split("/").map(v => v.trim());
+		      else if (key === "qty") { if (String(value).trim() !== "") item.qty = Number(value); }
+		      else item[key] = value;
+		    });
+		    let ops;
+		    if (e.original && e.kind === "scenes") {
+		      ops = { reparent: [{ node: e.original.path, newPath: item.path }], update: [{ path: e.original.path, desc: item.desc }] };
+		    } else if (e.original && item.name.trim().toLowerCase() !== e.original.name.trim().toLowerCase()) {
+		      ops = { remove: [e.original.name], add: [item] };
+		    } else ops = { [e.original ? "update" : "add"]: [item] };
+		    void submit({ [e.kind]: ops }, e.expected);
+		  }
+		  function remove(row) {
+		    if (!window.confirm(tab === "scenes" ? "删除这个地点及其下属地点？" : "删除这条台账记录？")) return;
+		    void submit({ [tab]: { remove: [tab === "scenes" ? row.path : row.name] } }, JSON.stringify(ledger));
+		  }
+		  function actions(row) { return h("span", { className: "dsh-ledger-actions" },
+		    h("button", { type: "button", disabled: blocked, onClick: () => begin(row), "aria-label": "编辑" + (row.name || row.path.join(" / ")) }, "编辑"),
+		    h("button", { type: "button", disabled: blocked, onClick: () => remove(row), "aria-label": "删除" + (row.name || row.path.join(" / ")) }, "删除")); }
+		  function card(row, group) {
+		    const subtitle = tab === "items" ? (row.carried === false ? "寄存：" + (row.location || "地点不明") : "随身") : (row.follow ? "随行" : row.location || "所在地不明");
+		    return h("article", { key: row.name, className: "dsh-ledger-card" },
+		      h("div", { className: "dsh-ledger-card-head" }, h("strong", null, row.name + (tab === "items" && typeof row.qty === "number" ? " ×" + row.qty : "")), actions(row)),
+		      h("small", null, subtitle),
+		      (tab === "items" ? ["desc"] : group === "不在场" ? ["title", "relation"] : ["title", "relation", "ties", "outfit", "condition", "desc", "personality"]).map(function (key) {
+		        return row[key] ? h("p", { key: key }, h("span", { className: "dsh-ledger-field-label" }, labels[key] + "："), row[key]) : null;
+		      }));
+		  }
+		  function npcGroup(row) {
+		    if (row.important) return "主要角色";
+		    if (row.follow || (row.location && row.location === ledger.location)) return "在场";
+		    const route = ledger.locationPath || [];
+		    if (row.location && route.at(-1) === row.location) return "在场";
+		    if (row.location && route.slice(0, -1).includes(row.location)) return "同区域";
+		    return "不在场";
+		  }
+		  function sceneTree(prefix) {
+		    const children = new Map();
+		    ledger.scenes.forEach(function (row) {
+		      if (row.path.length <= prefix.length || !prefix.every((p, i) => p === row.path[i])) return;
+		      const name = row.path[prefix.length];
+		      if (!children.has(name)) children.set(name, [...prefix, name]);
+		    });
+		    return Array.from(children, function ([name, path]) {
+		      const row = ledger.scenes.find(r => JSON.stringify(r.path) === JSON.stringify(path));
+		      const current = JSON.stringify(ledger.locationPath) === JSON.stringify(path);
+		      const items = ledger.items.filter(r => r.carried === false && (r.location === name || r.location === path.join(" / ")));
+		      return h("details", { key: name, open: true, className: "dsh-ledger-scene" },
+		        h("summary", null, name, current ? h("small", null, " · 所在") : null),
+		        row ? h("div", { className: "dsh-ledger-scene-content" }, h("p", null, row.desc), actions(row)) : null,
+		        items.length ? h("small", null, "寄存：" + items.map(i => i.name + (i.qty === undefined ? "" : " ×" + i.qty)).join("、")) : null,
+		        sceneTree(path));
+		    });
+		  }
+		  return h("section", { className: "dsh-tavern-status-section dsh-ledger", "aria-label": "游玩台账" },
+		    h("button", { type: "button", className: "dsh-ledger-toggle", "aria-expanded": open, onClick: () => setOpen(!open) }, "游玩台账", h("span", null, open ? "收起" : "查看")),
+		    open ? h("div", null,
+		      h("p", { className: "dsh-tavern-status-empty" }, "玩家备忘录，不发送给前台 AI。" + (ledger.updatedTurn === null ? "在设置 → 后台任务中开启台账维护；从后续轮次开始记录。" : "整理至第 " + ledger.updatedTurn + " 轮。")),
+		      ledger.location ? h("p", null, "当前地点：" + ledger.location) : null,
+		      h("div", { className: "dsh-ledger-tabs", role: "tablist", "aria-label": "台账分类" }, [["items", "物品"], ["npcs", "角色"], ["scenes", "地点"]].map(function ([id, label]) {
+		        return h("button", { key: id, type: "button", role: "tab", "aria-selected": tab === id, onClick: () => { setTab(id); setEditing(null); setError(""); } }, label + " " + ledger[id].length);
+		      })),
+		      h("button", { type: "button", className: "dsh-tavern-btn", disabled: blocked, onClick: () => begin(null) }, "添加记录"),
+		      error ? h("p", { className: "dsh-card-error", role: "alert" }, error) : null,
+		      editing ? h("form", { className: "dsh-ledger-form", onSubmit: e => { e.preventDefault(); save(); } },
+		        fields[editing.kind].map(function (key) {
+		          const bool = ["carried", "important", "follow"].includes(key);
+		          return h("label", { key: key }, labels[key], h("input", { type: bool ? "checkbox" : key === "qty" ? "number" : "text", min: key === "qty" ? 0 : undefined, disabled: blocked, ...(bool ? { checked: editing.draft[key] } : { value: editing.draft[key] }), onChange: e => setEditing({ ...editing, draft: { ...editing.draft, [key]: bool ? e.target.checked : e.target.value } }) }));
+		        }),
+		        h("div", { className: "dsh-ledger-actions" }, h("button", { type: "submit", disabled: blocked }, busy ? "保存中…" : "保存"), h("button", { type: "button", disabled: busy, onClick: () => setEditing(null) }, "取消"))) : null,
+		      !ledger[tab].length ? h("p", { className: "dsh-tavern-status-empty" }, "尚无记录") : tab === "scenes" ? sceneTree([]) : tab === "npcs" ? ["主要角色", "在场", "同区域", "不在场"].map(function (group) {
+		        const rows = ledger.npcs.filter(n => npcGroup(n) === group);
+		        return rows.length ? h("div", { key: group }, h("h4", null, group), rows.map(r => card(r, group))) : null;
+		      }) : ledger.items.map(r => card(r)),
+		      tab === "items" && ledger.itemLog.length ? h("details", null, h("summary", null, "近期物品变动"), ledger.itemLog.map(function (entry, i) {
+		        return h("p", { key: i }, "第 " + entry.turn + " 轮 · " + entry.name + " · " + ({ add: "获得", update: "更新", remove: "移除" }[entry.kind]) + (entry.to === undefined ? "" : " → " + entry.to));
+		      })) : null
+		    ) : null);
+		}
+
 			function TavernStatusPanel(props) {
 			const [error, setError] = usePersistentError("酒馆状态");
 			const [guideDraft, setGuideDraft] = React.useState("");
@@ -7998,6 +8161,7 @@ window.__ModuleLoader__.load({
 				),
 					h("div", { className: "dsh-tavern-status-body" },
 					h(TavernCardAppDock, { sessionId: props.sessionId }),
+					h(TavernLedger, { key: props.sessionId, sessionId: props.sessionId, ledger: view.ledger, busy: running || ["pending", "running", "waiting-runtime"].includes(view.settleStatus) }),
 					view.settleStatus === "error" ? h("div", { className: "dsh-card-error" },
 						h("div", null, view.settleError || "后台结算失败，请重试。"),
 						h("button", { className: "dsh-tavern-btn", disabled: settlementRetryBusy, onClick: retrySettlement }, settlementRetryBusy ? "重试中…" : "重试后台结算")
@@ -8851,6 +9015,8 @@ window.__ModuleLoader__.load({
 		exports.createTavernCardAppPresence = createTavernCardAppPresence;
 		exports.createTavernCardAppDock = createTavernCardAppDock;
 		exports.createTavernHelperScriptRuntime = createTavernHelperScriptRuntime;
+		exports.ensureTavernHostJQuery = ensureTavernHostJQuery;
+		exports.releaseTavernHostJQueryHandlers = releaseTavernHostJQueryHandlers;
 		exports.tavernScriptRuntimeReady = tavernScriptRuntimeReady;
 		exports.clampTavernFrameHeight = clampTavernFrameHeight;
 		exports.createTavernHelperContextUpdate = createTavernHelperContextUpdate;

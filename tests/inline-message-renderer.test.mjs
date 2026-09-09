@@ -1911,3 +1911,54 @@ test('Host acknowledgements extend idle waits but cannot extend the total event 
   assert.equal(rpcCalls.length, 4)
   runtime.dispose()
 })
+
+test('trusted scripts await host jQuery before executing; isolated scripts do not access host', () => {
+  for (const trustedCardMode of [true, false]) {
+    const document = client.buildTavernHelperScriptDocument({ trustedCardMode, scripts: [{ id: 'ball', content: 'void 0' }] });
+    const loader = Buffer.from(document.match(/<script type="module" src="data:text\/javascript;base64,([^"]+)"/)[1], 'base64').toString();
+    assert.equal(loader.includes('await ensureHostJQuery(window.parent)'), trustedCardMode);
+    if (trustedCardMode) assert.ok(loader.indexOf('await ensureHostJQuery(window.parent)') < loader.indexOf('for(const script of scripts)'));
+  }
+});
+
+test('host jQuery dependency shares pending load, preserves existing globals and retries failure', async () => {
+  let pending, loads = 0;
+  const otherDollar = () => 'other library';
+  const host = { $: otherDollar, setTimeout, clearTimeout, document: {
+    querySelector: () => pending,
+    createElement: () => ({ setAttribute() {}, remove() { pending = null; } }),
+    head: { appendChild(node) { pending = node; loads++; } }
+  } };
+  const first = client.ensureTavernHostJQuery(host);
+  assert.equal(client.ensureTavernHostJQuery(host), first);
+  pending.onerror();
+  await assert.rejects(first, /加载失败/);
+  const retry = client.ensureTavernHostJQuery(host);
+  const jq = { fn: { jquery: '3.7.1' }, noConflict() { host.$ = otherDollar; } };
+  host.$ = host.jQuery = jq;
+  pending.onload();
+  await retry;
+  assert.equal(host.$, otherDollar);
+  assert.equal(host.jQuery, jq);
+  await client.ensureTavernHostJQuery(host);
+  assert.equal(loads, 2);
+  assert.equal(pending, null);
+});
+
+test('host cleanup removes only callbacks from the retiring iframe realm', () => {
+  const realm = vm.runInNewContext('({ Function, callback() {} })');
+  const hostCallback = () => {};
+  const element = {};
+  const removed = [];
+  const host = { document: { querySelectorAll: () => [element] }, jQuery: {
+    hasData: () => true,
+    _data: () => ({ click: [
+      { origType: 'click', namespace: 'shared', handler: realm.callback, selector: '.ball' },
+      { origType: 'click', namespace: 'shared', handler: hostCallback, selector: '.ball' }
+    ] }),
+    event: { remove: (...args) => removed.push(args) }
+  } };
+  client.releaseTavernHostJQueryHandlers(host, realm);
+  assert.equal(removed.length, 3);
+  assert.ok(removed.every(row => row[1] === 'click.shared' && row[2] === realm.callback && row[3] === '.ball'));
+});
