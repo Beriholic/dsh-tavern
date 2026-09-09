@@ -111,7 +111,7 @@ test('设置界面只提供联网搜索与后台模型选择，不渲染兼容�
   assert.deepEqual(inputs.map(input => input.props['aria-label']), ['开启联网搜索'])
   const select = nodes.find(node => node.type === 'select' && node.props['aria-label'] === '后台模型')
   assert.ok(select)
-  assert.match(JSON.stringify(select), /跟随前台（开局时）/)
+  assert.match(JSON.stringify(select), /跟随前台（随切换生效）/)
   assert.equal(nodes.some(node => node.type === 'textarea' || node.type === 'details'), false)
   assert.doesNotMatch(JSON.stringify(root), /兼容模式|受信任人物卡模式|SillyTavern 样式环境|Custom CSS/)
 })

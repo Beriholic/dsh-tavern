@@ -172,12 +172,12 @@ test('新游戏固化创建时的联网搜索设置，之后不随设置变化',
   assert.equal((await fresh.make().start({ ...fresh.input, cardPath: '', mode: 'card' })).webSearchEnabled, false)
 })
 
-test('新游戏固化后台模型；默认跟随开局前台，设置和重入都不会改写已有游戏', async () => {
+test('新游戏默认动态跟随前台，显式后台配置才固化；重入不改写选择', async () => {
   const following = initializationFixture()
   const first = await following.make().start(following.input)
-  assert.deepEqual(first.backgroundModelSelection, { provider: 'fixture', model: 'text' })
+  assert.equal(first.backgroundModelSelection, null)
   following.state.settings.backgroundModel = { provider: 'vertex', model: 'gemini-2.5-flash' }
-  assert.deepEqual((await following.make().start(following.input)).backgroundModelSelection, { provider: 'fixture', model: 'text' })
+  assert.equal((await following.make().start(following.input)).backgroundModelSelection, null)
 
   const fixed = initializationFixture()
   fixed.state.settings.backgroundModel = { provider: 'siliconflow', model: 'deepseek-v4' }

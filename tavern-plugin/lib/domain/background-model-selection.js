@@ -15,15 +15,10 @@ export function normalizeBackgroundModel(value) {
   return { provider, model }
 }
 
-export function snapshotBackgroundModel(configured, foreground) {
-  const fixed = normalizeBackgroundModel(configured)
-  if (fixed !== null) return fixed
-  const selected = normalizeBackgroundModel(foreground)
-  if (selected === null) return null
-  if (typeof foreground.reasoningEffort === 'string' && foreground.reasoningEffort.trim() !== '') {
-    selected.reasoningEffort = foreground.reasoningEffort.trim()
-  }
-  return selected
+export function snapshotBackgroundModel(configured) {
+  // Null means resolve the current foreground selection when each task starts.
+  // Only an explicit user choice is frozen into the game.
+  return normalizeBackgroundModel(configured)
 }
 
 export function resolveChatBackgroundModel(chat, fallback) {
