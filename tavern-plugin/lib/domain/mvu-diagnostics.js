@@ -113,10 +113,11 @@ export function diagnosticZip(entries) {
   return Buffer.concat([...local, directory, end])
 }
 
-export async function createMvuDiagnosticExport({ sessionId, backgroundSessionIds = [], store, sessions, persistence, query, attachments, sceneDiagnostics, compatibilityDiagnostics, apiDiagnostics, displayDiagnostics, environment = {} }) {
+export async function createMvuDiagnosticExport({ updateDiagnostics, sessionId, backgroundSessionIds = [], store, sessions, persistence, query, attachments, sceneDiagnostics, compatibilityDiagnostics, apiDiagnostics, displayDiagnostics, environment = {} }) {
   const notes = ['包含对话文本、附件与变量信息，分享前请检查隐私。凭据已尽力脱敏。MVU 记录有容量限制，旧故障不会被追溯补录。']
   notes.push('mvu/diagnostics.json 中 stage=regeneration-target 是正文重新生成的目标定位证据：记录失败分支、消息结构、轮次和会话绑定摘要，不记录正文或指导意见；只对更新后再次操作生效。')
   notes.push('stage=mvu-load 记录下载响应类型、状态、有限的错误信息、尝试次数和执行阶段；不记录完整脚本或响应体。mvu/environment.json 的 mvuAsset 是当前服务进程共享的最近文件读取/校验观察，不代表导出会话在故障时的文件状态；导出不会重新加载文件。日志限量、异步写入，关闭页面或写盘失败可能漏记，旧错误不能追溯补录。')
+  if (updateDiagnostics) notes.push('update/diagnostics.json 为本机更新记录，包含检查来源、回退原因和安装结果；限量保留，不补录安装此版本前的故障。')
   const ids = new Set([sessionId, ...backgroundSessionIds.filter(Boolean), ...(sceneDiagnostics?.records || []).map(record => record.traceSessionId).filter(Boolean)])
   const sceneContent = sceneDiagnostics ? JSON.stringify(redactDiagnostic(sceneDiagnostics)) : ''
   const sceneBytes = Buffer.byteLength(sceneContent)
@@ -170,6 +171,7 @@ export async function createMvuDiagnosticExport({ sessionId, backgroundSessionId
   }
   entries.push({ path: 'mvu/diagnostics.json', content: JSON.stringify(redactDiagnostic(await store.read(sessionId))) })
   entries.push({ path: 'mvu/environment.json', content: JSON.stringify(redactDiagnostic(environment), null, 2) })
+  if (updateDiagnostics) entries.push({ path: 'update/diagnostics.json', content: JSON.stringify(redactDiagnostic(updateDiagnostics)) })
   if (apiDiagnostics) entries.push({ path: 'compatibility/api-calls.json', content: apiContent })
   if (compatibilityBytes) entries.push({ path: 'compatibility/missing-capabilities.json', content: compatibilityContent })
   if (sceneBytes) entries.push({ path: 'scene-images/diagnostics.json', content: sceneContent })

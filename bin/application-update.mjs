@@ -1,3 +1,4 @@
+import { recordUpdateDiagnostic } from './update-diagnostics.mjs'
 import { spawnSync } from 'node:child_process'
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
@@ -48,6 +49,7 @@ function writeUpdateStatus(file, value) {
   const temporary = `${file}.tmp-${process.pid}`
   writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
   renameSync(temporary, file)
+  recordUpdateDiagnostic(path.dirname(file), { event: 'installer.status', ...value })
 }
 
 export async function updateApplication(options = { host: 'cli', statusFile: '', delay: 0 }) {
@@ -96,6 +98,7 @@ export async function updateApplication(options = { host: 'cli', statusFile: '',
     } finally {
       if (outputDescriptor !== null) closeSync(outputDescriptor)
     }
+    if (capture && existsSync(outputFile)) recordUpdateDiagnostic(path.dirname(options.statusFile), { event: 'installer.output', exitCode: result.status, signal: result.signal, output: decodeUpdateOutput(readFileSync(outputFile)).slice(-6000) })
     if (result.error) throw new Error(`无法运行更新程序：${result.error.message}`)
     if (result.status !== 0) {
       const details = capture && existsSync(outputFile) ? decodeUpdateOutput(readFileSync(outputFile)).trim().split('\n').slice(-12).join('\n') : ''
