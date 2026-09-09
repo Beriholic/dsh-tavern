@@ -1,3 +1,4 @@
+import { rewindBackgroundSurface } from './background-surface.js'
 import { sessionEvents } from './session-events.js'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
@@ -396,6 +397,32 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
         throw new Error('回退失败且剧情恢复未完成：' + str(error?.message || error) + '；' + str(restoreError?.message || restoreError), { cause: error })
       }
       throw error
+    }
+    // Rewind immediately after the foreground commit; retain the timeline's retry
+    // boundary so the next task can safely retry if this best-effort step fails.
+    for (const participant of Object.values(storyTimeline.inspect({ chat }).participants || {})) {
+      if (participant.status !== 'needs-rewind' || !participant.sessionId) continue
+      try {
+        const worker = sessions.get(participant.sessionId)
+        const background = worker?.session || sessions.getSession?.(participant.sessionId)
+        if (!background) throw new Error('后台会话尚未加载，将在下次后台任务启动时重试')
+        if (worker?.phase?.kind === 'running') {
+          worker.cancel({ kind: 'parent' })
+        }
+        if (typeof worker?.whenIdle === 'function') {
+          let timeout
+          try {
+            await Promise.race([worker.whenIdle(), new Promise((_, reject) => {
+              timeout = setTimeout(() => reject(new Error('后台尚未停止，将在下次任务启动时重试')), 3000)
+            })])
+          } finally { clearTimeout(timeout) }
+        }
+        if (typeof sessions.flush !== 'function') throw new Error('当前宿主未提供后台会话保存接口')
+        rewindBackgroundSurface(background, participant.rewindTo)
+        await sessions.flush(background)
+      } catch (error) {
+        rollbackWarning = [rollbackWarning, '正文已回退，后台上下文回退未完成：' + str(error?.message || error)].filter(Boolean).join('；')
+      }
     }
     // Notify scripts only after both authoritative story and native surface have committed.
     try {
