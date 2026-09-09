@@ -794,3 +794,23 @@ test('正式卡片页面追加消息走当前 Session 与生命周期校验', as
   assert.equal(h.calls[0].args.expectedLifecycleRevision, 1)
   h.stop()
 })
+
+test('右侧状态栏保留卡片原始字号，已有正文设置不改变其缩放比例', () => {
+  const h = host(), sent = []
+  let size = '28px', notify
+  h.window.document = { body: {}, documentElement: {} }
+  h.window.getComputedStyle = () => ({ getPropertyValue: () => size })
+  h.window.MutationObserver = class { constructor(callback) { notify = callback } observe() {} disconnect() {} }
+  const life = h.client.createTavernMessageFrameLifecycle({ content: '<p>状态</p>', eager: true, persistent: true, followContentFont: false }, { window: h.window })
+  const stop = life.start(() => {})
+  const doc = life.snapshot().visibleDocument
+  const node = { contentWindow: { postMessage: value => sent.push(copy(value)) } }
+  doc.ref(node)
+  h.deliver(node, { type: 'dsh-tavern-frame-ready', token: doc.token })
+  assert.equal(sent.at(-1).fontSize, 14, '14 表示原始样式倍率 1，并非强制卡片字号为 14px')
+  size = '32px'; notify()
+  assert.equal(sent.at(-1).fontSize, 14)
+  assert.equal(life.snapshot().visibleDocument, doc)
+  assert.match(source, /persistent: true,\s*followContentFont: false,/)
+  stop()
+})
