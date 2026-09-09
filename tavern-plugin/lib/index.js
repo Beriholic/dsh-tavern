@@ -1,3 +1,4 @@
+import { backgroundSuppressedTurns } from './domain/background-surface.js'
 import { ensureCardWorkspaceMessage } from './domain/card-workspace-message.js'
 import { createPromptTemplateGlobalVariables } from './domain/prompt-template-global-variables.js'
 import { FULL_PROMPT_TEMPLATE_ASSET_PREFIX, readFullPromptTemplateAsset } from './domain/full-prompt-template-assets.js'
@@ -2465,6 +2466,15 @@ export async function apply(ctx) {
           })
           throw error
         }
+      }
+      case 'getBackgroundSuppressedTurns': {
+        const id = str(args && args.sessionId)
+        if (!id.startsWith('background-')) return { turns: [] }
+        const evidence = sessionDebugEvidence(id)
+        if (evidence.loaded) return { turns: backgroundSuppressedTurns(evidence.events) }
+        const handle = await agentRegistry.resume({ resumeSessionId: id })
+        try { return { turns: backgroundSuppressedTurns(sessionEvents(handle.agent.session)) } }
+        finally { await handle.dispose() }
       }
       case 'getSession': return { view: await sessionView(args && args.sessionId) }
       case 'sendPhoneMessage': return { phoneChat: await phoneChat.send(args || {}) }

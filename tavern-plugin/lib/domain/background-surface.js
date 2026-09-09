@@ -32,3 +32,18 @@ export function rewindBackgroundSurface(session, boundary) {
   return shadowed.length
 }
 
+// Rebuild display suppression from durable empty surface replacements, including
+// rollbacks performed before the UI projection existed. Keep raw events intact.
+export function backgroundSuppressedTurns(events) {
+  const turns = new Set()
+  for (const event of events) {
+    const op = event.surfaceOp
+    if (event.type !== 'assistant/message' || op?.op !== 'replace' || event.data?.message?.content?.length !== 0) continue
+    for (const previous of events) {
+      if (!Number.isSafeInteger(previous.seq) || previous.seq < op.start || previous.seq > op.end) continue
+      const turn = previous.data?.turn
+      if (Number.isSafeInteger(turn) && turn > 0) turns.add(turn)
+    }
+  }
+  return [...turns].sort((a, b) => a - b)
+}
