@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "e9716b644718a8513791549b7a03aa4492ee2301",
-  "releaseSequence": 126,
+  "revision": "fcf1e93ad72c8ca641289b9bdb7a87fb78d4771c",
+  "releaseSequence": 127,
   "version": "1.5.0",
   "files": [
     {
@@ -231,8 +231,8 @@
     },
     {
       "path": "tavern-plugin/lib/client.js",
-      "sha256": "ab011d9c8fcea3576454dcbfb0ee64cb188a4cc917d4b3fabd4d0e56ec886d71",
-      "size": 600823
+      "sha256": "94fb291c45e7a64e3e091d6cce078f6c7fcff56969f6da4e6599943d4d15e257",
+      "size": 600864
     },
     {
       "path": "tavern-plugin/lib/cordis-inspect.js",
@@ -251,8 +251,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/background-model-selection.js",
-      "sha256": "00bf1410459223800e07233956e0bba6ee754e1b66b674e71e19b926e80daeb4",
-      "size": 1310
+      "sha256": "9766872e947ebe091de4a16c25ce3d7aef6e2b16bc7339de12e90489ecbbe54e",
+      "size": 1115
     },
     {
       "path": "tavern-plugin/lib/domain/background-task-coordinator.js",
@@ -371,8 +371,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/conversation-initialization.js",
-      "sha256": "5c69a8c8ed00c419ac11634297e935a5578f572255a3832b8c57077378f950ac",
-      "size": 17604
+      "sha256": "0d522abdd23604917e35ec012db6549daac12dde603d9cc72610f4e7d1b05fed",
+      "size": 17575
     },
     {
       "path": "tavern-plugin/lib/domain/conversation-text-export.js",
@@ -3266,8 +3266,8 @@
     },
     {
       "path": "tavern-plugin/src/client/main.js",
-      "sha256": "b083e31b0310bb8754e2519344944d15a36c3bc14c449ae8580a7d148b8a7ef7",
-      "size": 576701
+      "sha256": "655df8c087eaad1191d7e02447d9b476a71c109cdfbe2dbae51f3b05fbc1ea5c",
+      "size": 576742
     },
     {
       "path": "tavern-plugin/src/client/modules/library-refresh.js",
