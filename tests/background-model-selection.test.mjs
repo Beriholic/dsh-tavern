@@ -9,9 +9,11 @@ test('后台模型设置只接受完整 provider/model', () => {
   assert.equal(normalizeBackgroundModel(null), null)
 })
 
-test('开局快照优先固定设置，否则复制前台选择及推理强度', () => {
+test('仅手动配置生成固定快照，默认不冻结前台模型', () => {
   assert.deepEqual(snapshotBackgroundModel({ provider: 'fixed', model: 'worker' }, { provider: 'front', model: 'chat' }), { provider: 'fixed', model: 'worker' })
-  assert.deepEqual(snapshotBackgroundModel(null, { provider: 'front', model: 'chat', reasoningEffort: 'high' }), { provider: 'front', model: 'chat', reasoningEffort: 'high' })
+  assert.equal(snapshotBackgroundModel(null, { provider: 'front', model: 'chat', reasoningEffort: 'high' }), null)
+  const chat = { backgroundModelSelection: snapshotBackgroundModel(null) }
+  for (const model of ['first', 'changed']) assert.deepEqual(resolveChatBackgroundModel(chat, { provider: 'front', model, reasoningEffort: 'high' }), { provider: 'front', model, reasoningEffort: 'high' })
 })
 
 test('运行时优先使用游戏快照，旧游戏才回退当前前台模型', () => {

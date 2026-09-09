@@ -145,7 +145,7 @@ export function createConversationInitialization(options) {
     chat.userProfileEnabled = profile?.hasConfirmed === true && profile.defaultEnabled === true
     chat.webSearchEnabled = groupOfMode(chat.mode) === 'play' && currentSettings.webSearchEnabled === true
     chat.backgroundModelSelection = groupOfMode(chat.mode) === 'play'
-      ? snapshotBackgroundModel(currentSettings.backgroundModel, native.selection(sessionId))
+      ? snapshotBackgroundModel(currentSettings.backgroundModel)
       : null
     chat.mvu = usesMvu ? {
       enabled: true,

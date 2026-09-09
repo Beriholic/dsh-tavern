@@ -6061,10 +6061,10 @@ window.__ModuleLoader__.load({
 					React.createElement("label", { className: "dsh-tavern-settings-row dsh-tavern-settings-model-row" },
 						React.createElement("span", { className: "dsh-tavern-settings-copy" },
 							React.createElement("span", { className: "dsh-tavern-settings-title" }, "后台模型"),
-							React.createElement("span", { className: "dsh-tavern-settings-desc" }, "供候选项、MVU 与姿势结算共用。新游戏开局时固化，已有游戏不受影响。")
+							React.createElement("span", { className: "dsh-tavern-settings-desc" }, "默认随聊天框当前模型切换。手动指定后，新游戏的后台固定使用所选模型；已有游戏保留原配置。")
 						),
 						React.createElement("select", { className: "dsh-tavern-settings-select", value: state.backgroundModel ? JSON.stringify(state.backgroundModel) : "", disabled: state.loading || state.busy, onChange: function (event) { void setBackgroundModel(event.target.value); }, "aria-label": "后台模型" },
-							React.createElement("option", { value: "" }, "跟随前台（开局时）"),
+							React.createElement("option", { value: "" }, "跟随前台（随切换生效）"),
 							state.modelCatalog.flatMap(function (group) { return (group.models || []).map(function (model) {
 								const value = JSON.stringify({ provider: group.provider, model: model.id });
 								return React.createElement("option", { key: group.provider + ":" + model.id, value: value }, (group.providerName || group.provider) + " · " + (model.name || model.id));
