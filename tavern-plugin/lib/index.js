@@ -2092,7 +2092,7 @@ export async function apply(ctx) {
       return renderCardText(text, { name: chat.cardName }, chat.macroState)
     },
     projectReply: projectRuntimeReply,
-    projectWorldBookTemplates: nativeWorldBookTemplateContext,
+    projectWorldBookTemplates: input => nativeWorldBookTemplateContext(input.chat, input.card),
     projectScriptPromptWorldbook: async function ({ chat, card, turn }) {
       const text = scriptPromptScanText(chat)
       if (!text.trim()) return null
