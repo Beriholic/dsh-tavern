@@ -2715,12 +2715,17 @@ export async function apply(ctx) {
             res.end()
             return
           }
+          const sceneImageBodyLimit = method === 'saveSceneImageSettings' ? 2 * 1024 * 1024 : 16384
           const bodyChunks = []
           let bodyBytes = 0
           for await (const chunk of req) {
             const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
             bodyBytes += bytes.length
-            if (sceneImageRoute && bodyBytes > 16384) throw new Error('生图请求过大')
+            if (sceneImageRoute && bodyBytes > sceneImageBodyLimit) {
+              throw new Error(method === 'saveSceneImageSettings'
+                ? '无法保存生图配置：工作流与配置数据超过当前 2 MB 请求大小限制。请精简工作流后重试；这不是图片尺寸或显存不足。'
+                : '生图请求数据超过当前 16 KB 大小限制，请减少输入数据后重试；这不是图片尺寸或显存不足。')
+            }
             bodyChunks.push(bytes)
           }
           // HTTP chunks may split a UTF-8 code point. Decode only after joining bytes;
