@@ -481,7 +481,7 @@ test('读取历史期间后台更新变量不阻塞正文回退', async () => {
 })
 
 test('rollback immediately rewinds and flushes background surface, failure only warns', async () => {
-  for (const fail of [false, true]) {
+  for (const [fail, unloaded] of [[false, false], [true, false], [false, true]]) {
     const h = harness({ checkpoint: true })
     const participant = { role: 'background', lifetime: 'chat', sessionId: 'bg', boundary: 0, status: 'current', branchId: h.chat.timeline.branchId }
     h.chat.timeline.checkpoints[0].participants = { background: participant }
@@ -494,13 +494,19 @@ test('rollback immediately rewinds and flushes background surface, failure only 
       this.surface.nodes = []
     } }
     const worker = { session: bg, cancel() {}, async whenIdle() {} }
-    h.options.sessions = { get: id => id === 'bg' ? worker : h.agent, flush: async () => h.calls.push('background.flush') }
+    h.options.sessions = { get: id => id === 'bg' ? (unloaded ? undefined : worker) : h.agent,
+      resume: async id => { assert.equal(id, 'bg'); h.calls.push('background.resume'); return { agent: worker, dispose: async () => h.calls.push('background.dispose') } },
+      flush: async () => h.calls.push('background.flush') }
     const result = await h.create().rollback('session')
     assert.equal(result.messages.length, 1)
     if (fail) assert.match(result.rollbackWarning, /background unavailable/)
     else {
       assert.ok(h.calls.includes('background.rewind'))
       assert.ok(h.calls.includes('background.flush'))
+      if (unloaded) {
+        assert.ok(h.calls.includes('background.resume'))
+        assert.ok(h.calls.indexOf('background.dispose') > h.calls.indexOf('background.flush'))
+      }
       assert.ok(h.calls.indexOf('surface:assistant/message') < h.calls.indexOf('background.rewind'))
     }
   }

@@ -402,9 +402,15 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     // boundary so the next task can safely retry if this best-effort step fails.
     for (const participant of Object.values(storyTimeline.inspect({ chat }).participants || {})) {
       if (participant.status !== 'needs-rewind' || !participant.sessionId) continue
+      let restoredHandle
       try {
-        const worker = sessions.get(participant.sessionId)
-        const background = worker?.session || sessions.getSession?.(participant.sessionId)
+        let worker = sessions.get(participant.sessionId)
+        let background = worker?.session || sessions.getSession?.(participant.sessionId)
+        if (!background && typeof sessions.resume === 'function') {
+          restoredHandle = await sessions.resume(participant.sessionId)
+          worker = restoredHandle.agent
+          background = worker?.session
+        }
         if (!background) throw new Error('后台会话尚未加载，将在下次后台任务启动时重试')
         if (worker?.phase?.kind === 'running') {
           worker.cancel({ kind: 'parent' })
@@ -422,6 +428,11 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
         await sessions.flush(background)
       } catch (error) {
         rollbackWarning = [rollbackWarning, '正文已回退，后台上下文回退未完成：' + str(error?.message || error)].filter(Boolean).join('；')
+      } finally {
+        if (restoredHandle) {
+          try { await restoredHandle.dispose() }
+          catch (error) { rollbackWarning = [rollbackWarning, '后台回退临时会话释放失败：' + str(error?.message || error)].filter(Boolean).join('；') }
+        }
       }
     }
     // Notify scripts only after both authoritative story and native surface have committed.

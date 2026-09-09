@@ -7801,7 +7801,7 @@ window.__ModuleLoader__.load({
 					setRegenPanel(null);
 					setCandidateGuidePanel(null);
 					notifyTavernDataChanged(["sessions"], "play-controls");
-					if (result && result.view && result.view.rollbackWarning) tavernErrorHub.report("回退脚本联动", new Error(result.view.rollbackWarning));
+					if (result && result.view && result.view.rollbackWarning) tavernErrorHub.report("回退提示", new Error(result.view.rollbackWarning));
 				} catch (err) {
 					tavernErrorHub.report("回退本轮", err);
 				} finally { setRolling(false); liveTavernView.invalidate(props.sessionId); tavernCoordination.invalidate(props.sessionId); }
