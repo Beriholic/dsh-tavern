@@ -141,6 +141,6 @@ test('脚本联动警告保留成功回退投影，不显示为回退失败', as
   h.running(false); h.warning('回退已完成，但脚本联动失败')
   await h.button().props.onClick()
   assert.ok(h.calls.includes('project'))
-  assert.ok(h.calls.includes('回退脚本联动: 回退已完成，但脚本联动失败'))
+  assert.ok(h.calls.includes('回退提示: 回退已完成，但脚本联动失败'))
   assert.ok(!h.calls.some(call => call.startsWith('回退本轮:')))
 })
