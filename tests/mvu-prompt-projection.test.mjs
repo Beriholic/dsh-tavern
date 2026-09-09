@@ -5,7 +5,7 @@ import { createMvuBackgroundTaskFrame, projectMvuBackgroundRequest, createMvuSet
 const schema = { type: 'object', properties: { hp: { type: 'number', required: true, description: 'unique-schema-marker' } }, extensible: false }
 const variables = { stat_data: { hp: 10, notes: '保留\n原文与空格  ' }, schema,
   display_data: { hp: '展示副本' }, delta_data: { hp: '差异副本' }, custom: { value: '自定义字段' }, initialized_lorebooks: ['book'] }
-const input = { backgroundTasks: { ledger: false, characterDesign: true }, operationId: 'op', chatId: 'c', branchId: 'b', basedOnRevision: 1,
+const input = { backgroundTasks: { characterDesign: true }, operationId: 'op', chatId: 'c', branchId: 'b', basedOnRevision: 1,
   sessionId: 's', messageId: 0, swipeId: 0, storyText: '体力减少一。', currentVariables: variables,
   updateRules: ['规则原文\n  缩进保留'] }
 

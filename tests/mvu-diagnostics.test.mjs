@@ -153,7 +153,7 @@ test('浏览器非抛出警告经事件门、执行器和结算回执持久保�
     await input.onToolCall({ name: 'mvu_submit_update', arguments: { analysis: '不要重复记录这段分析', operations: [{ op: 'add', path: '/角色', value: {} }] } })
     return { text: '{}', traceSessionId: 'bg' }
   } } })
-  const result = await module.settleVariables({ backgroundTasks: { ledger: false }, operationId: 'op', chatId: 'c', branchId: 'b', basedOnRevision: 1, sessionId: 's', messageId: 0, swipeId: 0, storyText: '正文', currentVariables: {} })
+  const result = await module.settleVariables({ operationId: 'op', chatId: 'c', branchId: 'b', basedOnRevision: 1, sessionId: 's', messageId: 0, swipeId: 0, storyText: '正文', currentVariables: {} })
   assert.equal(result.receipt.status, 'error')
   assert.equal(result.receipt.runtimeDiagnostics[0].message, '目标容器尚未初始化')
   const records = (await store.read('s')).records
@@ -171,7 +171,7 @@ test('诊断磁盘故障不会使已经成功的结算重试', async () => {
     model: { async run(input) { runs++; await input.onToolCall({ name: 'posture_submit', arguments: { posture: '原地站立' } }); await input.onToolCall({ name: 'mvu_submit_update', arguments: { operations: [] } }); return {} } },
     runtime: { async settleMvuUpdate() { return { context: { messages: [{ variables: {} }] } } } }
   })
-  const result = await module.settleVariables({ backgroundTasks: { ledger: false }, operationId: 'op', chatId: 'c', branchId: 'b', basedOnRevision: 1, sessionId: 's', messageId: 0, swipeId: 0, storyText: '正文', currentVariables: {} })
+  const result = await module.settleVariables({ operationId: 'op', chatId: 'c', branchId: 'b', basedOnRevision: 1, sessionId: 's', messageId: 0, swipeId: 0, storyText: '正文', currentVariables: {} })
   assert.equal(result.receipt.status, 'unchanged')
   assert.equal(runs, 1)
 })

@@ -25,7 +25,7 @@ for (const message of after.messages || []) {
     const storyStart = text.indexOf('[正文]\n', end)
     const storyEnd = text.indexOf('\n\n【DSH 后台任务协议', storyStart)
     assert(storyStart > end && storyEnd > storyStart)
-    const frame = createMvuBackgroundTaskFrame({ backgroundTasks: { ledger: false }, operationId: 'audit', chatId: 'audit', branchId: 'audit', basedOnRevision: 0,
+    const frame = createMvuBackgroundTaskFrame({ operationId: 'audit', chatId: 'audit', branchId: 'audit', basedOnRevision: 0,
       messageId: 0, swipeId: 0, storyText: text.slice(storyStart + '[正文]\n'.length, storyEnd), currentVariables: variables, variableSchema: schema, updateRules: [rules] })
     const projected = projectMvuBackgroundRequest(frame).turnContext
     const projectedVariables = JSON.parse(projected.split('【当前变量快照】\n')[1].split('\n【变量结构】')[0])
