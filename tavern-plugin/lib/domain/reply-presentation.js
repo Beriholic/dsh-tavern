@@ -16,6 +16,9 @@ export function resolveDisplayIdentityMacros(value, options = {}) {
 function isHtmlSource(value, info = '') {
   const content = str(value)
   const language = str(info).trim().split(/\s+/, 1)[0].toLowerCase()
+  // Some imported card regexes label whole UI documents as text. Keep snippets
+  // and narrative protocol tags literal; only promote a complete HTML document.
+  if (language === 'text') return /^\s*(?:<!doctype\s+html\s*>\s*)?<html(?:\s[^<>]*?)?>[\s\S]*<\/html>\s*$/i.test(content)
   if (language !== '') return language === 'html' || language === 'htm'
   return /<!--[\s\S]*?-->|<\/?[a-z][\w:-]*(?:\s[^<>]*?)?>/i.test(content)
 }

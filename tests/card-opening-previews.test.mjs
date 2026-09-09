@@ -137,3 +137,20 @@ test('MVU 能力检测不会清空完整封面，并为间接调用消息接口�
   assert.match(result.openings[0].projection.parts.map(p => p.content || p.text).join(''), /<h1>封面<\/h1>/)
   assert.deepEqual(result.openings[0].openingPreview.openingIds, ['primary', 'alternate:0'])
 })
+
+test('text fenced complete HTML from opening regex renders as HTML, ordinary text remains Markdown', async () => {
+  for (const [body, language, expected] of [
+    ['<!DOCTYPE html>\n<html lang="zh-CN"><head><title>接入协议</title></head><body><button>进入</button></body></html>', 'text', 'html'],
+    ['<html><body>开场</body></html>', 'text', 'html'],
+    ['<thinking>分析</thinking>\n\n正文', 'text', 'markdown'],
+    ['<div>代码示例</div>', 'text', 'markdown'],
+    ['<!DOCTYPE html><html><body>尚未结束', 'text', 'markdown'],
+    ['<!DOCTYPE html><html><body>示例</body></html>', 'javascript', 'markdown']
+  ]) {
+    const result = await projectCardOpeningPreviews({ card: { name: '测试', first_mes: '【封面】' }, extensions: {
+      regexScripts: [{ enabled: true, findRegex: '【封面】', replaceString: '```' + language + '\n' + body + '\n```', placement: [2] }]
+    } });
+    assert.equal(result.openings[0].projection.mode, expected, body);
+    if (expected === 'html') assert.equal(result.openings[0].projection.parts[0].content, body + '\n');
+  }
+});
