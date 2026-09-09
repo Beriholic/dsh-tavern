@@ -136,7 +136,7 @@ const server = createServer(async (request, response) => {
         if (started) throw new Error('reload fixture server before repeating')
         started = true; writes = 0
         gate.touch('fixture', 'browser', true)
-        const settled = await module.settleVariables({ operationId: 'fixture', chatId: 'fixture', branchId: 'b', basedOnRevision: 1,
+        const settled = await module.settleVariables({ backgroundTasks: { ledger: false }, operationId: 'fixture', chatId: 'fixture', branchId: 'b', basedOnRevision: 1,
           sessionId: 'fixture', messageId: 0, swipeId: 0, storyText: '测试正文', currentVariables: variables,
           charName: '测试卡', macroState: { userName: '测试玩家', local: {}, global: {} } })
         assert.equal(feedback.length, 2)

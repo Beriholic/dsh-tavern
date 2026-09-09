@@ -51,7 +51,7 @@ test('深模块强制一次工具调用并以官方 Runtime 的实际差异生�
     }
   })
 
-  const result = await module.settleVariables({
+  const result = await module.settleVariables({ backgroundTasks: { ledger: false },
     operationId: 'operation-1', chatId: 'chat-1', branchId: 'branch-1', basedOnRevision: 5,
     sessionId: 'session-1', turn: 2, messageId: 1, swipeId: 0, expectedLifecycleRevision: 3,
     storyText: '她受伤后扶墙站立。', selection: { provider: 'test', model: 'test' }, webSearchEnabled: true,
@@ -89,7 +89,7 @@ test('MVU 后台 Agent 在同一回合加载人物设计工具后继续完成姿
     runtime: { async settleMvuUpdate() { return { context: { messages: [{ variables: { hp: 10 } }] } } } }
   })
   const result = await module.settleVariables({
-    backgroundTasks: { characterDesign: true },
+    backgroundTasks: { ledger: false, characterDesign: true },
     operationId: 'operation-design', chatId: 'chat-design', branchId: 'branch-1', basedOnRevision: 1,
     sessionId: 'session-1', messageId: 0, swipeId: 0, storyText: '她走进门内。', currentVariables: { hp: 10 }
   })
@@ -120,7 +120,7 @@ test('MVU 工具提交在进入官方运行时前解析姿势和变量值中的�
     } }
   })
 
-  const result = await module.settleVariables({
+  const result = await module.settleVariables({ backgroundTasks: { ledger: false },
     operationId: 'operation-macro', chatId: 'chat-macro', branchId: 'branch-1', basedOnRevision: 1,
     sessionId: 'session-1', messageId: 0, swipeId: 0, storyText: '她从玩家身侧走过。',
     charName: '祝南枝', macroState: { userName: '陈锋', local: {}, global: {} },
@@ -178,7 +178,7 @@ test('深模块逐项核验提交结果并把人物卡脚本联动与失败操�
       }
     }
   })
-  const result = await module.settleVariables({
+  const result = await module.settleVariables({ backgroundTasks: { ledger: false },
     operationId: 'operation-partial', chatId: 'chat-1', branchId: 'branch-1', basedOnRevision: 5,
     sessionId: 'session-1', messageId: 0, swipeId: 0, storyText: '他走入长廊，望见石门。',
     currentVariables: {
@@ -216,7 +216,7 @@ test('深模块把有效空 Patch 记录为 unchanged，把漏调用工具记录
       async settleMvuUpdate() { return { updated: true, context: { messages: [{ variables: { hp: 10 } }] } } }
     }
   })
-  const input = {
+  const input = { backgroundTasks: { ledger: false },
     operationId: 'operation-2', chatId: 'chat-1', branchId: 'branch-1', basedOnRevision: 5,
     sessionId: 'session-1', messageId: 0, swipeId: 0, storyText: '他仍站在原地。', currentVariables: { hp: 10 }
   }
@@ -231,7 +231,7 @@ test('深模块把有效空 Patch 记录为 unchanged，把漏调用工具记录
 })
 
 test('变量结算 Frame 明确隔离用户输入、旧轮正文和隐藏思考', function () {
-  const frame = createMvuBackgroundTaskFrame({
+  const frame = createMvuBackgroundTaskFrame({ backgroundTasks: { ledger: false },
     operationId: 'agent-1', chatId: 'chat-1', branchId: 'branch-1', basedOnRevision: 9,
     messageId: 4, swipeId: 0, storyDigest: 'story-hash', storyText: '突破失败，他跌回原地。',
     currentVariables: { stat_data: { 修为: 10 }, schema: { type: 'object' } },
@@ -306,7 +306,7 @@ test('关闭姿势和设计后直接结算 MVU，关闭的工具不能写入状�
     runtime: { async settleMvuUpdate() { applied++; return { context: { messages: [{ variables: { hp: 10 } }] } } } }
   })
   const result = await module.settleVariables({
-    backgroundTasks: { posture: false, characterDesign: false },
+    backgroundTasks: { ledger: false, posture: false, characterDesign: false },
     operationId: 'tasks-off', branchId: 'branch', basedOnRevision: 1, chatId: 'chat', sessionId: 'session', messageId: 0, swipeId: 0,
     storyText: '没有变化。', currentVariables: { hp: 10 }
   })
@@ -315,7 +315,7 @@ test('关闭姿势和设计后直接结算 MVU，关闭的工具不能写入状�
   assert.equal(result.receipt.status, 'unchanged')
 })
 
-test('MVU 在同一个后台任务维护台账，先记账再提交变量，台账不进入官方变量 operations', async () => {
+test('MVU 默认在同一个后台任务维护台账，先记账再提交变量，台账不进入官方变量 operations', async () => {
   let calls = 0
   const module = createMvuSettlementModule({
     model: { async run(input) {
@@ -331,7 +331,7 @@ test('MVU 在同一个后台任务维护台账，先记账再提交变量，台�
       return { updated: false, context: { messages: [{ variables: {} }, { variables: { stat_data: { hp: 10 } } }] } }
     } }
   })
-  const result = await module.settleVariables({ operationId: 'ledger-test', chatId: 'chat', branchId: 'branch', basedOnRevision: 1, sessionId: 's', messageId: 1, swipeId: 0, turn: 2, currentVariables: { stat_data: { hp: 10 } }, storyText: '林岚与你同行', backgroundTasks: { posture: false, characterDesign: false, ledger: true } })
+  const result = await module.settleVariables({ operationId: 'ledger-test', chatId: 'chat', branchId: 'branch', basedOnRevision: 1, sessionId: 's', messageId: 1, swipeId: 0, turn: 2, currentVariables: { stat_data: { hp: 10 } }, storyText: '林岚与你同行', backgroundTasks: { posture: false, characterDesign: false } })
   assert.equal(calls, 1)
   assert.equal(result.ledger.npcs[0].name, '林岚')
   assert.equal(result.traceSessionId, 'same-background')

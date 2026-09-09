@@ -112,7 +112,7 @@ const settlement = createMvuSettlementModule({ runtime: adapter, diagnostics, mo
 } } })
 function settlementInput(id) {
   const s = state(id)
-  return { sessionId: id, operationId: 'op', chatId: id, branchId: 'b', basedOnRevision: 0,
+  return { backgroundTasks: { ledger: false }, sessionId: id, operationId: 'op', chatId: id, branchId: 'b', basedOnRevision: 0,
     messageId: 0, swipeId: 0, storyText: '测试正文', currentVariables: s.chat.messages[0].variables[0] }
 }
 async function resume(id) {

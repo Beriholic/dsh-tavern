@@ -5,7 +5,7 @@ import { createTavernScriptHostAdapter } from '../tavern-plugin/lib/domain/taver
 import { createTavernScriptDispatch } from '../tavern-plugin/lib/domain/tavern-script-dispatch.js'
 import { applyMvuSettlementEffect } from '../tavern-plugin/lib/domain/mvu-settlement-effect.js'
 
-const input = { operationId: 'op', chatId: 'c', branchId: 'b', basedOnRevision: 1,
+const input = { backgroundTasks: { ledger: false }, operationId: 'op', chatId: 'c', branchId: 'b', basedOnRevision: 1,
   sessionId: 's', messageId: 0, swipeId: 0, storyText: '测试正文',
   currentVariables: { stat_data: { hp: 10, location: 'door' } } }
 const call = operations => ({ name: 'mvu_submit_update', arguments: { operations } })

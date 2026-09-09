@@ -203,7 +203,7 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
     compatibilityMode: true,
     webSearchEnabled: false,
     backgroundModel: null,
-    backgroundTasks: { posture: true, characterDesign: true, variables: true, ledger: false },
+    backgroundTasks: { posture: true, characterDesign: true, variables: true, ledger: true },
     trustedCardMode: true,
     systemPrompts: [{ name: 'story', text: '内置正文提示词', customized: false }],
     storyPrompt: '内置正文提示词',
@@ -217,7 +217,7 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
     compatibilityMode: true,
     webSearchEnabled: false,
     backgroundModel: null,
-    backgroundTasks: { posture: true, characterDesign: true, variables: true, ledger: false },
+    backgroundTasks: { posture: true, characterDesign: true, variables: true, ledger: true },
     trustedCardMode: true,
     systemPrompts: [{ name: 'story', text: '用户正文提示词', customized: true }],
     storyPrompt: '用户正文提示词',
@@ -268,9 +268,9 @@ test('单项系统提示词保存和恢复不会影响其他项', function () {
 })
 
 
-test('后台任务设置默认三项开启，独立修改并持久化，变量默认开启且允许关闭', async t => {
+test('后台任务设置默认四项开启，独立修改并持久化，变量默认开启且允许关闭', async t => {
   const run = await settingsHarness(t)
-  assert.deepEqual((await run.read()).backgroundTasks, { posture: true, characterDesign: true, variables: true, ledger: false })
+  assert.deepEqual((await run.read()).backgroundTasks, { posture: true, characterDesign: true, variables: true, ledger: true })
   await run.update({ backgroundTasks: { posture: false, variables: false, ledger: false } })
   await run.update({ backgroundTasks: { characterDesign: true } })
   assert.deepEqual((await run.read()).backgroundTasks, { posture: false, characterDesign: true, variables: false, ledger: false })
@@ -286,4 +286,7 @@ test('台账维护可独立开启且不改变其他后台任务', async t => {
   assert.equal((await run.read()).backgroundTasks.ledger, true)
   await run.update({ backgroundTasks: { ledger: false } })
   assert.equal((await run.read()).backgroundTasks.ledger, false)
+  await run.update({ backgroundTasks: { variables: false } })
+  assert.equal((await run.read()).backgroundTasks.ledger, false)
+  assert.equal(presentTavernSettings(await run.saved(), {}).backgroundTasks.ledger, false)
 })
