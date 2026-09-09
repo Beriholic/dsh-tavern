@@ -7551,7 +7551,6 @@ window.__ModuleLoader__.load({
 				),
 					h("div", { className: "dsh-tavern-status-body" },
 					h(TavernCardAppDock, { sessionId: props.sessionId }),
-					h(TavernLedger, { key: props.sessionId, sessionId: props.sessionId, ledger: view.ledger, busy: running || ["pending", "running", "waiting-runtime"].includes(view.settleStatus) }),
 					view.settleStatus === "error" ? h("div", { className: "dsh-card-error" },
 						h("div", null, view.settleError || "后台结算失败，请重试。"),
 						h("button", { className: "dsh-tavern-btn", disabled: settlementRetryBusy, onClick: retrySettlement }, settlementRetryBusy ? "重试中…" : "重试后台结算")
