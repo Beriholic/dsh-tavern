@@ -4845,7 +4845,7 @@ window.__ModuleLoader__.load({
 				}, [turnRef, data.finalNode, tail, props.openFile]);
 				const mentions = React.useMemo(function () { return owner === undefined ? undefined : props.fileMentions(owner); }, [owner, props.fileMentions]);
 				const rendered = sessionTransitioning ? (sessionTransitioning.projection ? [
-					React.createElement(React.Fragment, { key: "opening-preview" }, renderTavernProjection(sessionTransitioning.projection, { streaming: false, codeLabels: { copyLabel: "复制", copiedLabel: "已复制" }, mentions: [], sessionId: "", turn: 1, helperContext: null, trustedCardMode: sessionTransitioning.trustedCardMode === true })),
+					React.createElement(React.Fragment, { key: "opening-preview" }, renderTavernProjection(sessionTransitioning.projection, { streaming: false, codeLabels: { copyLabel: "复制", copiedLabel: "已复制" }, mentions: undefined, sessionId: "", turn: 1, helperContext: null, trustedCardMode: sessionTransitioning.trustedCardMode === true })),
 					React.createElement("div", { key: "switching", className: "dsh-tavern-session-switching", role: "status" }, "正在完成游戏初始化…")
 				] : [React.createElement("div", { key: "switching", className: "dsh-tavern-session-switching", role: "status" }, "正在完成游戏初始化…")]) : renderTavernAssistantBlocks({
 					blocks: data.blocks,
@@ -5670,7 +5670,7 @@ window.__ModuleLoader__.load({
 				}, renderTavernProjection(selectedOpening.projection, {
 					streaming: false,
 					codeLabels: { copyLabel: "复制", copiedLabel: "已复制" },
-					mentions: [],
+					mentions: undefined,
 					sessionId: "",
 					turn: 1,
 					helperContext: null,
@@ -5694,7 +5694,7 @@ window.__ModuleLoader__.load({
 				}, renderTavernProjection(selectedOpening.projection, {
 					streaming: false,
 					codeLabels: { copyLabel: "复制", copiedLabel: "已复制" },
-					mentions: [],
+					mentions: undefined,
 					sessionId: "",
 					turn: 1,
 					helperContext: selectedOpening.helperContext,
