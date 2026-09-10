@@ -248,7 +248,7 @@ test('变量结算 Frame 明确隔离用户输入、旧轮正文和隐藏思考'
   assert.match(suppliedContext, /突破失败/)
   assert.doesNotMatch(suppliedContext, /尝试突破|隐藏思考|旧轮正文/)
   assert.deepEqual(request.tools.map(function (tool) { return tool.name }), [
-    'posture_submit', 'character_design_read', 'character_design_save', 'mvu_submit_update'
+    'posture_submit', 'mvu_submit_update'
   ])
   const mvuTool = request.tools.find(function (tool) { return tool.name === 'mvu_submit_update' })
   assert.deepEqual(mvuTool.parameters.required, ['operations'])

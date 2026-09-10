@@ -1,3 +1,4 @@
+import { normalizeBackgroundTasks } from '../tavern-plugin/lib/domain/tavern-settings.js'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import vm from 'node:vm'
@@ -51,8 +52,9 @@ test('普通卡真实 runSettlement 调用原后台并提交台账，姿势不�
   let chat = { id: 'chat', sessionId: 'front', messages: [{ role: 'assistant', turn: 2, text: '获得解药' }] }
   let calls = 0
   const ctx = {
+    normalizeBackgroundTasks,
     readChat: async () => structuredClone(chat), prepareNextWorldBookContext: async c => c,
-    backgroundTasks: { begin: async snapshot => ({ chat: snapshot, participantRequest: { sessionId: 'same-background', rewindTo: null }, participant: x => x, commit: async completion => { completion.apply(chat); return { status: 'committed', chat } } }) },
+    backgroundTasks: { begin: async snapshot => ({ chat: snapshot, participantRequest: { sessionId: 'same-background', rewindTo: null }, participant: x => x, commit: async completion => { assert.notEqual(completion.status, 'failed', '真实结算意外进入失败分支'); assert.equal(typeof completion.apply, 'function'); completion.apply(chat); return { status: 'committed', chat } } }) },
     readChatCard: async () => ({ name: '测试卡' }), readTavernSettings: async () => ({ backgroundTasks: { ledger: true, posture: true, variables: false, characterDesign: false } }),
     backgroundModelSelection: () => ({ model: 'fake' }),
     backgroundAgentRunner: { run: async input => {

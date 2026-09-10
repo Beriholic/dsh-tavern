@@ -30,6 +30,8 @@ function harness(scripts, onAppend, ready = Promise.resolve()) {
   let context
   const window = {
     __dshTavernHelperReady: ready,
+    // Use the production wait wrapper without arming diagnostic timers in this harness.
+    __dshTavernInitializationTiming: client.createTavernInitializationTiming({ schedule: () => null, cancel: () => {} }),
     __dshTavernHelperSetCurrentScript(id) { events.push(['start', id]) },
     __dshTavernHelperSubscriptionsReady(id) { events.push(['ready', id]) },
     __dshTavernHelperSubscriptionsFailed(id, error) { events.push(['failed', id, error.message]) },
