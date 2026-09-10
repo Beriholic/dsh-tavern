@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> 命令行版每次安装都会独立下载 DSH `0.1.2-rc.1`，不复用或修改全局 DSH。
+> 命令行版使用独立的 DSH `0.1.2-rc.1`；安装和更新时复用版本匹配且可启动的独立运行时，无需每次下载，不复用或修改全局 DSH。
 > Desktop 推荐 **2.0.5**（内置 DSH `0.1.2-rc.1`），不强制锁定；如遇兼容报错，请自行从 [Desktop 历史版本下载页面](https://github.com/anywhere-labs/dsh-desktop/releases) 下载安装推荐版本。DSHA 推荐 **1.2.0-rc1.4**，同样不强制锁定，报错时请从 [DSHA 历史版本下载页面](https://github.com/DSH-APP/DSHA/releases) 下载推荐版本。
 
 # dsh-tavern
@@ -165,7 +165,7 @@ dsh-tavern 使用尽可能少而精的提示词，把流程和状态交给程序
 
 | 安装方式 | DSH 运行时与版本策略 | 数据位置 |
 | --- | --- | --- |
-| 命令行版（Windows / macOS / Linux） | 每次安装或更新都重新下载独立的 DSH `0.1.2-rc.1`，不要求预装 DSH，不复用或替换全局 DSH | 默认 `~/.dsh-tavern/`，与外部 DSH 数据分开 |
+| 命令行版（Windows / macOS / Linux） | 使用独立的 DSH `0.1.2-rc.1`；版本匹配且可启动时直接复用，不要求预装 DSH，不复用或替换全局 DSH | 默认 `~/.dsh-tavern/`，与外部 DSH 数据分开 |
 | DSH Desktop | 推荐 **2.0.5**，复用宿主自带 DSH，不强制锁定宿主版本 | Desktop 的 Tavern Profile 数据目录 |
 | DSHA（Android，实验性支持） | 推荐 **1.2.0-rc1.4**，复用宿主自带 DSH，不强制锁定宿主版本 | DSHA 的 Tavern Profile 数据目录 |
 
@@ -201,7 +201,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/flizzywine/dsh-tavern@main/install.sh | D
 
 ### 命令行版
 
-适合希望通过浏览器访问、自己管理服务的用户。需要 Node.js 22.19 或更高版本。不论电脑是否已有 DSH，安装器都会重新下载一份固定版本的独立 DSH，不复用或修改全局安装。建议安装 Git：安装器会建立持久化稀疏缓存，首次只获取运行文件，后续只拉取变化内容，不下载 `docs/`、文档图片、`demo/`、`references/` 和测试文件；没有 Git 时自动回退到完整 ZIP。
+适合希望通过浏览器访问、自己管理服务的用户。需要 Node.js 22.19 或更高版本。无需预装 DSH。安装器使用固定版本的独立 DSH，不复用或修改全局安装；首次安装、指定版本变化、运行时缺失或启动检查失败时才重新下载。建议安装 Git：安装器会建立持久化稀疏缓存，首次只获取运行文件，后续只拉取变化内容，不下载 `docs/`、文档图片、`demo/`、`references/` 和测试文件；没有 Git 时自动回退到完整 ZIP。
 
 #### Windows
 
@@ -314,9 +314,31 @@ dsh-tavern restart
 dsh-tavern update
 ```
 
-命令行版的 `dsh-tavern update` 更新插件，并重新安装该版指定的独立 DSH；全局 DSH 的升级不会改变这份运行时。Desktop / DSHA 更新只更新酒馆，保留宿主版本；兼容报错时请自行下载推荐宿主版本。Desktop 版由 DSH Desktop 统一管理启停。
+命令行版的 `dsh-tavern update` 更新插件，并检查独立 DSH 的版本与启动状态；符合要求就直接复用，否则重新安装指定版本。全局 DSH 的升级不会改变这份运行时。Desktop / DSHA 更新只更新酒馆，保留宿主版本；兼容报错时请自行下载推荐宿主版本。Desktop 版由 DSH Desktop 统一管理启停。
 
-命令行版数据独立保存在 `~/.dsh-tavern/profile-data/tavern/`（自定义安装以实际目录为准）；Desktop / DSHA 使用各自宿主的 Tavern Profile 数据目录。
+命令行版默认目录如下（Windows 的 `~` 对应 `%USERPROFILE%`，通常是 `C:\Users\你的用户名`）：
+
+| 内容 | 默认目录 |
+| --- | --- |
+| 独立 DSH 程序 | `~/.dsh-tavern/runtime/` |
+| 人物卡、游戏状态等数据 | `~/.dsh-tavern/profile-data/tavern/data/` |
+| 原生会话记录 | `~/.dsh-tavern/profile-data/tavern/sessions/` |
+
+备份游戏时建议复制整个 `~/.dsh-tavern/profile-data/tavern/`。更新或重装运行时不会删除这个目录。设置 `DSH_TAVERN_CLI_HOME` 后，上述路径均位于指定目录下；Desktop / DSHA 使用各自宿主的 Tavern Profile 数据目录。
+
+需要强制重装独立 DSH 时，在本次安装或更新前设置 `DSH_TAVERN_REINSTALL_RUNTIME=1`，完成后取消设置：
+
+```powershell
+$env:DSH_TAVERN_REINSTALL_RUNTIME='1'
+dsh-tavern update
+Remove-Item Env:DSH_TAVERN_REINSTALL_RUNTIME
+```
+
+macOS / Linux：
+
+```sh
+DSH_TAVERN_REINSTALL_RUNTIME=1 dsh-tavern update
+```
 
 ## 社区交流
 

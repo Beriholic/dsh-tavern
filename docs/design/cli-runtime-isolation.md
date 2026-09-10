@@ -10,7 +10,7 @@ DSHA 下载：https://github.com/DSH-APP/DSHA/releases 。找到 v1.2.0-rc1.4，
 
 默认根目录为 `~/.dsh-tavern/`，可用 `DSH_TAVERN_CLI_HOME` 指定。源目录的 `.dsh-tavern-local.json` 保存安装宿主和数据根目录，让新终端启动及更新沿用原位置。CLI 子进程显式接收该目录作为 `DSH_HOME`。
 
-- `runtime/`：每次安装在临时目录下载精确版本的 DSH，再替换私有运行时。不会复用全局 DSH，也不会把旧依赖目录增量混入。npm 可以复用下载缓存。
+- `runtime/`：安装和更新先检查私有 DSH 的版本及 `--version` 启动结果；匹配且可启动时直接复用。缺失、版本不同、启动失败或设置 `DSH_TAVERN_REINSTALL_RUNTIME=1` 时，在临时目录下载精确版本，再替换私有运行时。不会复用全局 DSH，也不会把旧依赖目录增量混入。npm 可以复用下载缓存。
 - `tools/`：安装器需要的 pnpm；不加入 Desktop 的搜索路径。
 - `profiles/tavern/`、`profile-data/tavern/`：独立插件配置、原生 Session 历史及游戏资源。
 - `settings.yaml`、`.credentials.yaml` 等：独立模型配置和认证信息。

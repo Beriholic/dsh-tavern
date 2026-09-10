@@ -7,9 +7,24 @@ export function cliRuntimeCommand(root, platform = process.platform) {
   return platform === 'win32' ? path.join(root, 'dsh.cmd') : path.join(root, 'bin', 'dsh')
 }
 
-// Every install builds a fresh, private dependency tree. npm's cache may be
-// reused, but neither the global DSH nor an old node_modules tree is reused.
-export function installCliRuntime({ root, run, platform = process.platform }) {
+// Validate the private CLI before reuse; never search PATH for a global DSH.
+export function healthyCliRuntime(root, platform = process.platform) {
+  try {
+    const packageFile = path.join(root, platform === 'win32' ? 'node_modules/@deepseek-ai/dsh/package.json' : 'lib/node_modules/@deepseek-ai/dsh/package.json')
+    const pkg = JSON.parse(readFileSync(packageFile, 'utf8'))
+    const bin = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.dsh
+    if (pkg.version !== adaptedDshVersion || !bin || !existsSync(cliRuntimeCommand(root, platform))) return false
+    const result = spawnSync(process.execPath, [path.resolve(path.dirname(packageFile), bin), '--version'], {
+      encoding: 'utf8', timeout: 15000, windowsHide: true,
+    })
+    return !result.error && result.status === 0 && result.stdout.trim() === adaptedDshVersion
+  } catch { return false }
+}
+
+export function installCliRuntime({ root, run, platform = process.platform, force = process.env.DSH_TAVERN_REINSTALL_RUNTIME === '1' }) {
+  if (!force && healthyCliRuntime(root, platform)) {
+    return { command: cliRuntimeCommand(root, platform), reused: true, commit() {}, rollback() {} }
+  }
   mkdirSync(path.dirname(root), { recursive: true })
   const staging = mkdtempSync(`${root}.install-`)
   const backup = `${staging}.previous`

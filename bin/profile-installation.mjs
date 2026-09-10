@@ -220,6 +220,7 @@ export async function installProfile(host = RUNTIME_HOST) {
     console.log(`已复制旧 CLI 配置与游戏数据到 ${DSH_ROOT}；原数据保持不变。`)
   }
   const runtime = host === 'cli' ? installCliRuntime({ root: CLI_RUNTIME_ROOT, run }) : null
+  if (runtime?.reused) console.log('已复用版本匹配且可启动的独立 DSH，无需重新下载。')
   try {
     const dsh = runtime?.command || findDshCommand(host)
     const dshVersion = extractDshVersion(runDsh(dsh, ['--version'], { capture: true, host }))

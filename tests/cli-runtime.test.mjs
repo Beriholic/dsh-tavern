@@ -19,13 +19,14 @@ function fakeDownload(platform, calls) {
     assert.equal(command, 'npm')
     assert.equal(args.at(-1), `@deepseek-ai/dsh@${adaptedDshVersion}`)
     const prefix = args[args.indexOf('--prefix') + 1]
-    put(path.join(prefix, platform === 'win32' ? 'node_modules/@deepseek-ai/dsh/package.json' : 'lib/node_modules/@deepseek-ai/dsh/package.json'), JSON.stringify({ version: adaptedDshVersion }))
+    put(path.join(prefix, platform === 'win32' ? 'node_modules/@deepseek-ai/dsh/package.json' : 'lib/node_modules/@deepseek-ai/dsh/package.json'), JSON.stringify({ version: adaptedDshVersion, bin: { dsh: "bin.cjs" } }))
     put(cliRuntimeCommand(prefix, platform), 'private')
+    put(path.join(prefix, platform === 'win32' ? 'node_modules/@deepseek-ai/dsh/bin.cjs' : 'lib/node_modules/@deepseek-ai/dsh/bin.cjs'), `console.log(${JSON.stringify(adaptedDshVersion)})`)
   }
 }
 
 for (const platform of ['linux', 'win32']) {
-  test(`${platform}: reinstall downloads fresh dependencies; rollback restores old runtime`, t => {
+  test(`${platform}: reinstall reuses healthy runtime; replacement rollback restores old runtime`, t => {
     const root = path.join(temporary(t), 'runtime'), calls = []
     put(path.join(root, 'old-only.txt'), 'old')
     let tx = installCliRuntime({ root, platform, run: fakeDownload(platform, calls) })
@@ -37,7 +38,23 @@ for (const platform of ['linux', 'win32']) {
     tx.commit()
     tx = installCliRuntime({ root, platform, run: fakeDownload(platform, calls) })
     tx.commit()
+    assert.equal(calls.length, 2)
+    assert.equal(tx.reused, true)
+    tx.rollback()
+    assert.ok(existsSync(tx.command))
+    tx = installCliRuntime({ root, platform, run: fakeDownload(platform, calls), force: true })
+    tx.commit()
     assert.equal(calls.length, 3)
+    put(cliRuntimeCommand(root, platform) + ".marker", "keep")
+    const packageRoot = path.join(root, platform === "win32" ? "node_modules/@deepseek-ai/dsh" : "lib/node_modules/@deepseek-ai/dsh")
+    put(path.join(packageRoot, "bin.cjs"), "process.exit(1)")
+    tx = installCliRuntime({ root, platform, run: fakeDownload(platform, calls) })
+    tx.commit()
+    assert.equal(calls.length, 4)
+    put(path.join(packageRoot, 'package.json'), JSON.stringify({ version: '0.0.0', bin: { dsh: 'bin.cjs' } }))
+    tx = installCliRuntime({ root, platform, run: fakeDownload(platform, calls) })
+    tx.commit()
+    assert.equal(calls.length, 5)
     assert.equal(existsSync(path.join(root, 'old-only.txt')), false)
   })
 }
