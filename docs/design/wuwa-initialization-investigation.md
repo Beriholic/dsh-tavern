@@ -142,3 +142,11 @@ node tests/fixtures/verify-mvu-initialization.mjs http://127.0.0.1:PORT opening-
 EJS 后端已有实际运行时就绪状态，缺口在原卡从 `window.parent.SillyTavern.getContext()` 检测，而接口仅存在于脚本 iframe。可信模式现将当前脚本接口转发到宿主，状态仍来自正式 Helper context；隔离模式不开放。卸载时恢复原接口，交叠的旧实例不会清除新实例，也不会恢复已退出的 iframe。
 
 真实 DSH 页面中九项自检显示“全部就绪”，世界书监控浮窗可见。针对消息渲染、生命周期、Helper API、兼容模块、EJS 和扩展状态的 134 项测试通过；包括实际就绪状态变化和交叠卸载回归。尚未验证模型生成后的完整剧情流程。
+
+## 2026-09-10：原卡世界书清理函数
+
+本地 `data/resources/cards/鸣潮.json` 的世界书控制脚本在 `cleanupResidualAutoBlue` 中引用未声明的 `roundWb`。将主循环已有的批次缓冲参数传入该函数，保留手动蓝灯条目和独立调用时直接保存的行为。修复只作用于本地卡，不通过全局变量兼容层掩盖，也没有把原卡内容收录进仓库。
+
+原卡备份：`/Users/cf/.dsh/profile-data/tavern/data/recovery/cards/鸣潮-before-worldbook-round-fix-20260910-164353.json`。
+
+回归工具 `node tests/fixtures/verify-wuwa-worldbook-script.mjs <card.json>` 读取外部卡，提取清理函数并使用一次性数据验证。修改前复现 `ReferenceError: roundWb is not defined`，修改后缓冲写入、手动条目保留和独立保存均通过。其他用户仍需取得修复后的卡；该本地修改不会随插件更新自动分发。
