@@ -15,6 +15,10 @@
 
 验证入口：`tests/reply-presentation.test.mjs`、`tests/card-opening-previews.test.mjs`、`tests/fixtures/native-prose-browser-smoke.mjs`。后者使用真实 DSH MarkdownText 和正式消息 renderer；桌面 Chromium 的手机尺寸与触摸模拟不能代替 iOS / Android 真机验收。
 
+## 正文协议标签
+
+围栏外无属性的非标准 HTML 标签（如 `<story>`、`<now_plot>`）统一作为正文分隔标记，仅展示时去掉标签，内部按 Markdown 渲染，不再维护卡片标签白名单。标准 HTML、带属性的标签、自定义元素（名称含 `-` 或 `:`）及明确 HTML 围栏保持隔离渲染；已进入 HTML 容器的内部不拆解。原文、模型上下文及编辑源保持不变。
+
 ## 目标
 
 dsh-tavern 在消息原位置承接酒馆的“显示正则 + 前端渲染”机制，同时支持模型直接输出的 HTML：

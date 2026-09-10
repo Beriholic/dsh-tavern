@@ -119,7 +119,7 @@ function splitHtmlBoundaries(source, editing = false) {
       cursor = tokens.lastIndex
       continue
     }
-    if (isNarrativeTag(tag, token[0]) && (editing || ['content', 'gametxt', 'thinking', 'think', 'analysis'].includes(tag))) {
+    if (isNarrativeTag(tag, token[0])) {
       if (start < 0) {
         append('text', source.slice(cursor, token.index))
         append('marker', token[0])

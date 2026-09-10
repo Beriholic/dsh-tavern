@@ -107,7 +107,7 @@ test('promptOnly 只改变 Session 投影', () => {
 
   assert.equal(result.sessionText, '正文。')
   assert.equal(result.displayText, source)
-  assert.equal(result.displayMode, 'html')
+  assert.equal(result.displayMode, 'markdown')
 })
 
 test('两个 flag 都启用时分别改变 Session 和展示投影', () => {
@@ -242,7 +242,7 @@ test('历史投影从原文重算，关闭展示正则后恢复原始消息', ()
   ], { regexScripts: [], placement: 2 })
 
   assert.deepEqual(disabled.projections.map(({ turn, text, mode }) => ({ turn, text, mode })), [
-    { turn: 2, text: source, mode: 'html' }
+    { turn: 2, text: source, mode: 'markdown' }
   ])
   assert.equal(disabled.presentation, null)
 })
@@ -364,4 +364,21 @@ test('模型协议标记夹在前言、思考与正文之间时仍保留 Markdow
   const result = projectDisplayParts('<thinking>分析</thinking>\n<content><!-- 写作备注 -->\n第一段。\n\n第二段。</content>')
   assert.ok(result.parts.every(part => part.kind === 'markdown'))
   assert.deepEqual(projectDisplayParts('<div><!-- UI 注释 -->面板</div>').parts, [{ kind: 'html', content: '<div><!-- UI 注释 -->面板</div>' }])
+})
+
+test('任意无属性正文协议标签保留 Markdown 段落，不依赖卡片标签白名单', () => {
+  for (const tag of ['story', 'now_plot', 'dream_body', 'Narrative']) {
+    const body = '\r\n第一段。\r\n\r\n**第二段。**\r\n'
+    const source = `<${tag}>${body}</${tag}>`
+    const result = projectReplyLayers(source)
+    assert.equal(result.sourceText, source)
+    assert.equal(result.sessionText, source)
+    assert.ok(result.displayParts.every(part => part.kind === 'markdown'), tag)
+    assert.equal(result.displayParts.map(part => part.text).join(''), body)
+  }
+  const mixed = projectDisplayParts('<story>第一段。\n\n**第二段。**\n<details><summary>状态</summary>正常</details>\n尾声。</story>').parts
+  assert.deepEqual(mixed.map(part => part.kind), ['markdown', 'html', 'markdown'])
+  for (const source of ['<story-panel>界面</story-panel>', '<panel class="ui">界面</panel>', '<div><story>界面</story></div>', '```html\n<story>界面</story>\n```']) {
+    assert.equal(projectDisplayParts(source).parts[0].kind, 'html')
+  }
 })
