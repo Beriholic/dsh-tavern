@@ -241,3 +241,13 @@ test('首页选择器行只在 Tavern hero 隐藏，不更改宿主预设和工�
   assert.match(source, /const agentPreset = "tavern"/)
   assert.match(source, /props\.workspaces\.create\(\{ path: resourceRoot\.path \}\)/)
 })
+
+test('世界书搜索匹配正文和触发词，过滤后保留原编辑索引', () => {
+  const entries = [{ ref: 'a', comment: '其他', constant: true }, { ref: 'b', content: 'Dragon DLC', constant: true }, { ref: 'c', primaryKeys: ['龙姬'] }]
+  const english = browser.groupWorldBookEditorEntries(entries, ' dragon ')
+  assert.deepEqual(Array.from(english.constant, x => x.index), [1])
+  const keyword = browser.groupWorldBookEditorEntries(entries, '龙姬')
+  assert.deepEqual(Array.from(keyword.dynamic, x => x.index), [2])
+  assert.equal(browser.groupWorldBookEditorEntries(entries, '不存在').constant.length, 0)
+  assert.equal(entries.length, 3)
+})

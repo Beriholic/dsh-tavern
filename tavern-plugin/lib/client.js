@@ -6944,9 +6944,11 @@ window.__ModuleLoader__.load({
 			}
 			const presetLibraryFeature = createExternalPresetAndBypassPlanFeatureModule();
 
-		function groupWorldBookEditorEntries(entries) {
+		function groupWorldBookEditorEntries(entries, query) {
 			const groups = { constant: [], dynamic: [] };
+			const needle = String(query || "").trim().toLocaleLowerCase();
 			for (const [index, entry] of (entries || []).entries()) {
+				if (needle && ![entry.comment, entry.title, entry.content, ...(entry.primaryKeys || []), ...(entry.secondaryKeys || [])].join("\n").toLocaleLowerCase().includes(needle)) continue;
 				groups[entry && entry.constant === true ? "constant" : "dynamic"].push({ entry: entry, index: index });
 			}
 			return groups;
@@ -6958,6 +6960,7 @@ window.__ModuleLoader__.load({
 			const [draft, setDraft] = React.useState(function () { return JSON.parse(JSON.stringify(initial)); });
 			const [busy, setBusy] = React.useState(false);
 			const [error, setError] = usePersistentError("世界书编辑");
+			const [query, setQuery] = React.useState("");
 			React.useEffect(function () { setDraft(JSON.parse(JSON.stringify(initial))); }, [props.record]);
 			const h = React.createElement;
 			function updateEntry(index, patch) {
@@ -7059,7 +7062,7 @@ window.__ModuleLoader__.load({
 					items.length ? items.map(function (item) { return entryRow(item.entry, item.index); }) : h("div", { className: "dsh-tavern-worldbook-empty" }, "暂无" + label)
 				);
 			}
-			const entryGroups = groupWorldBookEditorEntries(draft.entries);
+			const entryGroups = groupWorldBookEditorEntries(draft.entries, query);
 			return h("div", { className: "dsh-tavern-library" },
 				h("div", { className: "dsh-tavern-status-head" }, h("button", { className: "dsh-tavern-btn", onClick: props.onBack }, "← 返回世界书库"), h("div", { className: "dsh-tavern-status-title" }, draft.displayName || "未命名世界书"), h("div", { className: "dsh-tavern-question-sub" }, props.record.source.kind === "card" ? "人物卡内置 · " + props.record.source.cardName : "独立世界书"), props.actions),
 				h("div", { className: "dsh-tavern-worldbook-editor" },
@@ -7069,6 +7072,7 @@ window.__ModuleLoader__.load({
 					h("div", { className: "dsh-tavern-worldbook-summary" }, draft.entries.length + " 个条目 · " + draft.entries.filter(function (entry) { return entry.enabled !== false; }).length + " 个启用。未知字段与 extensions 会原样保留；尚未实现的酒馆运行语义不会在这里伪装成已支持。"),
 					(initial.diagnostics || []).map(function (item, index) { return h("div", { key: index, className: "dsh-tavern-dock-error" }, item.message); }),
 					h("div", { className: "dsh-tavern-worldbook-head" }, h("span", { className: "dsh-tavern-worldbook-title" }, "条目"), h("button", { className: "dsh-tavern-worldbook-add", onClick: addEntry }, "＋ 新增条目")),
+					h("div", { className: "dsh-tavern-card-field" }, h("label", null, "搜索条目"), h("input", { type: "search", value: query, placeholder: "搜索标题、正文或触发词", onChange: function (event) { setQuery(event.target.value); } }), h("span", null, "匹配 " + (entryGroups.constant.length + entryGroups.dynamic.length) + " / " + draft.entries.length + " 条")),
 					entryGroup("常驻条目", "始终进入上下文", entryGroups.constant),
 					entryGroup("非常驻条目", "按触发词匹配", entryGroups.dynamic),
 					error ? h("div", { className: "dsh-card-error" }, error) : null,
