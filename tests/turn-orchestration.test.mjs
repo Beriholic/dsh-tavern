@@ -761,3 +761,15 @@ test('玩家台账不进入前台 Frame 或原生请求消息', async () => {
   assert.ok(!foregroundFrameText(prepared.frame).includes('LEDGER_PRIVATE_SENTINEL'))
   assert.equal(run.chat().ledger.items[0].name, 'LEDGER_PRIVATE_SENTINEL')
 })
+
+test('动态常驻只进入系统区块，正文条件条目继承本次宏变量', async () => {
+  const run = harness('story', {
+    planner: createContextPlanner({ prompt: () => '正文写作规则' }),
+    preparedWorldBookContext: '城市：{{getvar::补充}}',
+    projectWorldBookTemplates: async () => ({ dynamicConstants: true, context: '系统常驻正文', macroState: { local: { 补充: '龙姬解封' } }, refs: ['dlc'], diagnostics: [] })
+  })
+  const prepared = await run.orchestrator.prepare({ sessionId: 'session-1', turn: 2, userText: '继续' })
+  const text = foregroundFrameText(prepared.frame)
+  assert.match(text, /城市：龙姬解封/)
+  assert.doesNotMatch(text, /系统常驻正文/)
+})

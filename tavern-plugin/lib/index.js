@@ -23,7 +23,7 @@ import { legacyImageConfigurationReader } from './domain/image-generation-host.j
 import { createSceneWorldbooks, sceneWorldbookBinding } from './domain/scene-worldbook.js'
 import { createSceneImageDiagnostics, createSceneImageHostLogger } from './domain/scene-image-diagnostics.js'
 import { TAVERN_RELEASE_CAPABILITIES } from './domain/release-capabilities.js'
-import { createSessionStablePrefixStorage, ensureSessionStablePrefix, readSessionStablePrefix, sessionStablePrefixSections } from './domain/session-stable-prefix.js'
+import { createSessionStablePrefixStorage, ensureSessionStablePrefix, readSessionStablePrefix, sessionStablePrefixSections, withCurrentWorldbook } from './domain/session-stable-prefix.js'
 import { waitForWritableSession } from './domain/agent-readiness.js'
 import { createCardDeletion } from './domain/card-deletion.js'
 import { orderCardsByNewestImport } from './domain/card-list-order.js'
@@ -1437,6 +1437,11 @@ export async function apply(ctx) {
       const chat = await chatForSession(sessionId)
       return chat?.timeline?.participants?.background?.status === 'needs-session'
     },
+    resolveCurrentWorldbook: async function (input) {
+      if (input.task === 'image') return undefined
+      const chat = await chatForSession(input.sessionId)
+      return chat ? (await nativeWorldBookTemplateContext(chat, await readChatCard(chat))).context : undefined
+    },
     resolveStablePrefix: async function (input) {
       if (input.task === 'image') return ''
       const chat = await chatForSession(input.sessionId)
@@ -1552,6 +1557,7 @@ export async function apply(ctx) {
     if (!worldBook || !worldBook.view) return { context: '', refs: [], diagnostics: [] }
     try {
       return projectWorldBookTemplates({
+        includeConstants: true,
         worldBook,
         runtime: await promptTemplateRuntime(),
         globalVariables: await readPromptTemplateGlobalVariables(),
@@ -1579,9 +1585,7 @@ export async function apply(ctx) {
     },
     planner: contextPlanner,
     stableWorldBookContext: async function (chat, card) {
-      const fixed = await playCardSnapshots.constantContext(chat, card)
-      const dynamic = await nativeWorldBookTemplateContext(chat, card)
-      return [fixed, str(dynamic.context).trim()].filter(Boolean).join('\n\n')
+      return (await nativeWorldBookTemplateContext(chat, card)).context
     },
     prompt: runtimePrompt,
     scripts: scriptContinuity,
@@ -3307,7 +3311,9 @@ export async function apply(ctx) {
       chat,
       cwd: agent.session.header && agent.session.header.cwd,
       workspaceProjection,
-      fixedSystemSections: sessionStablePrefixSections(agent.session)
+      fixedSystemSections: chat && ['story', 'script'].includes(chat.mode || 'story')
+        ? withCurrentWorldbook(sessionStablePrefixSections(agent.session), (await nativeWorldBookTemplateContext(chat, await readChatCard(chat))).context)
+        : sessionStablePrefixSections(agent.session)
     })
   })
 

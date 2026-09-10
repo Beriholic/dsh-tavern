@@ -133,3 +133,10 @@ export function sessionStablePrefixSections(session) {
   const prefix = readSessionStablePrefix(session)
   return prefix ? sourceSections(prefix.text) : []
 }
+
+/** Replace only the request projection; persisted opening events remain immutable. */
+export function withCurrentWorldbook(sections, context) {
+  const fixed = sections.filter(section => section.name !== 'tavern:constant-worldbook')
+  const text = str(context).trim()
+  return text ? [{ name: 'tavern:constant-worldbook', text: '【常驻世界书】\n' + text }, ...fixed] : fixed
+}

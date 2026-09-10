@@ -1294,3 +1294,35 @@ test('persistent background tools change with configuration without creating ano
   assert.deepEqual(requests.at(-1).tools.map(t => t.name), ['mvu_submit_update', 'candidate_submit_choices']);
   await runner.dispose();
 });
+
+test('常驻后台会话在下一任务替换世界书，任务内固定且不改历史', async () => {
+  let assemble, pending, current = '当前DLC', creates = 0
+  const seen = []
+  const session = { id: 'dynamic-book-background', header: {}, events: [], append(type, data) { const event = { type, data, seq: this.events.length }; this.events.push(event); return event } }
+  const runner = createBackgroundAgentRunner({
+    id: () => session.id,
+    resolveStablePrefix: async () => '【故事设定 · 人物卡】\n人物\n【常驻世界书】\n开局DLC',
+    resolveCurrentWorldbook: async () => current,
+    agents: { get: () => ({ session: { header: {} } }), async create(options) {
+      creates++
+      await options.setup({ systemPrompt: { section() {}, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(name, callback) { if (name === 'system-prompt/assemble') assemble = callback } })
+      return { agent: { session, followup() { pending = (async () => {
+        current = '任务中途变化'
+        const result = await assemble({}, { agent: { session } }, async () => ({ sections: [], tools: [] }))
+        seen.push(result.sections.map(s => s.text).join('\n'))
+        session.append('assistant/message', { message: { content: [{ type: 'text', text: '完成' }] } })
+      })() }, async whenIdle() { await pending } }, async dispose() {} }
+    } }
+  })
+  try {
+    for (const text of ['当前DLC', '']) {
+      current = text
+      await runner.run({ sessionId: 'parent', persistent: true, task: 'candidate', selection: { provider: 'test', model: 'test' }, messages: [], tools: [] })
+    }
+    assert.equal(creates, 1)
+    assert.match(seen[0], /当前DLC/)
+    assert.doesNotMatch(seen.join('\n'), /开局DLC|任务中途变化/)
+    assert.doesNotMatch(seen[1], /当前DLC/)
+    assert.match(JSON.stringify(session.events), /开局DLC/)
+  } finally { await runner.dispose() }
+})

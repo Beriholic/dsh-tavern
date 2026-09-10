@@ -1,3 +1,4 @@
+import { projectAgentContent } from './runtime-content-projection.js'
 import { lastTavernHelperVariables } from './tavern-helper-context.js'
 
 const DYNAMIC_ENTRY_LIMIT = 3
@@ -184,7 +185,9 @@ export function constantWorldBookContext(input = {}) {
   }
 }
 
-/** Resolve enabled constant EJS controllers for one native DSH foreground turn.
+/** Resolve enabled constant EJS controllers for one request.
+ * includeConstants also projects plain entries and shares their macro state with
+ * the caller, so constant setters can feed subsequently recalled entries.
  * Disabled entries remain addressable by getwi(), but never activate themselves.
  * Scope mutations stay inside this read-only projection and cannot change Chat state.
  */
@@ -193,7 +196,7 @@ export function projectWorldBookTemplates(input = {}) {
   if (!runtime || typeof runtime.render !== 'function') throw new Error('缺少世界书模板运行时')
   const resources = allEntries(input.worldBook)
   const controllers = tavernOrder(resources.filter(function (entry) {
-    return entry.enabled !== false && entry.constant === true && !isMvuUpdateEntry(entry) && isWorldBookTemplateEntry(entry)
+    return entry.enabled !== false && entry.constant === true && !isMvuUpdateEntry(entry) && (input.includeConstants === true || isWorldBookTemplateEntry(entry))
   }))
   let scopes = {
     global: clone(input.globalVariables || {}),
@@ -201,6 +204,7 @@ export function projectWorldBookTemplates(input = {}) {
     local: clone(input.chat && input.chat.variables || {}),
     message: lastTavernHelperVariables(input.chat && input.chat.messages) || {}
   }
+  let macroState = clone(input.chat?.macroState || {})
   const context = []
   const refs = []
   const diagnostics = []
@@ -215,13 +219,18 @@ export function projectWorldBookTemplates(input = {}) {
     })
   }
   for (const entry of controllers) {
-    const result = runtime.render(templateBody(entry.content), Object.assign({}, templateContext, { scopes }))
+    const result = isWorldBookTemplateEntry(entry)
+      ? runtime.render(templateBody(entry.content), Object.assign({}, templateContext, { scopes }))
+      : { ok: true, text: entry.content, scopes }
     if (!result.ok) {
       diagnostics.push({ kind: 'worldbook-template', code: result.kind, ref: str(entry.ref) })
       continue
     }
     scopes = clone(result.scopes)
-    const text = str(result.text).trim()
+    const projected = input.includeConstants === true
+      ? projectAgentContent(result.text, { charName: str(input.card?.name), macroState }) : null
+    if (projected) macroState = projected.macroState
+    const text = str(projected ? projected.agentText : result.text).trim()
     if (text === '') continue
     context.push(text)
     refs.push(str(entry.ref))
@@ -230,7 +239,8 @@ export function projectWorldBookTemplates(input = {}) {
     context: context.join('\n\n'),
     refs,
     diagnostics,
-    evaluated: controllers.length
+    evaluated: controllers.length,
+    ...(input.includeConstants === true ? { dynamicConstants: true, macroState } : {})
   }
 }
 
