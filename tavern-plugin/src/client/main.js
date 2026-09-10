@@ -1890,29 +1890,44 @@ window.__ModuleLoader__.load({
 			// different script's event must not drain this entire shared sandbox.
 			const promptWritesByScript = new Map();
 			function promptWriteState(scriptId) {
-				if (!promptWritesByScript.has(scriptId)) promptWritesByScript.set(scriptId, { pending: new Set(), failure: null });
+				if (!promptWritesByScript.has(scriptId)) promptWritesByScript.set(scriptId, { pending: new Set(), failures: new Map() });
 				return promptWritesByScript.get(scriptId);
 			}
+			const pendingPromptOperations = new Map();
 			function writePrompts(operation) {
 				const owner = currentScript();
 				const writes = promptWriteState(owner.id);
+				const ids = operation.kind === "inject" ? operation.prompts.map(function (prompt) { return prompt && prompt.id; }) : operation.ids;
+				const signature = JSON.stringify([owner.id, activeHostEventId, state.lifecycleRevision, operation]);
+				const previous = ids.length ? pendingPromptOperations.get(ids[0]) : null;
+				// Share only an identical in-flight, non-once operation. Any intervening
+				// operation touching these IDs breaks sharing, so remove/reinsert order survives.
+				if (!operation.once && previous && previous.signature === signature
+					&& ids.every(function (id) { return pendingPromptOperations.get(id) === previous; })) return;
+				for (const id of ids) pendingPromptOperations.delete(id);
 				const task = call("updateTavernHelperPrompts", { operation: operation }).then(function (result) {
 					if (result && result.stale) throw new Error("聊天已变化，提示词未保存");
 				});
+				const entry = { signature: signature };
+				if (!operation.once) for (const id of ids) pendingPromptOperations.set(id, entry);
+				function release() { for (const id of ids) if (pendingPromptOperations.get(id) === entry) pendingPromptOperations.delete(id); }
+				task.then(release, release);
 				writes.pending.add(task);
 				task.then(function () { writes.pending.delete(task); }, function (error) {
 					writes.pending.delete(task);
 					error.dshTavernScriptId = owner.id;
-					writes.failure = error;
+					writes.failures.set(task, error);
 					console.error("人物卡脚本「" + (owner.name || owner.id) + "」提示词写入失败", error);
 				});
 			}
 			async function drainPromptWrites(scriptId) {
 				const writes = promptWritesByScript.get(scriptId);
 				if (!writes) return;
-				try { while (writes.pending.size) await Promise.all(Array.from(writes.pending)); }
-				catch (error) { writes.failure = null; throw error; }
-				if (writes.failure) { const error = writes.failure; writes.failure = null; throw error; }
+				// Confirm writes issued by the time the callback returned, including
+				// writes after its awaits. Later timer writes must not extend this fence.
+				const receipts = Array.from(new Set([...writes.pending, ...writes.failures.keys()]));
+				try { await Promise.all(receipts); }
+				finally { for (const receipt of receipts) writes.failures.delete(receipt); }
 			}
 			window.injectPrompts = function (prompts, options) {
 				if (!Array.isArray(prompts)) throw new TypeError("提示词必须是数组");
@@ -3229,11 +3244,27 @@ window.__ModuleLoader__.load({
 							expectedLifecycleRevision: Math.max(0, Number(data.lifecycleRevision !== undefined ? data.lifecycleRevision : record.context && record.context.lifecycleRevision) || 0)
 						});
 				}
-				const rpcTask = (record.rpcTail || Promise.resolve()).catch(function () {}).then(function () {
-					if (records.get(record.id) !== record) throw new Error("脚本运行时已失效");
-					return invoke(data.method, mutationArgs, record.sessionId);
-				});
-				record.rpcTail = rpcTask;
+				const promptOperation = data.method === "updateTavernHelperPrompts" && mutationArgs.operation;
+				const batchKey = JSON.stringify([data.scriptId, data.eventId, mutationArgs.expectedLifecycleRevision]);
+				const queued = record.queuedPromptBatch;
+				let rpcTask;
+				if (promptOperation && queued && queued.key === batchKey && queued.operations.length < 64) {
+					queued.operations.push(promptOperation);
+					// Every caller receives persistence confirmation, but refresh the host once.
+					rpcTask = queued.task.then(function (result) { return Object.assign({}, result, { updated: false }); });
+				} else {
+					record.queuedPromptBatch = null;
+					const batch = promptOperation ? { key: batchKey, operations: [promptOperation] } : null;
+					if (batch) mutationArgs.operation = { kind: "batch", operations: batch.operations };
+					rpcTask = (record.rpcTail || Promise.resolve()).catch(function () {}).then(function () {
+						if (record.queuedPromptBatch === batch) record.queuedPromptBatch = null;
+						if (records.get(record.id) !== record) throw new Error("脚本运行时已失效");
+						if (data.eventId && closedEventIds.has(String(data.eventId))) throw new Error("事件已经结束，已拒绝迟到写入");
+						return invoke(data.method, mutationArgs, record.sessionId);
+					});
+					record.rpcTail = rpcTask;
+					if (batch) { batch.task = rpcTask; record.queuedPromptBatch = batch; }
+				}
 				rpcTask.then(function (result) {
 					if (records.get(record.id) === record && result && !result.stale) {
 						const pending = pendingEvents.get(String(data.eventId || ""));

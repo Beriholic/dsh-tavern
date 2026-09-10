@@ -26,8 +26,9 @@ export async function createHelperWorldbookHost(embedded = false) {
     removeStandalone: async () => {}
   })
   const extensionSettings = createTavernExtensionSettings(createProfileDataStore({ dataRoot: directory }))
-  const adapter = createTavernScriptHostAdapter({ hasScripts: async () => true, extensionSettings, resolveChat: async () => chat, writeChat: async () => {}, readCard: () => json('card.json'), worldBooks: library, scriptDispatch: {} })
-  return { adapter, library, extensionSettings, chat,
+  const writes = []
+  const adapter = createTavernScriptHostAdapter({ hasScripts: async () => true, extensionSettings, resolveChat: async () => chat, writeChat: async (value, metadata) => { writes.push({ chat: structuredClone(value), metadata }) }, readCard: () => json('card.json'), worldBooks: library, scriptDispatch: {} })
+  return { adapter, library, extensionSettings, chat, writes,
     read: async () => embedded ? (await json('card.json')).character_book : await json('book.json'),
     record: async () => library.bound('card.json', await json('card.json')),
     cleanup: () => rm(directory, { recursive: true, force: true }),

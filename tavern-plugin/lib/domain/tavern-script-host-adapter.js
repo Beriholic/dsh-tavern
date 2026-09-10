@@ -100,7 +100,7 @@ export function createTavernScriptHostAdapter(options = {}) {
       const chat = await mutationChat(sessionId, eventId)
       await assertScriptEnabled(chat)
       if (!mutationIsCurrent(chat, expectedLifecycleRevision)) return staleMutation(chat)
-      mutateScriptPrompts(chat, operation)
+      if (!mutateScriptPrompts(chat, operation)) return { updated: false, context: projectTavernHelperContext(chat) }
       const transactional = transactionResult(sessionId, { type: 'prompts' })
       if (transactional !== null) return transactional
       await options.writeChat(chat, { source: 'tavern-helper.prompts' })
