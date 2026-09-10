@@ -4955,6 +4955,25 @@ window.__ModuleLoader__.load({
 					React.createElement("div", { className: "dsh-tavern-user-actions" }, time ? React.createElement("span", null, time) : null, React.createElement(DshUi.Tooltip, { label: copied ? "已复制" : "复制", side: "bottom" }, React.createElement("button", { type: "button", className: "dsh-tavern-user-copy", "aria-label": copied ? "已复制" : "复制", onClick: copy }, React.createElement(copied ? DshUi.IconCheckOutline16 : DshUi.IconCopyOutline16, null))))
 				);
 			}
+			function openSceneImagePreview(url, opener) {
+				const dialog = document.createElement("dialog");
+				dialog.className = "dsh-tavern-image-preview";
+				dialog.setAttribute("aria-label", "场景插画预览");
+				const close = document.createElement("button");
+				close.type = "button";
+				close.textContent = "缩小并返回 ×";
+				close.setAttribute("aria-label", "缩小并返回");
+				const image = document.createElement("img");
+				image.src = url;
+				image.alt = "放大的场景插画";
+				close.addEventListener("click", function () { dialog.close(); });
+				dialog.addEventListener("click", function (event) { if (event.target === dialog) dialog.close(); });
+				dialog.addEventListener("close", function () { dialog.remove(); if (opener && opener.isConnected) opener.focus(); }, { once: true });
+				dialog.append(close, image);
+				document.body.append(dialog);
+				dialog.showModal();
+				close.focus();
+			}
 			function SceneIllustration(props) {
 				const state = useSceneImageRecord(props.sessionId, props.turn);
 				const [error, setError] = React.useState("");
@@ -5027,7 +5046,7 @@ window.__ModuleLoader__.load({
 				const canBindReference = state.enabled && state.reference && state.reference.supported && referencePeople.length > 0;
 				const showReference = referenceDraft && version && referenceDraft.key === state.key && referenceDraft.versionId === version.id;
 				return React.createElement("div", { className: "dsh-tavern-illustration" },
-					url ? React.createElement("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, React.createElement("img", { src: url, alt: "本段场景插画", loading: "lazy", onError: function () { setError("图片加载失败，请刷新后重试"); } })) : null,
+					url ? React.createElement("a", { href: url, "aria-label": "放大场景插画", onClick: function (event) { event.preventDefault(); openSceneImagePreview(url, event.currentTarget); } }, React.createElement("img", { src: url, alt: "本段场景插画", loading: "lazy", onError: function () { setError("图片加载失败，请刷新后重试"); } })) : null,
 					version ? React.createElement("div", { className: "dsh-tavern-image-actions" },
 						versions.length > 1 ? React.createElement(React.Fragment, null,
 							React.createElement("button", { type: "button", className: "dsh-tavern-btn", "aria-label": "上一张插图", disabled: index <= 0, onClick: function () { setSelected(versions[index - 1].id); } }, "‹"),
