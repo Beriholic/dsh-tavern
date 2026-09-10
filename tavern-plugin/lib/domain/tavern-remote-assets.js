@@ -32,6 +32,12 @@ async function resolveWithGit(reference) {
   return commits[commits.length - 1]
 }
 
+// Only concrete text entries belong in the script pin store. Media and URL
+// directory prefixes are loaded by the browser/static-asset layer on demand.
+function isTextEntry(reference) {
+  return /\.(?:[cm]?js|html?|css|json)(?:[?#]|$)/i.test(reference.path)
+}
+
 export function inspectMutableJsDelivrUrls(text) {
   const urls = []
   for (const match of str(text).matchAll(JSD_GH_URL)) {
@@ -180,7 +186,7 @@ export function createTavernRemoteAssetPinStore(options = {}) {
 
   async function pinText(text) {
     const source = str(text)
-    const originalReferences = inspectMutableJsDelivrUrls(source)
+    const originalReferences = inspectMutableJsDelivrUrls(source).filter(isTextEntry)
     if (originalReferences.length === 0) return { text: source, pins: [], diagnostics: [] }
     await load()
     let result = source
@@ -189,16 +195,18 @@ export function createTavernRemoteAssetPinStore(options = {}) {
       const asset = assetsByUrl.get(reference.url)
       if (asset) result = result.split(reference.url).join(cachedPath(asset))
     }
-    const references = inspectMutableJsDelivrUrls(result)
+    const references = inspectMutableJsDelivrUrls(result).filter(isTextEntry)
     const pins = []
     const diagnostics = []
     const unique = new Map(references.map(function (item) { return [item.owner + '/' + item.repo + '@' + item.ref, item] }))
     for (const reference of unique.values()) {
       try {
         const pin = await resolvePin(reference)
-        const mutable = reference.owner + '/' + reference.repo + (reference.explicitRef ? '@' + reference.ref : '')
-        const fixed = reference.owner + '/' + reference.repo + '@' + pin.commit
-        result = result.split(mutable).join(fixed)
+        for (const entry of references.filter(item => item.owner === reference.owner && item.repo === reference.repo && item.ref === reference.ref)) {
+          const mutable = entry.owner + '/' + entry.repo + (entry.explicitRef ? '@' + entry.ref : '')
+          const fixed = entry.owner + '/' + entry.repo + '@' + pin.commit
+          result = result.split(entry.url).join(entry.url.replace(mutable, fixed))
+        }
         pins.push(clone(pin))
       } catch (error) {
         // CDN tags can remain available after the Git tag disappears. Freeze
@@ -214,7 +222,7 @@ export function createTavernRemoteAssetPinStore(options = {}) {
         }
       }
     }
-    const fixedReferences = new Map(inspectFixedJsDelivrUrls(result).map(function (item) { return [item.url, item] }))
+    const fixedReferences = new Map(inspectFixedJsDelivrUrls(result).filter(isTextEntry).map(function (item) { return [item.url, item] }))
     for (const reference of fixedReferences.values()) {
       try {
         const asset = await cacheFixed(reference)
