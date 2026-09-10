@@ -161,13 +161,23 @@ dsh-tavern 使用尽可能少而精的提示词，把流程和状态交给程序
 
 ## 首次安装与重新安装
 
-提供桌面版和命令行版两种安装方式。两者使用同一套 Tavern Profile 和数据，请勿同时运行。
+按使用环境选择安装方式：
+
+| 安装方式 | DSH 运行时与版本策略 | 数据位置 |
+| --- | --- | --- |
+| 命令行版（Windows / macOS / Linux） | 每次安装或更新都重新下载独立的 DSH `0.1.2-rc.1`，不要求预装 DSH，不复用或替换全局 DSH | 默认 `~/.dsh-tavern/`，与外部 DSH 数据分开 |
+| DSH Desktop | 推荐 **2.0.5**，复用宿主自带 DSH，不强制锁定宿主版本 | Desktop 的 Tavern Profile 数据目录 |
+| DSHA（Android，实验性支持） | 推荐 **1.2.0-rc1.4**，复用宿主自带 DSH，不强制锁定宿主版本 | DSHA 的 Tavern Profile 数据目录 |
+
+命令行版与 Desktop / DSHA 不再共用一套数据。切换安装方式不会自动同步人物卡或对话；首次升级旧 CLI 时会复制旧 CLI 配置和游戏数据，保留原件，Desktop / DSHA 数据不会自动迁入。
+
+Desktop / DSHA 安装器会检查宿主内置的 DSH 版本：与适配版本不一致时提示推荐宿主版本，继续安装；不会自动升级或降级宿主。若缺少必需依赖或接口，会明确报错。如遇兼容问题，请自行下载推荐版本：[Desktop 历史版本](https://github.com/anywhere-labs/dsh-desktop/releases) · [DSHA 历史版本](https://github.com/DSH-APP/DSHA/releases)。
 
 **首次安装、更新或重新安装，都运行下面对应的同一条命令。** 已安装时会覆盖更新程序文件，保留人物卡、对话、配置、自定义工具和 Skill，无需先卸载。重新安装前建议备份数据；如果使用了自定义数据或安装目录，请保持原配置。
 
 ### DSH Desktop 桌面版（推荐）
 
-适合不想单独配置运行环境和管理服务的用户。推荐使用 [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) **2.0.5 版本**（支持 Windows x64 和 macOS，暂不支持 Linux）。
+适合不想单独配置运行环境和管理服务的用户，支持 Windows 和 macOS。
 
 推荐使用 **DSH Desktop 2.0.5**（内置 DSH `0.1.2-rc.1`），其他版本也允许安装。如遇兼容报错，请自行打开 [历史版本下载页面](https://github.com/anywhere-labs/dsh-desktop/releases)，找到 **v2.0.5**，展开 **Assets**，下载适合自己系统的安装包；不要下载 Source code。
 
