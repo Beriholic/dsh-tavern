@@ -1116,7 +1116,9 @@ export async function apply(ctx) {
         isEdit: false,
         depth: 0
       })
-      const persistentStatus = projectPersistentStatusView(chat.messages, replyDisplay.projections)
+      const persistentStatus = projectPersistentStatusView(chat.messages, replyDisplay.projections, {
+        regexScripts: cardExtensions.regexScripts
+      })
       replyDisplay.projections = persistentStatus.projections
       replyDisplay.statusView = persistentStatus.statusView
       replyDisplay.projections = withLegacyPresentationProjection(chat, replyDisplay.projections)

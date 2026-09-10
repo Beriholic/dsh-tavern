@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import { applyTavernRegexText } from './tavern-regex-display.js'
+import { projectDisplayParts } from './reply-presentation.js'
 
 function str(value) {
   return typeof value === 'string' ? value : (value === undefined || value === null ? '' : String(value))
@@ -40,9 +42,31 @@ function templateRevisionOf(content) {
  * conversation-level status view. Classification is based on captured runtime
  * behaviour, never a card name, output tag, CSS selector, or template shape.
  */
-export function projectPersistentStatusView(messages, projections) {
+export function projectPersistentStatusView(messages, projections, options = {}) {
   const sourceMessages = Array.isArray(messages) ? messages : []
   const sourceProjections = Array.isArray(projections) ? projections : []
+  // A placeholder replacement is an explicit presentation contract. Merely
+  // reading variables is not sufficient to override it (creation forms do too).
+  const declarations = (options.regexScripts || []).filter(script =>
+    script && script.disabled !== true && str(script.findRegex).includes('StatusPlaceHolderImpl'))
+  const declared = applyTavernRegexText('<StatusPlaceHolderImpl/>', declarations,
+    { placement: 2, isMarkdown: true, isEdit: false, depth: 0 })
+  const declaredParts = declared.changed ? projectDisplayParts(declared.text).parts : []
+  const declaredView = declaredParts.find(isExecutableView)
+  if (declaredView) {
+    const assistants = sourceMessages.filter(message => message && message.role === 'assistant')
+    const latestTurn = assistants.reduce((turn, message, index) => Math.max(turn, turnOf(message, index + 1)), 1)
+    const content = contentOf(declaredView)
+    // Keep the creation UI in its original message until story play begins.
+    if (latestTurn <= 1 && !sourceProjections.some(projection =>
+      (projection.parts || []).some(part => part.kind === 'html' && contentOf(part) === content))) return { projections: sourceProjections, statusView: null }
+    return {
+      projections: sourceProjections.map(projection => ({ ...projection,
+        parts: (projection.parts || []).filter(part => !(part.kind === 'html' && contentOf(part) === content)) })),
+      statusView: { version: 1, viewId: 'primary', sourceTurn: latestTurn,
+        sourcePartIndex: 0, targetTurn: latestTurn, templateRevision: templateRevisionOf(content), content }
+    }
+  }
   if (sourceProjections.length === 0) return { projections: sourceProjections, statusView: null }
 
   const projectionByTurn = new Map()

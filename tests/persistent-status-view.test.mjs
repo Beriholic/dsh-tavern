@@ -87,3 +87,35 @@ test('按前端实际渲染下标识别状态 View，忽略空白投影片段', 
     { kind: 'html', content: '   ' }
   ])
 })
+
+test('声明状态栏的卡保留开局页，正文推进后使用声明模板而非 MVU 开局页', () => {
+  const opening = '<script>loadCustomStart()</script>'
+  const status = '<script>loadRealStatus()</script>'
+  const regexScripts = [{ enabled: true, placement: [2], markdownOnly: true,
+    findRegex: '<StatusPlaceHolderImpl/>', replaceString: '```html\n' + status + '\n```', maxDepth: 2 }]
+  const messages = [{ role: 'assistant', turn: 1, displayRuntime: { frames: [{ partIndex: 0, mvuViewUsed: true }] } }]
+  const projections = [projection(1, [{ kind: 'html', content: opening }])]
+  const initial = projectPersistentStatusView(messages, projections, { regexScripts })
+  assert.equal(initial.statusView, null)
+  assert.deepEqual(initial.projections, projections)
+  const advanced = projectPersistentStatusView([...messages, { role: 'assistant', turn: 6, text: '抵达庄园' }], projections, { regexScripts })
+  assert.match(advanced.statusView.content, /loadRealStatus/)
+  assert.equal(advanced.statusView.targetTurn, 6)
+  assert.deepEqual(advanced.projections, projections)
+  assert.equal(projectPersistentStatusView([...messages, { role: 'assistant', turn: 6 }], [], { regexScripts }).statusView.targetTurn, 6)
+})
+
+test('声明模板在开场已出现时立即提升，禁用声明不加载远程页面', () => {
+  const content = '<script>loadRealStatus()</script>'
+  const rule = { enabled: true, placement: [2], markdownOnly: true,
+    findRegex: '<StatusPlaceHolderImpl/>', replaceString: content }
+  const messages = [{ role: 'assistant', turn: 1 }]
+  const projections = [projection(1, [{ kind: 'html', content }])]
+  const result = projectPersistentStatusView(messages, projections, { regexScripts: [rule] })
+  assert.equal(result.statusView.content, content)
+  assert.deepEqual(result.projections[0].parts, [])
+  for (const disabled of [{ enabled: false }, { disabled: true }]) {
+    assert.equal(projectPersistentStatusView([...messages, { role: 'assistant', turn: 2 }], [],
+      { regexScripts: [{ ...rule, ...disabled }] }).statusView, null)
+  }
+})
