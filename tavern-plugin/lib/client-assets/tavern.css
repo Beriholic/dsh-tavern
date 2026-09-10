@@ -610,3 +610,8 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-ledger-form label { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
 .dsh-ledger-form input:not([type="checkbox"]) { box-sizing: border-box; width: 100%; min-width: 0; padding: 6px; border: 1px solid #555; border-radius: 4px; color: inherit; background: transparent; font: inherit; }
 .dsh-ledger button:disabled { opacity: .45; cursor: default; }
+
+.dsh-tavern-panel-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
+.dsh-tavern-panel-tabs [aria-selected="true"] { outline: 2px solid var(--dsw-alias-label-secondary, #ae793f); outline-offset: -2px; font-weight: 700; }
+.dsh-tavern-status-runtime > [role="tabpanel"] { min-width: 0; width: 100%; }
+.dsh-tavern-status-runtime > [role="tabpanel"][hidden] { display: none; }

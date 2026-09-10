@@ -909,7 +909,7 @@ export async function apply(ctx) {
     let compatibilityDiagnostic
     try { compatibilityDiagnostic = await compatibilityDiagnostics.read(sessionId) }
     catch { compatibilityDiagnostic = { version: 1, records: [], error: '兼容能力诊断读取失败，仍导出其他日志。' } }
-    const exported = await createMvuDiagnosticExport({ updateDiagnostics: applicationUpdater.diagnostics(), sessionId, backgroundSessionIds, displayDiagnostics: { version: 1, frames: (chat.messages || []).filter(message => message.displayRuntime).slice(-20).flatMap(message => (message.displayRuntime.frames || []).map(frame => ({ turn: message.turn, partIndex: frame.partIndex, capturedAt: frame.capturedAt, console: frame.console, errors: frame.errors, network: frame.network }))) }, apiDiagnostics: await apiDiagnostics.read(sessionId).catch(() => null), compatibilityDiagnostics: compatibilityDiagnostic, store: mvuDiagnostics, sceneDiagnostics: imageDiagnostic, sessions: sessionStore, persistence: ctx.get('sessionPersistence'), query: ctx.get('sessionQuery'), attachments: ctx.get('attachments'), environment: { mvu: OFFICIAL_MVU_VERSION, mvuAsset: inspectOfficialMvuAsset(), runtime: { generation: runtimeGeneration, platform: process.platform, arch: process.arch, nodeVersion: process.version } } })
+    const exported = await createMvuDiagnosticExport({ updateDiagnostics: applicationUpdater.diagnostics(), sessionId, backgroundSessionIds, displayDiagnostics: { version: 1, frames: (chat.messages || []).filter(message => message.displayRuntime).slice(-20).flatMap(message => (message.displayRuntime.frames || []).map(frame => ({ turn: message.turn, partIndex: frame.partIndex, panelId: frame.panelId, placement: frame.placement, capturedAt: frame.capturedAt, console: frame.console, errors: frame.errors, network: frame.network }))) }, apiDiagnostics: await apiDiagnostics.read(sessionId).catch(() => null), compatibilityDiagnostics: compatibilityDiagnostic, store: mvuDiagnostics, sceneDiagnostics: imageDiagnostic, sessions: sessionStore, persistence: ctx.get('sessionPersistence'), query: ctx.get('sessionQuery'), attachments: ctx.get('attachments'), environment: { mvu: OFFICIAL_MVU_VERSION, mvuAsset: inspectOfficialMvuAsset(), runtime: { generation: runtimeGeneration, platform: process.platform, arch: process.arch, nodeVersion: process.version } } })
     return { filename: exported.filename, base64: exported.buffer.toString('base64') }
   }
   async function attachPlayChatDebug(targetSessionId, sourceSessionId, turn) {
@@ -950,6 +950,8 @@ export async function apply(ctx) {
     return {
       capturedAt: Math.max(0, Number(input.capturedAt) || Date.now()),
       mvuViewUsed: input.mvuViewUsed === true,
+      panelId: str(input.panelId).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80),
+      placement: input.placement === "sidebar" ? "sidebar" : "message",
       dom: str(input.dom).slice(0, 100000),
       console: (Array.isArray(input.console) ? input.console : []).slice(-100).map(function (item) {
         return { at: Math.max(0, Number(item && item.at) || 0), level: ['log', 'info', 'warn', 'error'].includes(item && item.level) ? item.level : 'log', args: scalar(item && item.args, 12000) }
@@ -967,6 +969,8 @@ export async function apply(ctx) {
     const runtime = value && typeof value === 'object' ? value : {}
     return {
       mvuViewUsed: runtime.mvuViewUsed === true,
+      panelId: str(runtime.panelId),
+      placement: runtime.placement,
       dom: str(runtime.dom),
       console: (Array.isArray(runtime.console) ? runtime.console : []).map(function (item) {
         return { level: item && item.level, args: item && item.args }
@@ -998,7 +1002,7 @@ export async function apply(ctx) {
     capture.captureKind = turn === latestTurn && Date.now() - sourceActivityAt < 300000 ? 'live' : 'replay'
     const current = existingRuntime || { frames: [] }
     const currentFrames = Array.isArray(current.frames) ? current.frames : []
-    const existingFrame = currentFrames.find(function (item) { return Number(item && item.partIndex) === index })
+    const existingFrame = currentFrames.find(function (item) { return Number(item && item.partIndex) === index && str(item.panelId) === capture.panelId })
     if (existingFrame && existingFrame.mvuViewUsed === true) capture.mvuViewUsed = true
     if (existingFrame && capture.mvuViewUsed === true && capture.dom === '' && capture.console.length === 0 && capture.network.length === 0 && capture.errors.length === 0) {
       capture = Object.assign({}, existingFrame, {
@@ -1008,7 +1012,7 @@ export async function apply(ctx) {
       })
     }
     if (existingFrame && sameDisplayRuntimeCapture(existingFrame, capture)) return { captured: false, turn, partIndex: index, captureKind: capture.captureKind }
-    const frames = currentFrames.filter(function (item) { return Number(item && item.partIndex) !== index })
+    const frames = currentFrames.filter(function (item) { return Number(item && item.partIndex) !== index || str(item.panelId) !== capture.panelId })
     frames.push(Object.assign({ partIndex: index }, capture))
     message.displayRuntime = { version: 1, sourceActivityAt, frames: frames.sort(function (a, b) { return a.partIndex - b.partIndex }) }
     await writeChat(chat, { source: 'display.capture', touchUpdatedAt: false })
@@ -1122,6 +1126,7 @@ export async function apply(ctx) {
       })
       replyDisplay.projections = persistentStatus.projections
       replyDisplay.statusView = persistentStatus.statusView
+      replyDisplay.statusViews = persistentStatus.statusViews
       replyDisplay.projections = withLegacyPresentationProjection(chat, replyDisplay.projections)
     }
     const activity = backgroundTasks.activity(chat)
@@ -1185,6 +1190,7 @@ export async function apply(ctx) {
       presentation: null,
       replyProjections: replyDisplay.projections,
       tavernStatusView: replyDisplay.statusView || null,
+      tavernStatusViews: replyDisplay.statusViews || [],
       mvuReceipts: mvuReceiptsOf(chat),
       tavernHelper: helperEnabled ? { ...projectTavernHelperContext(chat), openingHost: sessionOpeningDescriptor(chat, card), worldbook: helperWorldbook, globalVariables: await readPromptTemplateGlobalVariables(), characterVariables: cardExtensions.variables || {}, compatibilityCapabilities: TAVERN_COMPATIBILITY_CAPABILITIES, extensionSettings: await tavernExtensionSettings.read(), regexScripts: { global: cardExtensions.globalRegexScripts || [], character: cardExtensions.characterRegexScripts || [] } } : null,
       tavernMvuRuntime: chat.mvu && chat.mvu.enabled === true ? {

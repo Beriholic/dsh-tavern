@@ -1152,6 +1152,8 @@ window.__ModuleLoader__.load({
 			const reads = new Map();
 			const subscriptions = new Map();
 			let timer = 0, requested = false, writes = false;
+			document.addEventListener("input", function () { writes = true; }, true);
+			document.addEventListener("change", function () { writes = true; }, true);
 			["eventOn", "eventOff"].forEach(function (name) {
 				const original = window[name];
 				window[name] = function (event, handler) {
@@ -1308,7 +1310,7 @@ window.__ModuleLoader__.load({
 				+ '<style>:root{color-scheme:light dark}html,body{box-sizing:border-box;margin:0;min-height:0;background:transparent;color:CanvasText;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:16px;line-height:1.75}body{padding:0 1px;overflow-wrap:anywhere;white-space:pre-wrap}html[data-dsh-tavern-scroll]{overflow-y:auto!important}html[data-dsh-tavern-scroll] body{overflow-y:visible!important}body>*{white-space:normal}maintext{display:block;white-space:pre-wrap;overflow-wrap:anywhere}.dsh-tavern-plain-text{white-space:pre-wrap;overflow-wrap:anywhere}*,*:before,*:after{box-sizing:border-box}img,video,svg,canvas{max-width:100%;height:auto}pre{max-width:100%;overflow:auto;white-space:pre-wrap}table{max-width:100%;border-collapse:collapse}a{color:LinkText}</style>' + (preparationRuntime ? preparationRuntime.head : helperDependencies) + tavernStaticAssetShim() + storageShim + helperShim + interactiveHelperShim + mvuViewObservationShim + cleanRuntimeReporter
 				+ (input && input.helperContext && input.helperContext.openingHost ? '<script data-dsh-tavern-session-opening>(' + installSessionOpeningBridge.toString() + ')(' + token + ',' + JSON.stringify(Object.assign({}, input.helperContext.openingHost, { extensionSettings: input.helperContext.extensionSettings || {} })).replace(/</g, '\\u003c') + ');<\/script>' : '')
 				+ (input && input.helperContext ? '<script data-dsh-tavern-frame-variable-aliases>(' + installTavernFrameVariableAliases.toString() + ')();<\/script>' : '')
-				+ (input && input.helperContext && input.persistent === true ? '<script data-dsh-tavern-status-refresh>(' + installTavernStatusRefresh.toString() + ')(' + token + ');<\/script>' : '')
+				+ (input && input.helperContext && input.persistent === true && input.preserveInstance !== true ? '<script data-dsh-tavern-status-refresh>(' + installTavernStatusRefresh.toString() + ')(' + token + ');<\/script>' : '')
 				+ (input && input.openingPreview ? '<script data-dsh-tavern-opening-preview>(' + installOpeningPreviewBridge.toString() + ')(' + token + ',' + JSON.stringify(input.openingPreview).replace(/</g, '\\u003c') + ');<\/script>' : '')
 				+ '</head><body class="no-blur">' + (input && input.helperContext ? '<script data-dsh-tavern-legacy-composer>(' + installLegacyTavernComposer.toString() + ')();<\/script>' : '') + (preparationRuntime ? preparationRuntime.body : '') + html + layoutNormalizer + fontRuntime + reporter + readyReporter + '</body></html>';
 		}
@@ -3789,7 +3791,7 @@ window.__ModuleLoader__.load({
 					heightKey: tavernFrameHeightKey(props), content: props.content,
 					trustedCardMode: props.trustedCardMode, refreshRequested: false
 				};
-				document.html = buildTavernFrameDocument({ content: props.content, token: document.token, openingPreview: props.openingPreview, helperContext: helperContext, turn: props.turn, observeMvuView: props.observeMvuView, runtimeReporting: props.runtimeReporting, persistent: props.persistent });
+				document.html = buildTavernFrameDocument({ content: props.content, token: document.token, openingPreview: props.openingPreview, helperContext: helperContext, turn: props.turn, observeMvuView: props.observeMvuView, runtimeReporting: props.runtimeReporting, persistent: props.persistent, preserveInstance: props.preserveInstance });
 				const channel = createTavernFrameContextChannel(document);
 				// Stable callback identity preserves the per-document delta baseline.
 				document.ref = function (node) {
@@ -3898,7 +3900,7 @@ window.__ModuleLoader__.load({
 					if (runtimeTimer === null) runtimeTimer = hostWindow.setTimeout(function () {
 						runtimeTimer = null;
 						const runtime = pendingRuntime; pendingRuntime = null;
-						if (current()) invoke("captureDisplayRuntime", { turn: requestProps.turn, partIndex: requestProps.partIndex, runtime: runtime }, requestProps.sessionId).catch(function () {});
+						if (current()) invoke("captureDisplayRuntime", { turn: requestProps.turn, partIndex: requestProps.partIndex, runtime: Object.assign({}, runtime, { panelId: requestProps.panelId || "", placement: requestProps.placement || (requestProps.persistent ? "sidebar" : "message") }) }, requestProps.sessionId).catch(function () {});
 					}, 1000);
 				} else if ((data.type === "dsh-tavern-opening-worldbook" || data.type === "dsh-tavern-opening-save" || data.type === "dsh-tavern-opening-read") && !props.sessionId && props.openingPreview) {
 					void (async function () {
@@ -4007,10 +4009,52 @@ window.__ModuleLoader__.load({
 			});
 		}
 
+		// Own only placement, never iframe content or story state. moveBefore keeps
+		// the browsing context alive; appendChild would silently reset form state.
+		function createTavernPanelRegistry() {
+			const entries = new Map(), listeners = new Set();
+			let snapshot = [], activation = 0;
+			function publish() { snapshot = Array.from(entries.values()); listeners.forEach(function (fn) { fn(); }); }
+			function move(entry, target) {
+				if (!target || entry.node.parentNode === target) return;
+				if (typeof target.moveBefore !== "function") throw new Error("当前浏览器不支持保留页面状态的移动，请在原消息中使用此面板。");
+				target.moveBefore(entry.node, null);
+			}
+			return {
+				subscribe: function (fn) { listeners.add(fn); return function () { listeners.delete(fn); }; },
+				inspect: function () { return snapshot; },
+				register: function (entry) {
+					entries.set(entry.id, entry); publish();
+					return function () {
+						if (entries.get(entry.id) !== entry) return;
+						if (entry.node.parentNode !== entry.home && entry.home.isConnected) move(entry, entry.home);
+						entries.delete(entry.id); publish();
+					};
+				},
+				pin: function (id, pinned) {
+					const entry = entries.get(id); if (!entry) return;
+					if (typeof entry.home.moveBefore !== "function") throw new Error("当前浏览器不支持保留页面状态的移动，请在原消息中使用此面板。");
+					if (!pinned) move(entry, entry.home);
+					entry.pinned = pinned; if (pinned) entry.activation = ++activation; publish();
+				},
+				dock: function (id, target) { const entry = entries.get(id); if (entry && entry.pinned) move(entry, target); },
+				restore: function (id) { const entry = entries.get(id); if (entry && entry.home.isConnected) move(entry, entry.home); }
+			};
+		}
+		const tavernPanelRegistry = createTavernPanelRegistry();
+
 		function TavernMessageFrame(props) {
+			const homeRef = React.useRef(null);
+			const panelKey = React.useRef(null);
+			if (!panelKey.current) panelKey.current = "manual-" + Math.random().toString(36).slice(2);
+			const panels = React.useSyncExternalStore(tavernPanelRegistry.subscribe, tavernPanelRegistry.inspect);
+			const movable = Boolean(props.sessionId && !props.persistent && /<(?:script|iframe|object|embed)\b/i.test(String(props.content || "")));
+			const pinned = panels.some(function (entry) { return entry.id === panelKey.current && entry.pinned; });
 			const slotRef = React.useRef(null);
 			const lifecycleRef = React.useRef(null);
-			if (!lifecycleRef.current) lifecycleRef.current = createTavernMessageFrameLifecycle(props);
+			const frameProps = Object.assign({}, props, { panelId: props.panelId || "message-" + props.turn + "-" + props.partIndex,
+				placement: props.persistent || pinned ? "sidebar" : "message" });
+			if (!lifecycleRef.current) lifecycleRef.current = createTavernMessageFrameLifecycle(frameProps);
 			const lifecycle = lifecycleRef.current;
 			const [state, setState] = React.useState(lifecycle.snapshot);
 			const visibleDocument = state.visibleDocument;
@@ -4018,7 +4062,7 @@ window.__ModuleLoader__.load({
 			const height = state.height;
 			const [activated, setActivated] = React.useState(props.eager === true);
 			React.useEffect(function () { return lifecycle.start(setState); }, [lifecycle]);
-			React.useEffect(function () { lifecycle.update(props); });
+			React.useEffect(function () { lifecycle.update(frameProps); });
 			React.useEffect(function () {
 				if (props.eager === true) { setActivated(true); return; }
 				if (activated || typeof window.IntersectionObserver !== "function") { setActivated(true); return; }
@@ -4052,8 +4096,21 @@ window.__ModuleLoader__.load({
 						: { height: height + "px", overflow: height >= TAVERN_FRAME_MAX_HEIGHT ? "auto" : "hidden" }
 				});
 			}
+			React.useLayoutEffect(function () {
+				if (!movable || !slotRef.current || !homeRef.current) return;
+				return tavernPanelRegistry.register({ id: panelKey.current, sessionId: props.sessionId,
+					title: "第 " + props.turn + " 轮 · 面板 " + (Number(props.partIndex) + 1),
+					node: slotRef.current, home: homeRef.current, pinned: false });
+			}, [movable, props.sessionId, props.content]);
 			const frames = activated ? [renderFrame(visibleDocument, false), renderFrame(pendingDocument, true)] : null;
-			return React.createElement("div", { ref: slotRef, className: "dsh-tavern-message-frame-slot", style: { position: "relative", height: height + "px" } }, frames);
+			return React.createElement("div", null,
+				movable ? React.createElement("button", { type: "button", className: "dsh-tavern-btn", onClick: function () {
+					try { setActivated(true); tavernPanelRegistry.pin(panelKey.current, !pinned); }
+					catch (error) { tavernErrorHub.report("固定面板", error); }
+				} }, pinned ? "返回原消息" : "固定到右侧") : null,
+				React.createElement("div", { ref: homeRef },
+					React.createElement("div", { ref: slotRef, className: "dsh-tavern-message-frame-slot", style: { position: "relative", height: height + "px" } }, frames)));
+
 		}
 
 		function tavernProjectionForTurn(view, turn) {
@@ -4355,6 +4412,7 @@ window.__ModuleLoader__.load({
 				const state = useSceneImageRecord(props.sessionId, props.turn);
 				const [error, setError] = React.useState("");
 				const [selected, setSelected] = React.useState("");
+			const [refreshes, setRefreshes] = React.useState({});
 				const [busy, setBusy] = React.useState(false);
 				const [adjusting, setAdjusting] = React.useState(false);
 				const [instruction, setInstruction] = React.useState("");
@@ -7130,28 +7188,48 @@ window.__ModuleLoader__.load({
 		}
 		const cardLibraryFeature = createCardLibraryFeatureModule();
 
+		function TavernDockedPanel(props) {
+			const ref = React.useRef(null);
+			React.useLayoutEffect(function () {
+				tavernPanelRegistry.dock(props.id, ref.current);
+				return function () { tavernPanelRegistry.restore(props.id); };
+			}, [props.id]);
+			return React.createElement("div", { ref: ref });
+		}
 		function TavernPersistentStatusRuntime(props) {
+			const entries = React.useSyncExternalStore(tavernPanelRegistry.subscribe, tavernPanelRegistry.inspect);
+			const [selected, setSelected] = React.useState("");
+			const [refreshes, setRefreshes] = React.useState({});
 			const view = props.view;
-			const statusView = view && isPlayMode(view.mode) ? view.tavernStatusView : null;
-			if (!statusView || !statusView.content || !view.tavernHelper) return null;
-			return React.createElement("section", {
-				className: "dsh-tavern-status-runtime",
-				"data-status-view-id": String(statusView.viewId || "primary"),
-				"data-template-revision": String(statusView.templateRevision || "")
-			}, React.createElement(TavernMessageFrame, {
-				content: String(statusView.content),
-				sessionId: props.sessionId,
-				turn: Math.max(1, Number(statusView.targetTurn) || 1),
-				partIndex: Math.max(0, Number(statusView.sourcePartIndex) || 0),
-				helperContext: view.tavernHelper,
-				trustedCardMode: Boolean(view.tavernRuntimePolicy && view.tavernRuntimePolicy.trustedCardMode),
-				eager: true,
-				persistent: true,
-				followContentFont: false,
-				executeSlash: props.executeSlash,
-				observeMvuView: false,
-				runtimeReporting: true
-			}));
+			const statuses = view && isPlayMode(view.mode) ? (view.tavernStatusViews || (view.tavernStatusView ? [view.tavernStatusView] : [])) : [];
+			const manual = entries.filter(function (entry) { return entry.sessionId === props.sessionId && entry.pinned; });
+			const newest = manual.reduce(function (latest, entry) { return !latest || entry.activation > latest.activation ? entry : latest; }, null);
+			React.useEffect(function () { if (newest) setSelected(newest.id); }, [props.sessionId, newest && newest.activation]);
+			const ids = statuses.map(function (panel) { return panel.viewId; }).concat(manual.map(function (entry) { return entry.id; }));
+			const active = ids.includes(selected) ? selected : ids[0];
+			if (!view || !view.tavernHelper || !ids.length) return null;
+			const h = React.createElement;
+			return h("section", { className: "dsh-tavern-status-runtime" },
+				h("div", { className: "dsh-tavern-panel-tabs", role: "tablist", "aria-label": "人物卡面板" },
+					statuses.concat(manual.map(function (entry) { return { viewId: entry.id, title: entry.title }; })).map(function (panel) {
+						return h("button", { key: panel.viewId, role: "tab", type: "button", "aria-selected": active === panel.viewId,
+							className: "dsh-tavern-btn", onClick: function () { setSelected(panel.viewId); } }, panel.title || "角色状态");
+					})),
+				statuses.map(function (statusView) { return h("div", { key: props.sessionId + statusView.viewId, role: "tabpanel", hidden: active !== statusView.viewId,
+					"data-status-view-id": statusView.viewId, "data-template-revision": statusView.templateRevision },
+					h("button", { type: "button", className: "dsh-tavern-btn", title: "重新加载此面板，未保存的输入会清空", onClick: function () { setRefreshes(function (previous) { return Object.assign({}, previous, { [statusView.viewId]: (previous[statusView.viewId] || 0) + 1 }); }); } }, "刷新当前面板"), h(TavernMessageFrame, {
+					key: props.sessionId + statusView.viewId + (refreshes[statusView.viewId] || 0), preserveInstance: true,
+					content: String(statusView.content), sessionId: props.sessionId,
+					turn: Math.max(1, Number(statusView.targetTurn) || 1), partIndex: Math.max(0, Number(statusView.sourcePartIndex) || 0),
+					panelId: statusView.viewId, helperContext: view.tavernHelper,
+					trustedCardMode: Boolean(view.tavernRuntimePolicy && view.tavernRuntimePolicy.trustedCardMode),
+					eager: true, persistent: true, followContentFont: false, executeSlash: props.executeSlash,
+					observeMvuView: false, runtimeReporting: true
+				})); }),
+				manual.map(function (entry) { return h("div", { key: entry.id, role: "tabpanel", hidden: active !== entry.id },
+					h("button", { type: "button", className: "dsh-tavern-btn", onClick: function () { tavernPanelRegistry.pin(entry.id, false); } }, "返回原消息"),
+					h(TavernDockedPanel, { id: entry.id })); })
+			);
 		}
 
 		function latestTavernAssistantMessageId(snapshot) {
@@ -7689,7 +7767,7 @@ window.__ModuleLoader__.load({
 					) : null,
 					view.worldBookError ? h("div", { className: "dsh-card-error" }, "世界书召回失败：" + view.worldBookError) : null,
 					view.foregroundError ? h("div", { className: "dsh-card-error" }, view.foregroundError.message || "前台正文生成失败，请重新生成本轮正文。") : null,
-					view.tavernStatusView && view.tavernStatusView.content && view.tavernHelper ? h("section", { className: "dsh-tavern-status-section" },
+					view.tavernHelper ? h("section", { className: "dsh-tavern-status-section" },
 						h("div", { className: "dsh-tavern-status-label" }, "人物卡状态栏"),
 						h(TavernPersistentStatusRuntime, { sessionId: props.sessionId, view: view, executeSlash: props.executeSlash })
 					) : null,
@@ -8542,6 +8620,7 @@ window.__ModuleLoader__.load({
 		}
 
 		exports.TavernMessageFrame = TavernMessageFrame;
+		exports.TavernPersistentStatusRuntime = TavernPersistentStatusRuntime;
 		exports.createTavernMessageFrameLifecycle = createTavernMessageFrameLifecycle;
 		exports.createTavernScriptExecutionModule = createTavernScriptExecutionModule;
 		exports.createTavernScriptSessionOwner = createTavernScriptSessionOwner;
@@ -8560,6 +8639,7 @@ window.__ModuleLoader__.load({
 		exports.createTavernHelperEventBus = createTavernHelperEventBus;
 		exports.buildTavernHelperScriptDocument = buildTavernHelperScriptDocument;
 		exports.createTavernHostStylesheetBridge = createTavernHostStylesheetBridge;
+		exports.createTavernPanelRegistry = createTavernPanelRegistry;
 		exports.createTavernCardAppPresence = createTavernCardAppPresence;
 		exports.createTavernCardAppDock = createTavernCardAppDock;
 		exports.createTavernHelperScriptRuntime = createTavernHelperScriptRuntime;

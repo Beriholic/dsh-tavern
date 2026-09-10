@@ -28,6 +28,8 @@ function mountFrame() {
   const listeners = new Set()
   const posts = []
   const React = {
+    useSyncExternalStore(subscribe, inspect) { return inspect() },
+    useLayoutEffect(run, deps) { this.useEffect(run, deps) },
     useRef(value) { return slots[cursor++] ||= { current: value } },
     useState(initial) {
       const index = cursor++
@@ -45,7 +47,7 @@ function mountFrame() {
         effects.push(() => { slots[index]?.cleanup?.(); slots[index] = { deps, cleanup: run() } })
       }
     },
-    createElement(type, props, children) { return { type, props, children } }
+    createElement(type, props, ...children) { return { type, props, children: children.flat() } }
   }
   const client = loadClient(React, {
     addEventListener(type, listener) { if (type === 'message') listeners.add(listener) },
@@ -56,7 +58,8 @@ function mountFrame() {
     effects = []
     const tree = client.TavernMessageFrame({ content, helperContext, turn: 1, eager: true, persistent: true, observeMvuView: false, runtimeReporting: false })
     const next = new Map()
-    for (const element of tree.children.filter(Boolean)) {
+    function frames(node) { return !node || typeof node !== 'object' ? [] : node.type === 'iframe' ? [node] : (node.children || []).flatMap(frames) }
+    for (const element of frames(tree)) {
       const old = attached.get(element.props.key)
       const node = old?.node || { contentWindow: { postMessage(data) { posts.push(data) } } }
       if (old && old.ref !== element.props.ref) old.ref(null)

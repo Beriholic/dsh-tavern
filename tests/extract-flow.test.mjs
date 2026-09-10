@@ -1204,9 +1204,9 @@ test('人物卡 iframe 不因等价上下文或切换会话而重复启动', () 
 
 	// Lifecycle/transport behavior is exercised through the production factory in
 	// card-runtime-lifecycle and through the actual component in helper-context-refresh.
-	assert.match(frame, /createTavernMessageFrameLifecycle\(props\)/)
+	assert.match(frame, /createTavernMessageFrameLifecycle\(frameProps\)/)
 	assert.match(frame, /lifecycle\.start\(setState\)/)
-	assert.match(frame, /lifecycle\.update\(props\)/)
+	assert.match(frame, /lifecycle\.update\(frameProps\)/)
 	assert.match(frame, /opacity: 0/)
 	assert.match(frame, /IntersectionObserver/)
 	assert.match(frame, /loading: "lazy"/)

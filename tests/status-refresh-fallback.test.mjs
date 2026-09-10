@@ -15,6 +15,7 @@ function frame(persistent = true) {
   let timerId = 0
   const parent = { postMessage(data) { messages.push(data) } }
   const context = { parent, console, structuredClone,
+    document: { addEventListener(type, run) { this[type] = run } },
     addEventListener(type, run) { if (type === 'message') listeners.push(run) },
     setTimeout(run) { timers.set(++timerId, run); return timerId }, clearTimeout(id) { timers.delete(id) } }
   context.window = context
@@ -104,4 +105,10 @@ test('a status performing Helper writes is not automatically replayed', async ()
   await run.update({ stat_data: { 地点: '庭院' } })
   run.flush()
   assert.equal(run.reloads, 0)
+})
+
+
+test('保留实例的多面板不安装自动重载兜底', () => {
+  const html = client.buildTavernFrameDocument({ content: '<input>', token: 'panel', helperContext: {}, persistent: true, preserveInstance: true })
+  assert.doesNotMatch(html, /<script data-dsh-tavern-status-refresh>/)
 })

@@ -37,7 +37,7 @@ test('getAllVariables 读取当前楼层与聊天变量的独立快照，不泄�
   assert.equal(run.context.getAllVariables().stat_data.hp, 10)
 })
 
-test('实际调用 getAllVariables 才识别状态栏，右移后保留剧情且只上报一次', () => {
+test('实际调用 getAllVariables 只记录一次诊断，不再自动迁移页面', () => {
   const run = frame()
   assert.equal(run.reports.length, 0)
   vm.runInContext(template.match(/<script>(.*)<\/script>/)[1], run.context)
@@ -49,8 +49,8 @@ test('实际调用 getAllVariables 才识别状态栏，右移后保留剧情且
   const result = projectPersistentStatusView([{ role: 'assistant', turn: 1,
     displayRuntime: { frames: [{ partIndex: 1, mvuViewUsed: reports[0].mvuViewUsed }] } }],
   [{ turn: 1, parts: [prose, { kind: 'html', content: template }] }])
-  assert.equal(result.statusView.content, template)
-  assert.deepEqual(result.projections[0].parts, [prose])
+  assert.equal(result.statusView, null)
+  assert.deepEqual(result.projections[0].parts, [prose, { kind: 'html', content: template }])
 })
 
 test('右侧状态栏继续读取更新后的变量，不重复识别或重建 iframe', async () => {

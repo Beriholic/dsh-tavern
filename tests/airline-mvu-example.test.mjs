@@ -37,7 +37,7 @@ test('开场只在显示层挂载状态模板，模型历史不含模板与占�
   assert.ok(viewIndex >= 0)
   const promoted = projectPersistentStatusView([
     { role: 'assistant', turn: 1, displayRuntime: { frames: [{ partIndex: viewIndex, mvuViewUsed: true }] } }
-  ], [{ turn: 1, parts: result.displayParts }])
+  ], [{ turn: 1, parts: result.displayParts }], { regexScripts: extensions.regexScripts })
   assert.ok(promoted.statusView?.content.includes('Mvu.getMvuData'))
   assert.ok(promoted.projections[0].parts.some(part => (part.content || part.text).includes('舱内广播')))
   assert.ok(promoted.projections[0].parts.every(part => !part.content?.includes('Mvu.getMvuData')))

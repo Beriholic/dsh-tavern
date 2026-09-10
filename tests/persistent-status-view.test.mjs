@@ -7,85 +7,27 @@ function projection(turn, parts) {
   return { version: 2, turn, mode: 'html', text: '', parts, warnings: [] }
 }
 
-test('把最近一次实际读取 MVU 的独立 View 提升为对话级状态视图', () => {
-  const statusView = { kind: 'html', content: '<body><script>loadStatus()</script></body>' }
-  const messages = [
-    { role: 'assistant', turn: 1, variables: [{ hp: 10 }], swipeId: 0, displayRuntime: { frames: [{ partIndex: 1, mvuViewUsed: true }] } },
-    { role: 'user', turn: 2, text: '继续' },
-    { role: 'assistant', turn: 2, variables: [{ hp: 9 }], swipeId: 0 }
-  ]
-  const projections = [
-    projection(1, [{ kind: 'html', content: '<p>第一轮正文</p>' }, statusView]),
-    projection(2, [{ kind: 'html', content: '<p>第二轮正文</p>' }])
-  ]
-
+test('MVU 读写不是面板用途声明，多开档前端全部保留在原消息', () => {
+  const parts = [{ kind: 'html', content: '<script>createCharacter()</script>' },
+    { kind: 'html', content: '<script>editInventory()</script>' }]
+  const messages = [{ role: 'assistant', turn: 1, displayRuntime: { frames: [
+    { partIndex: 0, mvuViewUsed: true }, { partIndex: 1, mvuViewUsed: true }] } }, { role: 'assistant', turn: 5 }]
+  const projections = [projection(1, parts)]
   const result = projectPersistentStatusView(messages, projections)
-
-  assert.deepEqual(result.projections[0].parts, [{ kind: 'html', content: '<p>第一轮正文</p>' }])
-  assert.deepEqual(result.projections[1].parts, [{ kind: 'html', content: '<p>第二轮正文</p>' }])
-  assert.deepEqual(result.statusView, {
-    version: 1,
-    viewId: 'primary',
-    sourceTurn: 1,
-    sourcePartIndex: 1,
-    targetTurn: 2,
-    templateRevision: 'e18e3235334b4999',
-    content: statusView.content
-  })
+  assert.equal(result.statusView, null)
+  assert.deepEqual(result.statusViews, [])
+  assert.deepEqual(result.projections, projections)
 })
 
-test('同一状态模板在历史各轮中都从消息投影移除', () => {
-  const content = '<script>loadStatus()</script>'
-  const messages = [
-    { role: 'assistant', turn: 1, variables: [{}], swipeId: 0, displayRuntime: { frames: [{ partIndex: 1, mvuViewUsed: true }] } },
-    { role: 'assistant', turn: 2, variables: [{}], swipeId: 0, displayRuntime: { frames: [{ partIndex: 1, mvuViewUsed: true }] } }
-  ]
-  const projections = [
-    projection(1, [{ kind: 'html', content: '<p>一</p>' }, { kind: 'html', content }]),
-    projection(2, [{ kind: 'html', content: '<p>二</p>' }, { kind: 'html', content }])
-  ]
-
-  const result = projectPersistentStatusView(messages, projections)
-
-  assert.deepEqual(result.projections.map(item => item.parts), [
-    [{ kind: 'html', content: '<p>一</p>' }],
-    [{ kind: 'html', content: '<p>二</p>' }]
-  ])
-  assert.equal(result.statusView.sourceTurn, 2)
-  assert.equal(result.statusView.targetTurn, 2)
-})
-
-test('不把普通正文 iframe 或没有 MVU 状态的对话误判为保活 View', () => {
-  const messages = [
-    { role: 'assistant', turn: 1, displayRuntime: { frames: [{ partIndex: 0, mvuViewUsed: true }] } },
-    { role: 'assistant', turn: 2 }
-  ]
-  const projections = [
-    projection(1, [{ kind: 'html', content: '<p>只是正文</p>' }]),
-    projection(2, [{ kind: 'html', content: '<p>下一轮</p>' }])
-  ]
-
-  assert.deepEqual(projectPersistentStatusView(messages, projections), { projections, statusView: null })
-})
-
-test('按前端实际渲染下标识别状态 View，忽略空白投影片段', () => {
-  const content = '<script>loadStatus()</script>'
-  const messages = [
-    { role: 'assistant', turn: 1, displayRuntime: { frames: [{ partIndex: 1, mvuViewUsed: true }] } }
-  ]
-  const projections = [projection(1, [
-    { kind: 'markdown', text: '正文' },
-    { kind: 'html', content: '   ' },
-    { kind: 'html', content }
-  ])]
-
-  const result = projectPersistentStatusView(messages, projections)
-
-  assert.equal(result.statusView.content, content)
-  assert.deepEqual(result.projections[0].parts, [
-    { kind: 'markdown', text: '正文' },
-    { kind: 'html', content: '   ' }
-  ])
+test('多个声明模板有稳定独立身份，重复模板只挂载一次，换轮不改变身份', () => {
+  const rules = ['hp', 'inventory', 'hp'].map(name => ({ name, enabled: true, placement: [2], markdownOnly: true,
+    findRegex: '/<StatusPlaceHolderImpl\\/>/g', replaceString: '<script>' + name + '()</script>' }))
+  const result = projectPersistentStatusView([{ role: 'assistant', turn: 3 }], [], { regexScripts: rules })
+  const next = projectPersistentStatusView([{ role: 'assistant', turn: 4 }], [], { regexScripts: rules })
+  assert.equal(result.statusViews.length, 2)
+  assert.notEqual(result.statusViews[0].viewId, result.statusViews[1].viewId)
+  assert.deepEqual(result.statusViews.map(v => v.viewId), next.statusViews.map(v => v.viewId))
+  assert.ok(next.statusViews.every(v => v.targetTurn === 4))
 })
 
 test('声明状态栏的卡保留开局页，正文推进后使用声明模板而非 MVU 开局页', () => {

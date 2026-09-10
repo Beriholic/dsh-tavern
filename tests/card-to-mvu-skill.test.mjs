@@ -114,7 +114,7 @@ test('Skill 配方可构造可导入卡，规则分流、状态显示及模型�
   assert.ok(index >= 0)
   const result = projectPersistentStatusView([
     { role: 'assistant', turn: 1, displayRuntime: { frames: [{ partIndex: index, mvuViewUsed: true }] } }
-  ], [{ turn: 1, parts: layers.displayParts }])
+  ], [{ turn: 1, parts: layers.displayParts }], { regexScripts: extensions.regexScripts })
   assert.ok(result.statusView?.content.includes('Mvu.getMvuData'))
 })
 
