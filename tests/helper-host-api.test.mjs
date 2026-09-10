@@ -215,3 +215,18 @@ test('悬浮角色库读取当前人物卡名称，并随宿主上下文更新',
   run.receive({ type: 'dsh-tavern-helper-context', context: { characterName: '新卡', character: { name: '新卡' } } })
   assert.equal(run.window.getCurrentCharacterName(), '新卡')
 })
+
+
+test('script context exposes the bound character avatar and follows chat changes', () => {
+  const run = helperHostHarness({ chatId: 'one', character: { name: 'A', path: 'cards/a.png' } })
+  const ctx = run.window.SillyTavern.getContext()
+  assert.equal(ctx.characters[ctx.characterId].avatar, 'cards/a.png')
+  run.receive({ type: 'dsh-tavern-helper-context', context: { chatId: 'two', character: { name: 'B', path: 'cards/b.json', avatar: 'b.png' } } })
+  assert.equal(ctx.characters[ctx.characterId].avatar, 'b.png')
+  assert.equal(ctx.characters[ctx.characterId].name, 'B')
+  ctx.characters[0].name = 'local mutation'
+  assert.equal(ctx.characters[0].name, 'B')
+  run.receive({ type: 'dsh-tavern-helper-context', context: { character: null } })
+  assert.equal(ctx.characters.length, 0)
+  assert.equal(ctx.characterId, undefined)
+})
