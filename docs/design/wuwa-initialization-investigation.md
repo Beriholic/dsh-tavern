@@ -94,3 +94,22 @@ node tests/fixtures/verify-mvu-initialization.mjs http://127.0.0.1:PORT opening-
 ```
 
 去掉 `--expect-slow` 应触发 15 秒门槛失败。冷缓存联网耗时可能改变结果；测试使用的缓存状态必须随结果说明。验证器不会自动点击卡片或生成模型正文。
+
+
+## 正式环境复现（新增计时后）
+
+使用同一 Chrome 页面从“选择人物卡 → WuWa → 开始新游戏”创建测试局，未发送模型请求。新 Session `session-6d44e3c5-a188-44da-9111-dabc9e10dd35`，Chat `chat-mtv2ix5t-yor9d0`。
+
+- 官方模块执行约 139ms；伴随脚本整体等待 816ms，说明本次瓶颈不在脚本模块下载/加载。
+- 第 5 秒有 106 个提示词请求积压；15 个 prompt-drain 同时等待。
+- 第 15 秒提示词积压 161 个，页面出现与用户截图相同的“初始变量尚未保存”；两个自检异常仍存在。
+- 第 91.756 秒，提示词完成 219 个、积压 576 个；15 个 prompt-drain 已等待 89.321 秒，尚未出现 initialization-ready。
+- 取样结束时的存储写入分布：`{"tavern-helper.prompts": 365, "opening.native-append": 1, "display.capture": 4, "tavern-helper.variables": 2}`；其中 319 次只更新时间戳和版本。
+
+源码对应：`main.js` 的 Helper RPC 全部经 `record.rpcTail` 串行处理；`withScript` 在回调后执行 `drainPromptWrites(ownerId)`，循环等待该脚本整个 pending 集合清空。初始化并发处理 15 个开场，卡片还每秒继续同步提示词；新增请求超过处理速度，导致初始化等待不断延长。`tavern-script-host-adapter.js:updatePrompts` 对无变化操作也保存 Chat、返回 updated=true，客户端随后报告 mutation。
+
+确认的直接阻塞是提示词队列持续积压和回调后的全队列 drain。尚未分别量化正式环境每次 RPC 的存储、视图失效刷新、通信成本，不能把所有耗时都归因于磁盘。脚本 ID 仍受既有异步身份归属边界影响，不据此把所有请求认作世界书控制脚本的源码行为。
+
+停止方式：保留测试局和诊断日志，重启本地酒馆取消尚在运行的测试队列，避免继续产生无效写入。
+
+修复应优先验证两点：相同提示词同步不产生存储/刷新副作用；初始化回调只等待自己的必要写入，不无限等待后来定时器追加的工作。不能只提高超时阈值或去掉所有写入等待。
