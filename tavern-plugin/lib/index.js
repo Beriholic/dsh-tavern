@@ -1186,6 +1186,7 @@ export async function apply(ctx) {
       guides: Array.isArray(chat.guides) ? chat.guides : [],
       debugTurns: debugTurns.slice(-12).reverse(),
       latestAssistantMessageId,
+      latestAssistantTurn: latestStoryTurn,
       inputSources,
       canRollback: hasRollbackMessages(chat.messages),
       presentation: null,

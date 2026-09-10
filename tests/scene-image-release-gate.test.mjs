@@ -13,7 +13,7 @@ test('scene images are available through the release capability', () => {
 test('closed scene images do not start a runtime or mount client request sources', () => {
   assert.match(server, /TAVERN_RELEASE_CAPABILITIES\.sceneImages \? createSceneIllustrations/)
   assert.match(server, /TAVERN_RELEASE_CAPABILITIES\.sceneImages && req\.method === 'GET' && pathname === '\/api\/dsh-tavern\/scene-image'/)
-  assert.match(client, /sceneImagesEnabled && settled && projection/)
+  assert.match(client, /sceneImagesEnabled && settled && storyTurn > 0 && isPlayMode/)
   assert.match(client, /state\.sceneImages \? React\.createElement\(SceneImageSettings/)
   assert.match(client, /releaseCapabilities\.sceneImages \? React\.createElement\(SceneImageAction/)
 })

@@ -5104,7 +5104,7 @@ window.__ModuleLoader__.load({
 				if (!(data.status === "running" || data.status === "interrupted" || rendered.length > 0)) return null;
 				const mvuReceiptNode = mvuReceipt ? React.createElement(TavernMvuReceipt, { receipt: mvuReceipt, sessionId: props.sessionId, turn: storyTurn }) : null;
 				const sceneImagesEnabled = Boolean(liveState.view && liveState.view.releaseCapabilities && liveState.view.releaseCapabilities.sceneImages);
-				const illustration = sceneImagesEnabled && settled && projection && !sessionTransitioning ? React.createElement(SceneIllustration, { key: props.sessionId + ":" + storyTurn + ":" + JSON.stringify(projection), sessionId: props.sessionId, turn: storyTurn }) : null;
+				const illustration = sceneImagesEnabled && settled && storyTurn > 0 && isPlayMode(liveState.view && liveState.view.mode) && !sessionTransitioning ? React.createElement(SceneIllustration, { key: props.sessionId + ":" + storyTurn + ":" + JSON.stringify(projection), sessionId: props.sessionId, turn: storyTurn }) : null;
 				return React.createElement("div", { className: "dsh-tavern-assistant", "data-streaming": data.status === "running" || undefined }, rendered, illustration, mvuReceiptNode);
 			}
 			function TavernForkAssistantAction(props) {
@@ -6128,7 +6128,7 @@ window.__ModuleLoader__.load({
 						setState(result.illustration);
 						if (result.illustration.status === "running") timer = window.setTimeout(refresh, 1500);
 					} catch (e) {
-						if (active && requested === revision) setState(function (previous) { return previous ? Object.assign({}, previous, { error: String(e.message || e) }) : null; });
+						if (active && requested === revision) setState(function (previous) { return Object.assign({}, previous || { status: "unavailable", versions: [] }, { error: String(e.message || e) }); });
 					}
 				}
 				void refresh();
@@ -6162,7 +6162,7 @@ window.__ModuleLoader__.load({
 				const reusable = requestRef.current && !(state && requestRef.current.id === state.requestId && ["failed", "cancelled"].includes(state.status));
 				const clickId = reusable && state && requestRef.current.key === state.key ? requestRef.current.id : sceneImageRequestId();
 				recordImageInteraction(props.sessionId, props.turn, clickId, "click");
-				if (!settings || !settings.enabled || !settings.ready || settings.migrationPending || !state || busy || props.running || state.status === "running" || state.recovery === "save" || state.versions && state.versions.length) { recordImageInteraction(props.sessionId, props.turn, clickId, "blocked", "not-ready"); return; }
+				if (!settings || !settings.enabled || !settings.ready || settings.migrationPending || !state || !state.key || busy || props.running || state.status === "running" || state.recovery === "save" || state.versions && state.versions.length) { recordImageInteraction(props.sessionId, props.turn, clickId, "blocked", "not-ready"); return; }
 				const confirmNewRequestId = sceneImagePurchaseConfirmation(state);
 				if (confirmNewRequestId === false) { recordImageInteraction(props.sessionId, props.turn, clickId, "cancelled", "confirmation"); return; }
 				if (requestRef.current && requestRef.current.id === state.requestId && ["failed", "cancelled"].includes(state.status)) requestRef.current = null;
@@ -6176,9 +6176,9 @@ window.__ModuleLoader__.load({
 			const unavailable = settings.migrationPending ? "旧生图配置待迁移，请在设置中点击「保存并启用」。" : !settings.ready ? "生图配置未完成，请在设置中补全并保存。" : "";
 			const working = state && state.status === "running";
 			return React.createElement(React.Fragment, null,
-				React.createElement("button", { type: "button", className: "dsh-tavern-choice-trigger", title: unavailable || undefined, disabled: Boolean(unavailable) || !state || props.running || busy || working || state.recovery === "save" || state.versions && state.versions.length > 0, onClick: generate }, busy ? "整理画面…" : working ? sceneImageStageLabel(state) : state && state.recovery === "save" ? "图片待保存" : state && state.outcome === "unconfirmed" ? state.providerTask ? "查询原任务" : "重新生图" : state && state.status === "failed" && !state.versions.length ? "重试生图" : "生图"),
+				React.createElement("button", { type: "button", className: "dsh-tavern-choice-trigger", title: unavailable || (!props.turn ? "请先生成一段正文" : !state ? "正在读取生图状态…" : state.error || undefined), disabled: Boolean(unavailable) || !state || !state.key || props.running || busy || working || state.recovery === "save" || state.versions && state.versions.length > 0, onClick: generate }, busy ? "整理画面…" : working ? sceneImageStageLabel(state) : state && state.recovery === "save" ? "图片待保存" : state && state.outcome === "unconfirmed" ? state.providerTask ? "查询原任务" : "重新生图" : state && state.status === "failed" && !state.versions.length ? "重试生图" : "生图"),
 				unavailable ? React.createElement("span", { role: "status", className: "dsh-tavern-settings-desc" }, unavailable) : null,
-				error ? React.createElement("span", { role: "alert", className: "dsh-tavern-settings-error" }, error) : null
+				(error || state && state.error) ? React.createElement("span", { role: "alert", className: "dsh-tavern-settings-error" }, error || state.error) : null
 			);
 		}
 		function SceneImageSettings() {
@@ -8863,7 +8863,7 @@ window.__ModuleLoader__.load({
 			const latestMessageId = props.useChat(latestTavernAssistantMessageId);
 			const running = props.useSession(function (snapshot) { return snapshot.running === true; });
 			const live = useLiveTavernView(ownerSessionId, String(running) + ":" + String(latestMessageId || ""));
-			const imageTurn = live.view && Array.isArray(live.view.replyProjections) ? live.view.replyProjections.reduce(function (latest, item) { return Math.max(latest, Number(item.turn) || 0); }, 0) : 0;
+			const imageTurn = Number(live.view && live.view.latestAssistantTurn) || 0;
 			const h = React.createElement;
 			if (!sessionMode) return null;
 			if (address) return isPlayMode(sessionMode) ? h("div", { className: "dsh-tavern-dock-actions" }, h(TavernStopBackgroundAction, { sessionId: ownerSessionId })) : null;

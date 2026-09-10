@@ -615,3 +615,5 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-panel-tabs [aria-selected="true"] { outline: 2px solid var(--dsw-alias-label-secondary, #ae793f); outline-offset: -2px; font-weight: 700; }
 .dsh-tavern-status-runtime > [role="tabpanel"] { min-width: 0; width: 100%; }
 .dsh-tavern-status-runtime > [role="tabpanel"][hidden] { display: none; }
+
+.dsh-tavern-choice-trigger:disabled { opacity: .5; cursor: not-allowed; }
