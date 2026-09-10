@@ -207,3 +207,11 @@ test('异步 RPC 报错保留调用时的脚本和事件，不能署名最后加
   h.reply(h.calls()[0], '写入被拒绝', false)
   await assert.rejects(pending, error => error.dshTavernScriptId === 'a' && error.dshTavernMethod === 'updateTavernHelperVariables')
 })
+
+test('悬浮角色库读取当前人物卡名称，并随宿主上下文更新', () => {
+  const run = helperHostHarness({ characterName: '命定之诗', character: { name: '命定之诗' } })
+  assert.equal(run.window.getCurrentCharacterName(), '命定之诗')
+  assert.equal(run.window.TavernHelper.getCurrentCharacterName(), '命定之诗')
+  run.receive({ type: 'dsh-tavern-helper-context', context: { characterName: '新卡', character: { name: '新卡' } } })
+  assert.equal(run.window.getCurrentCharacterName(), '新卡')
+})
