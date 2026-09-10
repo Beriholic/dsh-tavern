@@ -3070,6 +3070,29 @@ window.__ModuleLoader__.load({
 			return script.tavernReady;
 		}
 
+		function ensureTavernHostJQueryUi(host) {
+			if (host.jQuery && typeof host.jQuery.fn.draggable === "function") return Promise.resolve();
+			const doc = host.document;
+			const existing = doc.querySelector('script[data-dsh-tavern-host-jquery-ui]');
+			if (existing && existing.tavernReady) return existing.tavernReady;
+			const script = doc.createElement('script');
+			script.setAttribute('data-dsh-tavern-host-jquery-ui', '');
+			script.src = '/api/dsh-tavern/vendor/runtime-assets/jquery-ui/jquery-ui.min.js';
+			script.tavernReady = new Promise(function (resolve, reject) {
+				const timer = host.setTimeout(function () { finish(new Error('宿主 jQuery UI 加载超时')); }, 15000);
+				function finish(error) {
+					host.clearTimeout(timer);
+					script.onload = script.onerror = null;
+					script.remove();
+					if (error) reject(error); else resolve();
+				}
+				script.onload = function () { finish(typeof host.jQuery.fn.draggable === 'function' ? null : new Error('宿主 jQuery UI 未初始化')); };
+				script.onerror = function () { finish(new Error('宿主 jQuery UI 加载失败')); };
+			});
+			doc.head.appendChild(script);
+			return script.tavernReady;
+		}
+
 		function releaseTavernHostJQueryHandlers(host, frameWindow) {
 			const jq = host.jQuery;
 			if (!jq || !jq._data || !jq.event || !frameWindow || !frameWindow.Function) return;
@@ -3125,7 +3148,7 @@ window.__ModuleLoader__.load({
 				+ 'const scripts=' + JSON.stringify(modules).replace(/</g, "\\u003c") + ';\n'
 				+ 'const token=' + JSON.stringify(metadata.token) + ';\n'
 				+ 'try{'
-				+ (input && input.trustedCardMode ? 'const ensureHostJQuery=' + ensureTavernHostJQuery.toString() + ';await ensureHostJQuery(window.parent);\n' : '')
+				+ (input && input.trustedCardMode ? 'const ensureHostJQuery=' + ensureTavernHostJQuery.toString() + ';await ensureHostJQuery(window.parent);const ensureHostJQueryUi=' + ensureTavernHostJQueryUi.toString() + ';await ensureHostJQueryUi(window.parent);\n' : '')
 				+ 'for(const script of scripts){window.__dshTavernHelperSetCurrentScript(script.id);try{'
 				+ 'if(script.system==="official-mvu"&&script.assetUrl){const loader=createMvuLoader({fetch:window.fetch.bind(window),evaluate:loadModule,onDiagnostic(diagnostic){parent.postMessage({type:"dsh-tavern-mvu-load-diagnostic",token,diagnostic},"*");},onState(state){parent.postMessage({type:"dsh-tavern-mvu-load-state",token,state},"*");}});'
 				+ 'const retry=event=>{if(event.source===parent&&event.data?.token===token&&event.data.type==="dsh-tavern-mvu-reload")loader.retry();};'
@@ -9041,6 +9064,7 @@ window.__ModuleLoader__.load({
 		exports.createTavernCardAppDock = createTavernCardAppDock;
 		exports.createTavernHelperScriptRuntime = createTavernHelperScriptRuntime;
 		exports.ensureTavernHostJQuery = ensureTavernHostJQuery;
+		exports.ensureTavernHostJQueryUi = ensureTavernHostJQueryUi;
 		exports.releaseTavernHostJQueryHandlers = releaseTavernHostJQueryHandlers;
 		exports.tavernScriptRuntimeReady = tavernScriptRuntimeReady;
 		exports.clampTavernFrameHeight = clampTavernFrameHeight;
