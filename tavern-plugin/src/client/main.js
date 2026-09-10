@@ -2663,6 +2663,27 @@ window.__ModuleLoader__.load({
 			return script.tavernReady;
 		}
 
+		function installTavernTrustedHostFacade(host, frameWindow) {
+			const bindings = ["SillyTavern", "TavernHelper"].map(function (name) {
+				const previous = Object.getOwnPropertyDescriptor(host, name);
+				if (previous && !previous.configurable) throw new Error("宿主接口不可替换：" + name);
+				const binding = { name: name, previous: previous, active: true, get: function () { return frameWindow[name]; } };
+				binding.get.tavernHostBinding = binding;
+				return binding;
+			});
+			for (const binding of bindings) Object.defineProperty(host, binding.name, { configurable: true, get: binding.get });
+			return function () {
+				for (const binding of bindings) {
+					binding.active = false;
+					if (Object.getOwnPropertyDescriptor(host, binding.name)?.get !== binding.get) continue;
+					let previous = binding.previous;
+					while (previous?.get?.tavernHostBinding && !previous.get.tavernHostBinding.active) previous = previous.get.tavernHostBinding.previous;
+					if (previous) Object.defineProperty(host, binding.name, previous);
+					else delete host[binding.name];
+				}
+			};
+		}
+
 		function releaseTavernHostJQueryHandlers(host, frameWindow) {
 			const jq = host.jQuery;
 			if (!jq || !jq._data || !jq.event || !frameWindow || !frameWindow.Function) return;
@@ -2719,7 +2740,7 @@ window.__ModuleLoader__.load({
 				+ 'const scripts=' + JSON.stringify(modules).replace(/</g, "\\u003c") + ';\n'
 				+ 'const token=' + JSON.stringify(metadata.token) + ';\n'
 				+ 'try{'
-				+ (input && input.trustedCardMode ? 'const ensureHostJQuery=' + ensureTavernHostJQuery.toString() + ';await ensureHostJQuery(window.parent);const ensureHostJQueryUi=' + ensureTavernHostJQueryUi.toString() + ';await ensureHostJQueryUi(window.parent);window.$=window.jQuery=window.parent.jQuery;\n' : '')
+				+ (input && input.trustedCardMode ? 'const ensureHostJQuery=' + ensureTavernHostJQuery.toString() + ';await ensureHostJQuery(window.parent);const ensureHostJQueryUi=' + ensureTavernHostJQueryUi.toString() + ';await ensureHostJQueryUi(window.parent);window.$=window.jQuery=window.parent.jQuery;const installHostFacade=' + installTavernTrustedHostFacade.toString() + ';const releaseHostFacade=installHostFacade(window.parent,window);window.addEventListener("pagehide",releaseHostFacade,{once:true});window.addEventListener("unload",releaseHostFacade,{once:true});\n' : '')
 				+ 'for(const script of scripts){window.__dshTavernHelperSetCurrentScript(script.id);try{'
 				+ 'if(script.system==="official-mvu"&&script.assetUrl){const loader=createMvuLoader({fetch:window.fetch.bind(window),evaluate:loadModule,onDiagnostic(diagnostic){parent.postMessage({type:"dsh-tavern-mvu-load-diagnostic",token,diagnostic},"*");},onState(state){parent.postMessage({type:"dsh-tavern-mvu-load-state",token,state},"*");}});'
 				+ 'const retry=event=>{if(event.source===parent&&event.data?.token===token&&event.data.type==="dsh-tavern-mvu-reload")loader.retry();};'
@@ -8544,6 +8565,7 @@ window.__ModuleLoader__.load({
 		exports.createTavernHelperScriptRuntime = createTavernHelperScriptRuntime;
 		exports.ensureTavernHostJQuery = ensureTavernHostJQuery;
 		exports.ensureTavernHostJQueryUi = ensureTavernHostJQueryUi;
+		exports.installTavernTrustedHostFacade = installTavernTrustedHostFacade;
 		exports.releaseTavernHostJQueryHandlers = releaseTavernHostJQueryHandlers;
 		exports.tavernScriptRuntimeReady = tavernScriptRuntimeReady;
 		exports.clampTavernFrameHeight = clampTavernFrameHeight;

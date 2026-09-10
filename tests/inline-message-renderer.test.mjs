@@ -1988,11 +1988,35 @@ test('trusted script UI uses host body and its installed draggable; isolation re
     hostJQuery.fn = { jquery: '3.7.1', draggable() {} }
     const localJQuery = () => localBody
     const window = { parent: { jQuery: hostJQuery }, $: localJQuery, jQuery: localJQuery,
-      __dshTavernHelperReady: Promise.resolve(), __dshTavernResolveCompanionScriptsReady() {} }
+      __dshTavernHelperReady: Promise.resolve(), addEventListener() {}, __dshTavernResolveCompanionScriptsReady() {} }
     const document = client.buildTavernHelperScriptDocument({ trustedCardMode, scripts: [] })
     const loader = Buffer.from(document.match(/<script type="module" src="data:text\/javascript;base64,([^"]+)"/)[1], 'base64').toString()
     await vm.runInNewContext('(async()=>{' + loader + '})()', { window })
     assert.equal(window.$('body'), trustedCardMode ? hostBody : localBody)
     if (trustedCardMode) assert.equal(typeof window.$.fn.draggable, 'function')
   }
+})
+
+test('trusted parent facade exposes real EJS readiness and restores the previous host on disposal', () => {
+  const previous = { native: true }, host = { SillyTavern: previous }
+  const frame = { SillyTavern: { getContext: () => ({ extensionSettings: { EjsTemplate: { enabled: true } } }) }, TavernHelper: {} }
+  const dispose = client.installTavernTrustedHostFacade(host, frame)
+  assert.equal(host.SillyTavern.getContext().extensionSettings.EjsTemplate.enabled, true)
+  frame.SillyTavern = { getContext: () => ({ extensionSettings: { EjsTemplate: { enabled: false } } }) }
+  assert.equal(host.SillyTavern.getContext().extensionSettings.EjsTemplate.enabled, false)
+  assert.equal(host.TavernHelper, frame.TavernHelper)
+  dispose()
+  assert.equal(host.SillyTavern, previous)
+  assert.equal(Object.hasOwn(host, 'TavernHelper'), false)
+})
+
+test('retiring an older trusted facade cannot clear the newer one or restore a disposed frame', () => {
+  const original = { original: true }, host = { SillyTavern: original }
+  const first = { SillyTavern: { id: 'a' } }, second = { SillyTavern: { id: 'b' } }
+  const releaseFirst = client.installTavernTrustedHostFacade(host, first)
+  const releaseSecond = client.installTavernTrustedHostFacade(host, second)
+  releaseFirst()
+  assert.equal(host.SillyTavern, second.SillyTavern)
+  releaseSecond()
+  assert.equal(host.SillyTavern, original)
 })
