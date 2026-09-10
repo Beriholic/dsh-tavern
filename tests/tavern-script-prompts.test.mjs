@@ -113,3 +113,14 @@ test('提示词保存失败会让调用事件失败，不返回成功结算', as
   run.window.eventOn('NEXT', () => {})
   await run.window.eventEmit('NEXT')
 })
+
+test('scan-only prompts may omit depth without aborting MVU initialization callbacks', () => {
+  const chat = {}
+  mutateScriptPrompts(chat, { kind: 'inject', prompts: [{
+    id: 'Plot_Title_Trigger', content: '当前章节：序章',
+    position: 'none', role: 'system', should_scan: true
+  }] })
+  assert.equal(scriptPromptScanText(chat), '当前章节：序章')
+  assert.deepEqual(scriptPromptFrameInputs(chat), [])
+  assert.equal(chat.tavernScriptPrompts[0].depth, 0)
+})

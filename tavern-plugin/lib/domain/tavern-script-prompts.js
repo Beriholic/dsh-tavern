@@ -11,10 +11,11 @@ export function mutateScriptPrompts(chat, operation = {}) {
       if (!prompt || typeof prompt.id !== 'string' || !prompt.id || typeof prompt.content !== 'string') throw new TypeError('提示词需要 id 和 content')
       if (!['in_chat', 'none'].includes(prompt.position)) throw new TypeError('不支持的提示词位置')
       if (!['system', 'user', 'assistant'].includes(prompt.role)) throw new TypeError('无效的提示词角色')
-      if (!Number.isSafeInteger(prompt.depth) || prompt.depth < 0) throw new TypeError('提示词 depth 必须是非负整数')
+      const depth = prompt.position === 'none' && prompt.depth === undefined ? 0 : prompt.depth
+      if (!Number.isSafeInteger(depth) || depth < 0) throw new TypeError('提示词 depth 必须是非负整数')
       if (prompt.filter !== undefined) throw new Error('DSH 暂不支持提示词 filter 回调')
       return { id: prompt.id, content: prompt.content, position: prompt.position, role: prompt.role,
-        depth: prompt.depth, should_scan: prompt.should_scan !== false, once: operation.once === true }
+        depth, should_scan: prompt.should_scan !== false, once: operation.once === true }
     })
     for (const prompt of normalized) current.set(prompt.id, prompt)
   } else throw new TypeError('未知提示词操作')
