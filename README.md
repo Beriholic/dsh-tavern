@@ -167,7 +167,7 @@ dsh-tavern 使用尽可能少而精的提示词，把流程和状态交给程序
 
 ### DSH Desktop 桌面版（推荐）
 
-适合不想单独配置运行环境和管理服务的用户。请先安装 [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) **2.0.2 或更高版本**（支持 Windows x64 和 macOS，暂不支持 Linux）。
+适合不想单独配置运行环境和管理服务的用户。推荐使用 [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) **2.0.5 版本**（支持 Windows x64 和 macOS，暂不支持 Linux）。
 
 安装后，从系统托盘（macOS 菜单栏）打开 **Open DSH Terminal**，运行对应命令：
 
