@@ -2719,7 +2719,7 @@ window.__ModuleLoader__.load({
 				+ 'const scripts=' + JSON.stringify(modules).replace(/</g, "\\u003c") + ';\n'
 				+ 'const token=' + JSON.stringify(metadata.token) + ';\n'
 				+ 'try{'
-				+ (input && input.trustedCardMode ? 'const ensureHostJQuery=' + ensureTavernHostJQuery.toString() + ';await ensureHostJQuery(window.parent);const ensureHostJQueryUi=' + ensureTavernHostJQueryUi.toString() + ';await ensureHostJQueryUi(window.parent);\n' : '')
+				+ (input && input.trustedCardMode ? 'const ensureHostJQuery=' + ensureTavernHostJQuery.toString() + ';await ensureHostJQuery(window.parent);const ensureHostJQueryUi=' + ensureTavernHostJQueryUi.toString() + ';await ensureHostJQueryUi(window.parent);window.$=window.jQuery=window.parent.jQuery;\n' : '')
 				+ 'for(const script of scripts){window.__dshTavernHelperSetCurrentScript(script.id);try{'
 				+ 'if(script.system==="official-mvu"&&script.assetUrl){const loader=createMvuLoader({fetch:window.fetch.bind(window),evaluate:loadModule,onDiagnostic(diagnostic){parent.postMessage({type:"dsh-tavern-mvu-load-diagnostic",token,diagnostic},"*");},onState(state){parent.postMessage({type:"dsh-tavern-mvu-load-state",token,state},"*");}});'
 				+ 'const retry=event=>{if(event.source===parent&&event.data?.token===token&&event.data.type==="dsh-tavern-mvu-reload")loader.retry();};'

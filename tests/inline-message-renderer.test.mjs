@@ -1980,3 +1980,19 @@ test('trusted card widgets await the full host jQuery UI before executing', asyn
   await client.ensureTavernHostJQueryUi(host)
   assert.equal(attached, null)
 })
+
+test('trusted script UI uses host body and its installed draggable; isolation retains local body', async () => {
+  for (const trustedCardMode of [true, false]) {
+    const hostBody = {}, localBody = {}
+    const hostJQuery = () => hostBody
+    hostJQuery.fn = { jquery: '3.7.1', draggable() {} }
+    const localJQuery = () => localBody
+    const window = { parent: { jQuery: hostJQuery }, $: localJQuery, jQuery: localJQuery,
+      __dshTavernHelperReady: Promise.resolve(), __dshTavernResolveCompanionScriptsReady() {} }
+    const document = client.buildTavernHelperScriptDocument({ trustedCardMode, scripts: [] })
+    const loader = Buffer.from(document.match(/<script type="module" src="data:text\/javascript;base64,([^"]+)"/)[1], 'base64').toString()
+    await vm.runInNewContext('(async()=>{' + loader + '})()', { window })
+    assert.equal(window.$('body'), trustedCardMode ? hostBody : localBody)
+    if (trustedCardMode) assert.equal(typeof window.$.fn.draggable, 'function')
+  }
+})

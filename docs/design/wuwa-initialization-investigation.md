@@ -130,3 +130,9 @@ node tests/fixtures/verify-mvu-initialization.mjs http://127.0.0.1:PORT opening-
 范围限制：本次解决初始化等待饥饿和逐条 RPC 开销；没有宣称跨 await 的共享 script identity 已改为完整异步执行上下文。卡片仍出现“飞讯”脚本 `mouse` 错误，自检仍显示世界书控制/EJS 两项异常，这些兼容性问题没有在本次修复中被掩盖或标为通过。
 
 刷新验证：初始化完成时间保持 `1789018310930`，没有重新执行开场初始化；15 组变量仍在。全变量哈希比较不相等，进一步对比 Journal revision 11 与 14，唯一变量差异是第 0 个开场的 `stat_data.插图系统`（配套脚本刷新写入），不能表述为“刷新后所有字段完全不变”。
+
+## 2026-09-10：配套浮窗修复
+
+独立原卡浏览器复现定位到 `jquery-ui/ui/widgets/draggable/+esm` 缺少 `ui.mouse`。此导入由世界书控制脚本触发；运行错误记录中的“飞讯”归属并不可靠。原因是可信脚本仍使用 iframe 自己的 jQuery，而完整 jQuery UI 只装在宿主。
+
+可信脚本在宿主 jQuery/UI 就绪后使用宿主实例，恢复原卡 `$('body')` 浮窗语义；隔离模式不跨文档。真实浏览器中 `#wb-float-monitor`、`#fx-global-status` 均出现在宿主页面，新增 `mouse` 错误消失，世界书浮窗从 (20,80) 拖至约 (222,173)。66 项消息渲染测试通过。原卡仍有 `cleanupResidualAutoBlue` 引用未声明 `roundWb` 的独立错误，尚未在此提交中修改。
