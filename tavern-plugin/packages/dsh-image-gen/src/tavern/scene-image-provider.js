@@ -9,6 +9,7 @@ import { channelSettings, imageChannelRequest, channelImageResult } from './scen
 import { sceneImageFromZip } from './scene-image-zip.js'
 import { generateComfyImage } from './scene-image-comfy.js'
 import { redactSceneDiagnostic } from './redact.js'
+import { imageNetworkCodes } from './scene-image-transport.js'
 
 export function imageSettings(value = {}) {
   return {
@@ -102,7 +103,7 @@ export async function generateSceneImage(input, deps = {}) {
         providerRequestId: response.headers?.get?.('x-request-id') || response.headers?.get?.('request-id') || null })
       return response
     } catch (error) {
-      await emit({ requestId, at: Date.now(), phase: 'transport-error', method, durationMs: Date.now() - began, error: String(error.message || error) })
+      await emit({ requestId, at: Date.now(), phase: 'transport-error', method, durationMs: Date.now() - began, error: String(error.message || error), networkCodes: imageNetworkCodes(error) })
       throw error
     }
   }

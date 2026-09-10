@@ -29,7 +29,7 @@ function readChannel(value, id) {
 }
 
 /** A private in-process interface: secrets never cross the Studio HTTP route. */
-export function createImageConfiguration({ read, write, restore = /** @type {((value: any) => Promise<unknown>) | undefined} */ (undefined), credentials, attachments, fetchImpl = fetch, generateImpl = generateSceneImage }) {
+export function createImageConfiguration({ read, write, restore = /** @type {((value: any) => Promise<unknown>) | undefined} */ (undefined), credentials, attachments, fetchImpl = fetch, generateImpl = generateSceneImage, onDiagnostic = undefined }) {
   let pending = Promise.resolve()
   /** @template T @param {() => T | Promise<T>} fn @returns {Promise<T>} */
   function serial(fn) { const result = pending.then(fn); pending = result.catch(() => {}); return result }
@@ -82,7 +82,7 @@ export function createImageConfiguration({ read, write, restore = /** @type {((v
     // The original probe code addresses channel refs. Translate to plugin refs.
     const id = [...ids].find(id => imageCredentialRef(id) === oldRef)
     return credentials.resolve(id && mapped[id] ? mapped[id][3] : oldRef)
-  } }), fetchImpl })
+  } }), fetchImpl, onDiagnostic })
   return {
     serial,
     inspect: id => serial(() => inspect(id)),

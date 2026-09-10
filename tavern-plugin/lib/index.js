@@ -21,7 +21,7 @@ import { CANDIDATE_SUBMIT_TOOL, SCRIPT_POINT_TOOL, SCRIPT_READ_TOOL, createCandi
 import { createSceneIllustrations, sceneTarget } from './domain/scene-illustration.js'
 import { legacyImageConfigurationReader } from './domain/image-generation-host.js'
 import { createSceneWorldbooks, sceneWorldbookBinding } from './domain/scene-worldbook.js'
-import { createSceneImageDiagnostics } from './domain/scene-image-diagnostics.js'
+import { createSceneImageDiagnostics, createSceneImageHostLogger } from './domain/scene-image-diagnostics.js'
 import { TAVERN_RELEASE_CAPABILITIES } from './domain/release-capabilities.js'
 import { createSessionStablePrefixStorage, ensureSessionStablePrefix, readSessionStablePrefix, sessionStablePrefixSections } from './domain/session-stable-prefix.js'
 import { waitForWritableSession } from './domain/agent-readiness.js'
@@ -153,7 +153,8 @@ export async function apply(ctx) {
   const profileData = createProfileDataStore({ dataRoot })
   const userPreferenceProfile = createUserPreferenceProfile({ store: profileData })
   const sceneWorldbooks = TAVERN_RELEASE_CAPABILITIES.sceneImages ? createSceneWorldbooks({ store: profileData }) : null
-  const sceneDiagnostics = TAVERN_RELEASE_CAPABILITIES.sceneImages ? createSceneImageDiagnostics(profileData) : null
+  const imageHostDiagnostic = createSceneImageHostLogger(ctx.logger)
+  const sceneDiagnostics = TAVERN_RELEASE_CAPABILITIES.sceneImages ? createSceneImageDiagnostics(profileData, { onDiagnostic: imageHostDiagnostic }) : null
   async function captureSceneWorldbook(chat, card, preparedBook) {
     if (sceneWorldbooks === null) return null
     try {
@@ -1477,6 +1478,7 @@ export async function apply(ctx) {
   })
   ctx.effect(() => () => backgroundAgentRunner.dispose(), 'dsh-tavern: dispose resident background agents')
   const sceneIllustrations = TAVERN_RELEASE_CAPABILITIES.sceneImages ? createSceneIllustrations({
+    onDiagnostic: imageHostDiagnostic,
     readLegacyConfiguration: legacyImageConfigurationReader(ctx.get('settings')?.documentPath),
     store: profileData, diagnostics: sceneDiagnostics, chatForSession, selection: modelSelection,
     worldbookAtTarget: async (chat, target) => {

@@ -1,5 +1,7 @@
 import { sceneImageChannel, imageCredentialRef, SCENE_IMAGE_CHANNELS } from './scene-image-channels.js'
 import { sceneImageAuthProbe, verifySceneImageKey } from './scene-image-auth.js'
+import { imageNetworkCodes } from './scene-image-transport.js'
+import { redactSceneDiagnostic } from './redact.js'
 
 const MAX_BYTES = 256 * 1024
 
@@ -30,12 +32,13 @@ async function limitedJson(response) {
 }
 
 /** Read-only setup checks. No generation, settings writes, or redirect following. */
-export function createSceneImageConnection({ settings, credentials, fetchImpl = fetch, timeoutMs = 5000 }) {
-  async function request(input = {}, listModels = false) {
+export function createSceneImageConnection({ settings, credentials, fetchImpl = fetch, timeoutMs = 5000, onDiagnostic = undefined }) {
+  async function probeRequest(input, listModels, diagnostic, secrets) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('连接配置必须是对象')
     const channel = sceneImageChannel(input.provider)
     const current = await settings(channel.id)
     const baseURL = endpoint(input.baseURL ?? current.baseURL)
+    Object.assign(diagnostic, { provider: channel.id, baseURL, model: current.model })
     const authType = ['webui', 'comfyui'].includes(channel.id) ? (input.authType ?? current.authType) : 'bearer'
     if (!['none', 'basic', 'bearer'].includes(authType)) throw new Error('请选择有效的鉴权方式')
     if (input.apiKey !== undefined && typeof input.apiKey !== 'string') throw new Error('API Key 必须是文本')
@@ -47,7 +50,10 @@ export function createSceneImageConnection({ settings, credentials, fetchImpl = 
       apiKey = (await credentials()?.resolve(imageCredentialRef(channel.id, authType)))?.value || ''
     }
     if (!apiKey && authType !== 'none' && current.hasKey && !sameEndpoint) throw new Error('地址已修改，请重新填写 API Key 后测试，旧密钥不会发送到新地址')
+    secrets.push(apiKey, username)
     if (/[\r\n]/.test(apiKey) || /[:\r\n]/.test(username)) throw new Error('鉴权信息格式不正确')
+    diagnostic.hasKey = Boolean(apiKey)
+    diagnostic.authType = authType
     if (listModels && !SCENE_IMAGE_CHANNELS.find(item => item.id === channel.id).canListModels) return { models: [], message: '此渠道暂不支持自动获取模型，请使用预设或手动填写。' }
     const headers = { accept: 'application/json' }
     if (apiKey && authType !== 'none') {
@@ -58,10 +64,22 @@ export function createSceneImageConnection({ settings, credentials, fetchImpl = 
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     let response
+    async function observedFetch(url, init) {
+      const entry = { method: init.method, path: new URL(url).pathname, startedAt: Date.now() }
+      diagnostic.requests.push(entry)
+      try {
+        const result = await fetchImpl(url, init)
+        entry.httpStatus = result.status
+        return result
+      } catch (error) {
+        entry.networkCodes = imageNetworkCodes(error)
+        throw error
+      } finally { entry.durationMs = Date.now() - entry.startedAt }
+    }
     try {
       const probe = sceneImageAuthProbe(channel.id, baseURL, SCENE_IMAGE_CHANNELS.find(item => item.id === channel.id).canListModels)
-      if (!listModels && apiKey && authType !== 'none' && probe) return await verifySceneImageKey({ probe, baseURL, headers, fetchImpl, signal: controller.signal, readJson: limitedJson })
-      response = await fetchImpl(listModels ? baseURL + '/models' : baseURL + '/', {
+      if (!listModels && apiKey && authType !== 'none' && probe) return await verifySceneImageKey({ probe, baseURL, headers, fetchImpl: observedFetch, signal: controller.signal, readJson: limitedJson })
+      response = await observedFetch(listModels ? baseURL + '/models' : baseURL + '/', {
         method: listModels ? 'GET' : 'HEAD', headers, redirect: 'manual', signal: controller.signal
       })
       const httpStatus = response.status
@@ -85,8 +103,26 @@ export function createSceneImageConnection({ settings, credentials, fetchImpl = 
       // Provider response bodies and transport exceptions may contain secrets.
       return { status: 'failed', models: [], message: response ? '模型列表读取失败，可手动填写模型。' : '连接失败，请检查地址、网络或 HTTPS 证书。' }
     } finally {
+      diagnostic.timedOut = controller.signal.aborted
       clearTimeout(timer)
       await response?.body?.cancel().catch(() => {})
+    }
+  }
+  async function request(input = {}, listModels = false) {
+    const diagnostic = { kind: listModels ? 'model-list' : 'connection', startedAt: Date.now(), timeoutMs, requests: [] }
+    const secrets = [input?.apiKey]
+    try {
+      const result = await probeRequest(input, listModels, diagnostic, secrets)
+      for (const key of ['status', 'apiKeyStatus', 'httpStatus', 'probePath']) if (result[key] !== undefined) diagnostic[key] = result[key]
+      if (listModels) diagnostic.modelCount = result.models?.length || 0
+      return result
+    } catch (error) {
+      diagnostic.status = 'configuration_failed'
+      throw error
+    } finally {
+      diagnostic.durationMs = Date.now() - diagnostic.startedAt
+      try { await onDiagnostic?.(redactSceneDiagnostic(diagnostic, secrets)) }
+      catch { /* Diagnostics cannot change checks, configuration or retries. */ }
     }
   }
   return { test: input => request(input), models: input => request(input, true) }

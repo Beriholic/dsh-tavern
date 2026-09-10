@@ -2740,6 +2740,74 @@ async function verifySceneImageKey({ probe, baseURL, headers, fetchImpl, signal,
 	}
 }
 //#endregion
+//#region lib/types/tavern/scene-image-transport.js
+const codes = /* @__PURE__ */ new Set([
+	"ENOTFOUND",
+	"EAI_AGAIN",
+	"ECONNRESET",
+	"ECONNREFUSED",
+	"ETIMEDOUT",
+	"ENETUNREACH",
+	"EHOSTUNREACH",
+	"EPIPE",
+	"ABORT_ERR",
+	"UND_ERR_CONNECT_TIMEOUT",
+	"UND_ERR_HEADERS_TIMEOUT",
+	"UND_ERR_BODY_TIMEOUT",
+	"UND_ERR_SOCKET",
+	"CERT_HAS_EXPIRED",
+	"CERT_NOT_YET_VALID",
+	"DEPTH_ZERO_SELF_SIGNED_CERT",
+	"SELF_SIGNED_CERT_IN_CHAIN",
+	"UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+	"UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+	"ERR_TLS_CERT_ALTNAME_INVALID"
+]);
+function imageNetworkCodes(error) {
+	const result = /* @__PURE__ */ new Set(), seen = /* @__PURE__ */ new Set();
+	function visit(value, depth) {
+		if (!value || typeof value !== "object" || seen.has(value) || depth > 4) return;
+		seen.add(value);
+		if (codes.has(value.code)) result.add(value.code);
+		visit(value.cause, depth + 1);
+		if (Array.isArray(value.errors)) for (const child of value.errors.slice(0, 8)) visit(child, depth + 1);
+	}
+	visit(error, 0);
+	return [...result];
+}
+//#endregion
+//#region lib/types/tavern/redact.js
+const secretKey = /^(?:authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|access[-_]?token|refresh[-_]?token|token|password|secret|client[-_]?secret)$/i;
+function redactDiagnostic(value, depth = 0) {
+	if (depth > 24) return "[depth limit]";
+	if (typeof value === "string") return value.replace(/https?:\/\/[^\s"'<>]+/gi, (address) => {
+		try {
+			const url = new URL(address);
+			url.username = "";
+			url.password = "";
+			url.search = "";
+			url.hash = "";
+			return url.href;
+		} catch {
+			return "[URL redacted]";
+		}
+	}).replace(/\b(?:Bearer|Basic)\s+[^\s"'<>]+/gi, "[REDACTED]").replace(/\bsk-[A-Za-z0-9_-]{8,}/g, "[REDACTED]").replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, "$1[REDACTED]@").replace(/([?&](?:token|key|api_key|apiKey|access_token|auth|secret|password)=)[^\s&#"'<>]*/gi, "$1[REDACTED]").replace(/((?:api[-_]?key|access[-_]?token|password|secret|authorization)["']?\s*[=:]\s*["']?)[^\s,;"'<>]+/gi, "$1[REDACTED]");
+	if (Array.isArray(value)) return value.map((item) => redactDiagnostic(item, depth + 1));
+	if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, secretKey.test(key) ? "[REDACTED]" : redactDiagnostic(item, depth + 1)]));
+	return value;
+}
+function redactSceneDiagnostic(value, secrets = [], depth = 0) {
+	if (depth > 24) return "[depth limit]";
+	if (Buffer.isBuffer(value) || ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return "[image bytes omitted]";
+	if (typeof value === "string") {
+		for (const secret of secrets.filter((item) => typeof item === "string" && item)) value = value.replaceAll(secret, "[REDACTED]");
+		return redactDiagnostic(value.replace(/data:image\/[^\s"']+/gi, "[image bytes omitted]"));
+	}
+	if (Array.isArray(value)) return value.map((item) => redactSceneDiagnostic(item, secrets, depth + 1));
+	if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, /^(?:base64|b64_json|image_data|image_bytes|image_base64)$/i.test(key) || value.type === "image" && key === "data" ? "[image bytes omitted]" : /^(?:authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|access[-_]?token|refresh[-_]?token|token|password|secret|client[-_]?secret)$/i.test(key) ? "[REDACTED]" : redactSceneDiagnostic(item, secrets, depth + 1)]));
+	return value;
+}
+//#endregion
 //#region lib/types/tavern/scene-image-connection.js
 const MAX_BYTES = 262144;
 function endpoint$1(value) {
@@ -2777,12 +2845,17 @@ async function limitedJson(response) {
 	}
 }
 /** Read-only setup checks. No generation, settings writes, or redirect following. */
-function createSceneImageConnection({ settings, credentials, fetchImpl = fetch, timeoutMs = 5e3 }) {
-	async function request(input = {}, listModels = false) {
+function createSceneImageConnection({ settings, credentials, fetchImpl = fetch, timeoutMs = 5e3, onDiagnostic = void 0 }) {
+	async function probeRequest(input, listModels, diagnostic, secrets) {
 		if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("连接配置必须是对象");
 		const channel = sceneImageChannel(input.provider);
 		const current = await settings(channel.id);
 		const baseURL = endpoint$1(input.baseURL ?? current.baseURL);
+		Object.assign(diagnostic, {
+			provider: channel.id,
+			baseURL,
+			model: current.model
+		});
 		const authType = ["webui", "comfyui"].includes(channel.id) ? input.authType ?? current.authType : "bearer";
 		if (![
 			"none",
@@ -2795,7 +2868,10 @@ function createSceneImageConnection({ settings, credentials, fetchImpl = fetch, 
 		const sameEndpoint = current.baseURL && baseURL === endpoint$1(current.baseURL);
 		if (!apiKey && authType !== "none" && sameEndpoint && authType === (current.authType || "bearer") && username === (current.username || "")) apiKey = (await credentials()?.resolve(imageCredentialRef(channel.id, authType)))?.value || "";
 		if (!apiKey && authType !== "none" && current.hasKey && !sameEndpoint) throw new Error("地址已修改，请重新填写 API Key 后测试，旧密钥不会发送到新地址");
+		secrets.push(apiKey, username);
 		if (/[\r\n]/.test(apiKey) || /[:\r\n]/.test(username)) throw new Error("鉴权信息格式不正确");
+		diagnostic.hasKey = Boolean(apiKey);
+		diagnostic.authType = authType;
 		if (listModels && !SCENE_IMAGE_CHANNELS.find((item) => item.id === channel.id).canListModels) return {
 			models: [],
 			message: "此渠道暂不支持自动获取模型，请使用预设或手动填写。"
@@ -2809,17 +2885,35 @@ function createSceneImageConnection({ settings, credentials, fetchImpl = fetch, 
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), timeoutMs);
 		let response;
+		async function observedFetch(url, init) {
+			const entry = {
+				method: init.method,
+				path: new URL(url).pathname,
+				startedAt: Date.now()
+			};
+			diagnostic.requests.push(entry);
+			try {
+				const result = await fetchImpl(url, init);
+				entry.httpStatus = result.status;
+				return result;
+			} catch (error) {
+				entry.networkCodes = imageNetworkCodes(error);
+				throw error;
+			} finally {
+				entry.durationMs = Date.now() - entry.startedAt;
+			}
+		}
 		try {
 			const probe = sceneImageAuthProbe(channel.id, baseURL, SCENE_IMAGE_CHANNELS.find((item) => item.id === channel.id).canListModels);
 			if (!listModels && apiKey && authType !== "none" && probe) return await verifySceneImageKey({
 				probe,
 				baseURL,
 				headers,
-				fetchImpl,
+				fetchImpl: observedFetch,
 				signal: controller.signal,
 				readJson: limitedJson
 			});
-			response = await fetchImpl(listModels ? baseURL + "/models" : baseURL + "/", {
+			response = await observedFetch(listModels ? baseURL + "/models" : baseURL + "/", {
 				method: listModels ? "GET" : "HEAD",
 				headers,
 				redirect: "manual",
@@ -2866,8 +2960,37 @@ function createSceneImageConnection({ settings, credentials, fetchImpl = fetch, 
 				message: response ? "模型列表读取失败，可手动填写模型。" : "连接失败，请检查地址、网络或 HTTPS 证书。"
 			};
 		} finally {
+			diagnostic.timedOut = controller.signal.aborted;
 			clearTimeout(timer);
 			await response?.body?.cancel().catch(() => {});
+		}
+	}
+	async function request(input = {}, listModels = false) {
+		const diagnostic = {
+			kind: listModels ? "model-list" : "connection",
+			startedAt: Date.now(),
+			timeoutMs,
+			requests: []
+		};
+		const secrets = [input?.apiKey];
+		try {
+			const result = await probeRequest(input, listModels, diagnostic, secrets);
+			for (const key of [
+				"status",
+				"apiKeyStatus",
+				"httpStatus",
+				"probePath"
+			]) if (result[key] !== void 0) diagnostic[key] = result[key];
+			if (listModels) diagnostic.modelCount = result.models?.length || 0;
+			return result;
+		} catch (error) {
+			diagnostic.status = "configuration_failed";
+			throw error;
+		} finally {
+			diagnostic.durationMs = Date.now() - diagnostic.startedAt;
+			try {
+				await onDiagnostic?.(redactSceneDiagnostic(diagnostic, secrets));
+			} catch {}
 		}
 	}
 	return {
@@ -3126,38 +3249,6 @@ async function generateComfyImage(input, deps) {
 	}
 }
 //#endregion
-//#region lib/types/tavern/redact.js
-const secretKey = /^(?:authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|access[-_]?token|refresh[-_]?token|token|password|secret|client[-_]?secret)$/i;
-function redactDiagnostic(value, depth = 0) {
-	if (depth > 24) return "[depth limit]";
-	if (typeof value === "string") return value.replace(/https?:\/\/[^\s"'<>]+/gi, (address) => {
-		try {
-			const url = new URL(address);
-			url.username = "";
-			url.password = "";
-			url.search = "";
-			url.hash = "";
-			return url.href;
-		} catch {
-			return "[URL redacted]";
-		}
-	}).replace(/\b(?:Bearer|Basic)\s+[^\s"'<>]+/gi, "[REDACTED]").replace(/\bsk-[A-Za-z0-9_-]{8,}/g, "[REDACTED]").replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, "$1[REDACTED]@").replace(/([?&](?:token|key|api_key|apiKey|access_token|auth|secret|password)=)[^\s&#"'<>]*/gi, "$1[REDACTED]").replace(/((?:api[-_]?key|access[-_]?token|password|secret|authorization)["']?\s*[=:]\s*["']?)[^\s,;"'<>]+/gi, "$1[REDACTED]");
-	if (Array.isArray(value)) return value.map((item) => redactDiagnostic(item, depth + 1));
-	if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, secretKey.test(key) ? "[REDACTED]" : redactDiagnostic(item, depth + 1)]));
-	return value;
-}
-function redactSceneDiagnostic(value, secrets = [], depth = 0) {
-	if (depth > 24) return "[depth limit]";
-	if (Buffer.isBuffer(value) || ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return "[image bytes omitted]";
-	if (typeof value === "string") {
-		for (const secret of secrets.filter((item) => typeof item === "string" && item)) value = value.replaceAll(secret, "[REDACTED]");
-		return redactDiagnostic(value.replace(/data:image\/[^\s"']+/gi, "[image bytes omitted]"));
-	}
-	if (Array.isArray(value)) return value.map((item) => redactSceneDiagnostic(item, secrets, depth + 1));
-	if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, /^(?:base64|b64_json|image_data|image_bytes|image_base64)$/i.test(key) || value.type === "image" && key === "data" ? "[image bytes omitted]" : /^(?:authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|access[-_]?token|refresh[-_]?token|token|password|secret|client[-_]?secret)$/i.test(key) ? "[REDACTED]" : redactSceneDiagnostic(item, secrets, depth + 1)]));
-	return value;
-}
-//#endregion
 //#region lib/types/tavern/scene-image-provider.js
 async function boundedBytes(response, limit) {
 	if (Number(response.headers.get("content-length")) > limit) {
@@ -3285,7 +3376,8 @@ async function generateSceneImage(input, deps = {}) {
 				phase: "transport-error",
 				method,
 				durationMs: Date.now() - began,
-				error: String(error.message || error)
+				error: String(error.message || error),
+				networkCodes: imageNetworkCodes(error)
 			});
 			throw error;
 		}
@@ -3465,7 +3557,7 @@ function readChannel(value, id) {
 	return channelSettings(data, id);
 }
 /** A private in-process interface: secrets never cross the Studio HTTP route. */
-function createImageConfiguration({ read, write, restore = void 0, credentials, attachments, fetchImpl = fetch, generateImpl = generateSceneImage }) {
+function createImageConfiguration({ read, write, restore = void 0, credentials, attachments, fetchImpl = fetch, generateImpl = generateSceneImage, onDiagnostic = void 0 }) {
 	let pending = Promise.resolve();
 	/** @template T @param {() => T | Promise<T>} fn @returns {Promise<T>} */
 	function serial(fn) {
@@ -3535,7 +3627,8 @@ function createImageConfiguration({ read, write, restore = void 0, credentials, 
 			const id = [...ids].find((id) => imageCredentialRef(id) === oldRef);
 			return credentials.resolve(id && mapped[id] ? mapped[id][3] : oldRef);
 		} }),
-		fetchImpl
+		fetchImpl,
+		onDiagnostic
 	});
 	return {
 		serial,

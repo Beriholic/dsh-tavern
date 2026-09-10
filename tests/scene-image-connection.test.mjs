@@ -76,6 +76,35 @@ test('network failures and timeout are bounded and never echo secret transport e
   assert.match((await slow.service.test({ provider: 'openai' })).message, /超时/)
 })
 
+test('connection diagnostics retain endpoint, timing and nested network codes without secrets', async () => {
+  const records = []
+  const fx = fixture({ onDiagnostic: event => records.push(event), fetchImpl: async () => {
+    throw new TypeError('fetch failed stored-secret', { cause: Object.assign(new Error('private transport text'), { code: 'ENOTFOUND' }) })
+  } })
+  await fx.service.test({ provider: 'novelai' })
+  assert.equal(records.length, 1)
+  const record = records[0]
+  assert.equal(record.provider, 'novelai')
+  assert.equal(record.baseURL, 'https://image.novelai.net/')
+  assert.equal(record.status, 'failed')
+  assert.equal(record.requests[0].method, 'HEAD')
+  assert.deepEqual(record.requests[0].networkCodes, ['ENOTFOUND'])
+  assert.ok(record.durationMs >= 0)
+  assert.equal(record.timeoutMs, 5000)
+  assert.doesNotMatch(JSON.stringify(record), /stored-secret|private transport text|authorization/)
+})
+
+test('connection diagnostics record timeout and cannot break checks or cause retries', async () => {
+  const records = []
+  const fx = fixture({ timeoutMs: 5, onDiagnostic: event => { records.push(event); throw new Error('logger unavailable') },
+    fetchImpl: async (_url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')))) })
+  const result = await fx.service.test({ provider: 'novelai' })
+  assert.equal(result.status, 'failed')
+  assert.equal(records.length, 1)
+  assert.equal(records[0].timedOut, true)
+  assert.equal(records[0].requests.length, 1)
+})
+
 test('invalid addresses and credential header injection fail before network access', async () => {
   const fx = fixture()
   for (const baseURL of ['bad', 'file:///etc', 'https://user:key@example.test', 'https://example.test?key=secret', 'https://example.test/#secret']) {

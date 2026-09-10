@@ -29,12 +29,26 @@ function bounded(record) {
 
 /** Bounded attempt journal. Separate from paid job state: a failed diagnostic
  * write is never permission to retry a provider request. */
-export function createSceneImageDiagnostics(store) {
+export function createSceneImageDiagnostics(store, { onDiagnostic } = {}) {
   return {
     async record(chatId, value, secrets = []) {
       if (!chatId || !value?.requestId || !value.targetKey) return
       const clean = redactSceneDiagnostic(value, secrets)
       const at = Date.now()
+      // Host logs feed Desktop's existing Export diagnostics button. Keep the
+      // detailed per-chat journal separate from this small support summary.
+      if (clean.status !== 'running') {
+        const config = clean.details?.configuration || {}
+        const select = (value, fields) => Object.fromEntries(fields.filter(key => value[key] !== undefined).map(key => [key, value[key]]))
+        const summary = { kind: 'generation', at,
+          ...select(clean, ['requestId', 'sessionId', 'turn', 'status', 'stage', 'outcome', 'recovery']),
+          ...select(config, ['provider', 'baseURL', 'model', 'size', 'aspectRatio']),
+          durationMs: Math.max(0, at - (clean.createdAt || at)),
+          requests: (clean.details?.providerRequests || []).slice(-12).map(event => select(event,
+            ['requestId', 'phase', 'method', 'status', 'durationMs', 'networkCodes'])) }
+        try { await onDiagnostic?.(summary) }
+        catch { /* Logging failure must not change paid job state or persistence. */ }
+      }
       await store.updateJson(pathFor(chatId), previous => {
         const records = previous?.records || []
         const old = records.find(item => item.requestId === clean.requestId && item.targetKey === clean.targetKey)
@@ -60,6 +74,21 @@ export function createSceneImageDiagnostics(store) {
     async read(chatId) {
       return await store.readJson(pathFor(chatId)) || { version: 1, chatId, dropped: 0, records: [] }
     }
+  }
+}
+
+/** Cordis logger is exported by Desktop's FileExporter; console is not. */
+export function createSceneImageHostLogger(logger) {
+  return event => {
+    const summary = { component: 'dsh-tavern.scene-image', version: 1,
+      runtime: { node: process.version, platform: process.platform, arch: process.arch }, ...event }
+    const line = JSON.stringify(summary)
+    // Stay below Desktop's 10 KiB per-message limit with an explicit omission.
+    const bounded = Buffer.byteLength(line) <= 8000 ? line : JSON.stringify({
+      component: summary.component, version: 1, kind: summary.kind,
+      status: summary.status, truncated: true, reason: 'host-diagnostic-size-limit' })
+    const level = ['failed', 'configuration_failed', 'auth_failed'].includes(summary.status) ? 'warn' : 'info'
+    logger?.[level]?.('%s', bounded)
   }
 }
 

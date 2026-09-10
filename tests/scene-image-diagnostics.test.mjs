@@ -11,6 +11,41 @@ function storage() {
 const attempt = (n, stage = 'planning', status = 'running') => ({ requestId: 'request-' + n, targetKey: 'body-' + n, sessionId: 'parent', stage, status, createdAt: Date.now() - 10, details: { prompt: '画面' } })
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aKfoAAAAASUVORK5CYII=', 'base64')
 
+test('host diagnostics summarize terminal attempts without prompts, headers or image bytes', async () => {
+  const lines = [], disk = storage()
+  const logs = createSceneImageDiagnostics(disk, { onDiagnostic: event => lines.push(event) })
+  const value = { ...attempt(1, 'generating', 'failed'), outcome: 'unconfirmed', details: {
+    configuration: { provider: 'novelai', baseURL: 'https://image.novelai.net', model: 'nai-diffusion-5-full', apiKey: 'private-key', size: '832x1216' },
+    prompt: 'private-story', plan: { private: 'private-plan' },
+    providerRequests: [{ phase: 'transport-error', method: 'POST', durationMs: 20, networkCodes: ['ECONNRESET'], error: 'private-error', body: 'private-body' }]
+  } }
+  await logs.record('chat', value, ['private-key'])
+  assert.equal(lines.length, 1)
+  assert.equal(lines[0].kind, 'generation')
+  assert.equal(lines[0].provider, 'novelai')
+  assert.deepEqual(lines[0].requests[0].networkCodes, ['ECONNRESET'])
+  assert.doesNotMatch(JSON.stringify(lines), /private-/)
+  const throwing = createSceneImageDiagnostics(disk, { onDiagnostic: () => { throw new Error('logger') } })
+  await throwing.record('chat', value)
+  assert.equal((await throwing.read('chat')).records.length, 1)
+})
+
+test('generation request diagnostics retain bounded AggregateError cause codes', async () => {
+  const events = []
+  const cause = new AggregateError([
+    Object.assign(new Error('sensitive network details'), { code: 'ECONNREFUSED' }),
+    Object.assign(new Error('certificate'), { code: 'CERT_HAS_EXPIRED' }),
+    Object.assign(new Error('unrecognized'), { code: 'arbitrary-secret' })
+  ])
+  await assert.rejects(generateSceneImage({ provider: 'novelai', baseURL: 'https://image.novelai.net',
+    model: 'nai-diffusion-5-full', size: '832x1216', prompt: 'A lake', apiKey: 'test-key',
+    signal: new AbortController().signal, onProviderRequest: event => events.push(event)
+  }, { fetch: async () => { throw new TypeError('fetch failed', { cause }) } }), /fetch failed/)
+  const failure = events.find(event => event.phase === 'transport-error')
+  assert.deepEqual(failure.networkCodes, ['ECONNREFUSED', 'CERT_HAS_EXPIRED'])
+  assert.doesNotMatch(JSON.stringify(failure), /sensitive network details|arbitrary-secret/)
+})
+
 test('attempt journal replaces snapshots without losing older attempts or stage events and survives a new reader', async () => {
   const disk = storage(), logs = createSceneImageDiagnostics(disk)
   const first = attempt(1)

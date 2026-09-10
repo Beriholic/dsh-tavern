@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createImageGenerationModule, IMAGE_MODULE_CONFIGURATION } from '../tavern-plugin/packages/dsh-image-gen/src/module.js'
+import { createSceneImageHostLogger } from '../tavern-plugin/lib/domain/scene-image-diagnostics.js'
 import { createProfileDataStore } from '../tavern-plugin/lib/profile-data-store.js'
 import { legacyImageConfigurationReader } from '../tavern-plugin/lib/domain/image-generation-host.js'
 import { createModuleSceneImageSettings } from '../tavern-plugin/lib/domain/scene-image-module-settings.js'
@@ -38,6 +39,27 @@ async function fixture(t, legacy = {}) {
   }
   return { ...create(), create, store, keys, requests, oldFile }
 }
+
+test('Tavern image module forwards read-only connection diagnostics to the Host logger', async () => {
+  const lines = [], requests = []
+  const logger = { info: (_format, text) => lines.push(text), warn: (_format, text) => lines.push(text) }
+  const imageModule = createImageGenerationModule({
+    store: { readJson: async () => ({}), updateJson: () => assert.fail('test must not save') },
+    credentials: () => ({ resolve: async () => ({ value: 'private-key' }) }),
+    onDiagnostic: createSceneImageHostLogger(logger),
+    fetchImpl: async (url, init) => { requests.push({ url, method: init.method }); return new Response(null, { status: 403 }) }
+  })
+  const result = await imageModule.test({ provider: 'novelai' })
+  assert.equal(result.status, 'auth_failed')
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].method, 'HEAD')
+  assert.equal(lines.length, 1)
+  const entry = JSON.parse(lines[0])
+  assert.equal(entry.component, 'dsh-tavern.scene-image')
+  assert.equal(entry.httpStatus, 403)
+  assert.equal(entry.runtime.platform, process.platform)
+  assert.doesNotMatch(lines[0], /private-key/)
+})
 
 test('default is off without generation; saved choices survive restart', async t => {
   const f = await fixture(t)
