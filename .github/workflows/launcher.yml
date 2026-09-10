@@ -54,23 +54,23 @@ jobs:
           node-version: 22.19.0
       - name: Run one-line installer path
         env:
-          DSH_HOME: ${{ runner.temp }}\赵 的酒馆\dsh-tavern-test
+          DSH_TAVERN_CLI_HOME: ${{ runner.temp }}\赵 的酒馆\dsh-tavern-test
         run: .\install.ps1
       - name: Update, preserve data and stop Tavern
         shell: pwsh
         env:
-          DSH_HOME: ${{ runner.temp }}\赵 的酒馆\dsh-tavern-test
+          DSH_TAVERN_CLI_HOME: ${{ runner.temp }}\赵 的酒馆\dsh-tavern-test
         run: |
-          $app = "$env:DSH_HOME\apps\dsh-tavern"
+          $app = "$env:DSH_TAVERN_CLI_HOME\apps\dsh-tavern"
           New-Item -ItemType Directory -Force "$app\data\cards" | Out-Null
           Set-Content "$app\data\cards\preserve-check.json" '{"preserved":true}'
-          $firstPid = (Get-Content "$env:DSH_HOME\logs\tavern.pid.json" | ConvertFrom-Json).pid
+          $firstPid = (Get-Content "$env:DSH_TAVERN_CLI_HOME\logs\tavern.pid.json" | ConvertFrom-Json).pid
           node "$app\bin\dsh-tavern.mjs" update
           if ($LASTEXITCODE -ne 0) { throw 'Update failed' }
-          $secondPid = (Get-Content "$env:DSH_HOME\logs\tavern.pid.json" | ConvertFrom-Json).pid
+          $secondPid = (Get-Content "$env:DSH_TAVERN_CLI_HOME\logs\tavern.pid.json" | ConvertFrom-Json).pid
           if ($firstPid -eq $secondPid) { throw 'Update did not restart Tavern' }
           if (-not (Test-Path "$app\data\cards\preserve-check.json")) { throw 'Update removed user data' }
-          $shim = "$env:DSH_HOME\bin\dsh-tavern.cmd"
+          $shim = "$env:DSH_TAVERN_CLI_HOME\bin\dsh-tavern.cmd"
           & $shim --help
           if ($LASTEXITCODE -ne 0) { throw 'Generated command shim failed' }
           $status = & $shim status
@@ -78,13 +78,13 @@ jobs:
           $statusText = $status -join "`n"
           $url = [regex]::Match($statusText, 'https?://[^\s]+').Value
           if (-not $url) {
-            $log = Get-Content "$env:DSH_HOME\logs\tavern.log" -Raw
+            $log = Get-Content "$env:DSH_TAVERN_CLI_HOME\logs\tavern.log" -Raw
             Write-Host ($log -replace 'https?://[^\s]+', '[URL redacted]')
             throw 'Running service did not report an access URL'
           }
           $response = Invoke-WebRequest -Uri $url -MaximumRedirection 5
           if ($response.StatusCode -ne 200) { throw 'Reported access URL is not usable' }
-          if ((Get-Item "$env:DSH_HOME\logs\tavern.log").Length -eq 0) { throw 'Detached service log is empty' }
+          if ((Get-Item "$env:DSH_TAVERN_CLI_HOME\logs\tavern.log").Length -eq 0) { throw 'Detached service log is empty' }
           & $shim stop
           if ($LASTEXITCODE -ne 0) { throw 'Stop failed' }
           $stopped = & $shim status 2>&1
@@ -104,18 +104,18 @@ jobs:
           node-version: 22.19.0
       - name: Run one-line installer path
         env:
-          DSH_HOME: ${{ runner.temp }}/dsh-tavern-test
+          DSH_TAVERN_CLI_HOME: ${{ runner.temp }}/dsh-tavern-test
         run: sh ./install.sh
       - name: Update, preserve data and stop Tavern
         env:
-          DSH_HOME: ${{ runner.temp }}/dsh-tavern-test
+          DSH_TAVERN_CLI_HOME: ${{ runner.temp }}/dsh-tavern-test
         run: |
-          app="$DSH_HOME/apps/dsh-tavern"
+          app="$DSH_TAVERN_CLI_HOME/apps/dsh-tavern"
           mkdir -p "$app/data/cards"
           printf '%s\n' '{"preserved":true}' >"$app/data/cards/preserve-check.json"
-          first_pid=$(node -e "console.log(require('$DSH_HOME/logs/tavern.pid.json').pid)")
+          first_pid=$(node -e "console.log(require('$DSH_TAVERN_CLI_HOME/logs/tavern.pid.json').pid)")
           node "$app/bin/dsh-tavern.mjs" update
-          second_pid=$(node -e "console.log(require('$DSH_HOME/logs/tavern.pid.json').pid)")
+          second_pid=$(node -e "console.log(require('$DSH_TAVERN_CLI_HOME/logs/tavern.pid.json').pid)")
           test "$first_pid" != "$second_pid"
           test -f "$app/data/cards/preserve-check.json"
           node "$app/bin/dsh-tavern.mjs" status
