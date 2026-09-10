@@ -41,9 +41,19 @@ export function redactMvuLoadError(value, limit = 2000) {
 export function sanitizeMvuLoadDiagnostic(value) {
   const phases = ['download-started', 'download-response', 'download-completed', 'download-failed',
     'retry-scheduled', 'retry-exhausted', 'manual-retry', 'disposed', 'execution-started', 'execution-completed', 'execution-failed',
-    'subscriptions-ready', 'initialization-waiting', 'initialization-ready', 'initialization-failed', 'initialization-timeout']
+    'initialization-timing', 'subscriptions-ready', 'initialization-waiting', 'initialization-ready', 'initialization-failed', 'initialization-timeout']
   if (!value || !phases.includes(value.phase)) return null
   const result = { phase: value.phase }
+  if (value.phase === 'initialization-timing') {
+    const stages = new Set(['companion-barrier', 'variable-initialized', 'companion-module', 'worldbook-read', 'prompt-write', 'message-write', 'variable-write', 'script-callback', 'prompt-drain'])
+    const number = n => Number.isSafeInteger(n) && n >= 0 ? n : 0
+    result.timings = { elapsedMs: number(value.timings?.elapsedMs), dropped: number(value.timings?.dropped),
+      entries: (Array.isArray(value.timings?.entries) ? value.timings.entries : []).slice(0, 32).filter(row => stages.has(row?.stage)).map(row => ({
+        stage: row.stage, scriptId: redactMvuLoadError(row.scriptId, 200),
+        ...Object.fromEntries(['count', 'failures', 'totalMs', 'maxMs', 'pending', 'oldestPendingMs'].map(key => [key, number(row[key])]))
+      })) }
+  }
+
   for (const [key, limit] of Object.entries({ loadId: 100, contentType: 120, bodyKind: 40, errorName: 80,
     message: 2000, serverError: 2000, browser: 120, platform: 40, runtimeMode: 20, failureStep: 40 })) {
     if (typeof value[key] === 'string') result[key] = redactMvuLoadError(value[key], limit)
@@ -118,6 +128,7 @@ export async function createMvuDiagnosticExport({ updateDiagnostics, sessionId, 
   notes.push('mvu/diagnostics.json 中 stage=regeneration-target 是正文重新生成的目标定位证据：记录失败分支、消息结构、轮次和会话绑定摘要，不记录正文或指导意见；只对更新后再次操作生效。')
   notes.push('stage=mvu-load 记录下载响应类型、状态、有限的错误信息、尝试次数和执行阶段；不记录完整脚本或响应体。mvu/environment.json 的 mvuAsset 是当前服务进程共享的最近文件读取/校验观察，不代表导出会话在故障时的文件状态；导出不会重新加载文件。日志限量、异步写入，关闭页面或写盘失败可能漏记，旧错误不能追溯补录。')
   if (updateDiagnostics) notes.push('update/diagnostics.json 为本机更新记录，包含检查来源、回退原因和安装结果；限量保留，不补录安装此版本前的故障。')
+  notes.push('mvu/diagnostics.json 中 initialization-timing 记录 MVU 初始化的伴随脚本、世界书读取、变量初始化回调、提示词队列及写入耗时。按脚本聚合，约每 5 秒采样，最多记录启动后 3 分钟；pending 表示仍在等待，超时提示不代表任务取消。总耗时可包含并发重叠，不等于页面等待时间；不记录正文和变量值。')
   const ids = new Set([sessionId, ...backgroundSessionIds.filter(Boolean), ...(sceneDiagnostics?.records || []).map(record => record.traceSessionId).filter(Boolean)])
   const sceneContent = sceneDiagnostics ? JSON.stringify(redactDiagnostic(sceneDiagnostics)) : ''
   const sceneBytes = Buffer.byteLength(sceneContent)

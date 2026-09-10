@@ -220,3 +220,19 @@ test('现有日志 ZIP 包含独立更新诊断，不要求当前会话触发更
   assert.match(result.buffer.toString(), /update\/diagnostics.json/)
   assert.match(result.buffer.toString(), /ETIMEDOUT/)
 })
+
+test('initialization timings retain bounded phase counters in exported logs without payloads', async () => {
+  const input = { phase: 'initialization-timing', timings: { elapsedMs: 92000, dropped: 0, entries: [
+    { stage: 'prompt-drain', scriptId: 'script-1', count: 15, pending: 1, oldestPendingMs: 90000, totalMs: 10, maxMs: 5, failures: 0, variables: 'PRIVATE' },
+    { stage: 'invented', content: 'PRIVATE' }
+  ], card: 'PRIVATE' } }
+  const value = sanitizeMvuLoadDiagnostic(input)
+  assert.equal(value.timings.entries.length, 1)
+  assert.equal(value.timings.entries[0].oldestPendingMs, 90000)
+  assert.doesNotMatch(JSON.stringify(value), /PRIVATE/)
+  const store = createMvuDiagnosticStore(storage())
+  await store.record('timing-session', { stage: 'mvu-load', diagnostic: value })
+  const exported = await createMvuDiagnosticExport({ sessionId: 'timing-session', store })
+  assert.ok(exported.buffer.toString().includes('prompt-drain'))
+  assert.ok(exported.buffer.toString().includes('oldestPendingMs'))
+})

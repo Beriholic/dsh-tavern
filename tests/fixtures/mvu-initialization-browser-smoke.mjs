@@ -8,6 +8,7 @@
 // mode=opening-card-replay additionally reads MVU_SMOKE_DIAGNOSTICS_PATH and
 // MVU_SMOKE_DATA_ROOT to clone a failed chat in memory. MVU_SMOKE_EXPECT_ERROR
 // asserts a diagnostic substring instead of success; operations can be overridden.
+import { instrumentInitializationAwaits, instrumentInitializationClient } from './mvu-initialization-trace.mjs'
 import { createServer } from 'node:http'
 import { readFile, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -21,15 +22,18 @@ import { createTavernScriptDispatch } from '../../tavern-plugin/lib/domain/taver
 import { createSessionSignalTransport } from '../../tavern-plugin/lib/domain/session-signal-transport.js'
 import { createChatPersistence } from '../../tavern-plugin/lib/domain/chat-persistence.js'
 import { createChatJournalStore } from '../../tavern-plugin/lib/domain/chat-journal-store.js'
-import { inspectWorldBookDocument, updateWorldBookDocument } from '../../tavern-plugin/lib/domain/worldbook-resource.js'
+import { inspectWorldBookDocument, updateWorldBookDocument, exportSillyTavernWorldBook } from '../../tavern-plugin/lib/domain/worldbook-resource.js'
 import { projectTavernHelperWorldbook } from '../../tavern-plugin/lib/domain/tavern-helper-worldbook.js'
 import { createCardPreparation } from '../../tavern-plugin/lib/domain/card-preparation.js'
 import { projectTavernHelperScripts } from '../../tavern-plugin/lib/domain/tavern-helper-scripts.js'
 import { projectTavernHelperContext } from '../../tavern-plugin/lib/domain/tavern-helper-context.js'
 import { createTavernStaticResourceCache, rewriteCachedModuleImports } from '../../tavern-plugin/lib/domain/tavern-static-resource-cache.js'
 
-const client = await readFile(new URL('../../tavern-plugin/lib/client.js', import.meta.url))
+const tracing = process.env.MVU_SMOKE_TRACE === '1'
+const rawClient = await readFile(new URL('../../tavern-plugin/lib/client.js', import.meta.url), 'utf8')
+const client = tracing ? instrumentInitializationClient(rawClient) : rawClient
 const bundle = await readOfficialMvuBundle()
+const executionBundle = tracing ? instrumentInitializationAwaits(bundle.body.toString(), 'official').source : bundle.body
 const assets = createTavernStaticResourceCache({ rootDir: process.env.MVU_SMOKE_ASSET_CACHE || await mkdtemp(path.join(tmpdir(), 'mvu-init-assets-')) })
 const signals = createSessionSignalTransport()
 const gate = createTavernScriptDispatch({ publishSignal: (sessionId, signal) => signals.publish(sessionId, signal) })
@@ -59,7 +63,7 @@ function isErrorResponse(id) { return /^(json|server-error)/.test(id) }
 function state(id) {
   if (!states.has(id)) {
     const variables = { stat_data: { hp: 10 }, schema: { type: 'object', properties: { hp: { type: 'number' } } }, display_data: {}, delta_data: {}, initialized_lorebooks: {} }
-    states.set(id, { downloads: 0, writes: 0, hpWrites: 0, resumes: 0, calls: 0, reader: createOfficialMvuBundleReader({ read: async () => {
+    states.set(id, { startedAt: Date.now(), downloads: 0, writes: 0, hpWrites: 0, resumes: 0, calls: 0, reader: createOfficialMvuBundleReader({ read: async () => {
       if (state(id).available) return bundle.body
       throw Object.assign(new Error("ENOENT: open 'C:\\Users\\PRIVATE_USER\\bundle.js'; apiKey=SECRET_VALUE"), { code: 'ENOENT' })
     } }), chat: { id, sessionId: id, mode: 'story', mvu: { enabled: true, owner: 'official' },
@@ -73,17 +77,27 @@ function state(id) {
   }
   return states.get(id)
 }
-const persistence = createChatPersistence({ store: {
+const journal = process.env.MVU_SMOKE_JOURNAL === '1' ? createChatJournalStore({ dataRoot: await mkdtemp(path.join(tmpdir(), 'mvu-init-journal-')) }) : null
+const seeds = new Map()
+async function seeded(id) {
+  if (!seeds.has(id)) seeds.set(id, journal.update(id, current => current || structuredClone(state(id).chat)))
+  await seeds.get(id)
+}
+const persistence = createChatPersistence({ store: journal ? {
+  read: async id => { await seeded(id); return journal.read(id) },
+  update: async (id, mutate, metadata) => { await seeded(id); const saved = await journal.update(id, mutate, metadata); state(id).chat = structuredClone(saved); return saved },
+  remove: id => journal.remove(id)
+} : {
   read: async id => structuredClone(state(id).chat),
   update: async (id, mutate) => { state(id).chat = await mutate(structuredClone(state(id).chat)); return structuredClone(state(id).chat) },
   remove: async () => {}
 } })
-const adapter = createTavernScriptHostAdapter({ diagnostics, resolveChat: async id => id.startsWith('capture') ? persistence.read(id) : state(id).chat,
-  writeChat: async chat => {
+const adapter = createTavernScriptHostAdapter({ diagnostics, resolveChat: async id => (journal || id.startsWith('capture')) ? persistence.read(id) : state(id).chat,
+  writeChat: async (chat, metadata) => {
     const s = state(chat.id)
     if (s.chat.messages[0].variables[0].stat_data?.hp !== chat.messages[0].variables[0].stat_data?.hp) s.hpWrites++
     s.writes++
-    if (chat.id.startsWith('capture')) await persistence.write(chat)
+    if (journal || chat.id.startsWith('capture')) await persistence.write(chat, metadata)
     else s.chat = structuredClone(chat)
   },
   readCard: async chat => ({ name: '测试卡', fixtureId: chat.id }), worldBooks: {
@@ -136,6 +150,16 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost')
     res.setHeader('Access-Control-Allow-Origin', '*')
+    if (url.pathname === '/trace') return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(state(url.searchParams.get('id')).trace || {}))
+    if (url.pathname.startsWith('/api/dsh-tavern/vendor/runtime-assets/')) {
+      const relative = url.pathname.slice('/api/dsh-tavern/vendor/runtime-assets/'.length)
+      const root = path.resolve('tavern-plugin/lib/vendor/runtime-assets')
+      const target = path.resolve(root, relative)
+      if (!target.startsWith(root + path.sep)) throw new Error('Invalid asset path')
+      const body = await readFile(target)
+      const type = /\.(?:m?js)$/.test(target) ? 'text/javascript' : target.endsWith('.css') ? 'text/css' : 'application/octet-stream'
+      return res.writeHead(200, { 'content-type': type }).end(body)
+    }
     if (url.pathname === '/client.js') return res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' }).end(client)
     if (url.pathname === '/api/dsh-tavern/events') {
       const sessionId = url.searchParams.get('sessionId') || ''
@@ -153,7 +177,7 @@ const server = createServer(async (req, res) => {
         }
       }
       const fail = id.startsWith('manual') ? !s.available : id.startsWith('auto') && s.downloads < 3
-      const body = id.startsWith('unsafe') ? 'window.partialWrites=(window.partialWrites||0)+1;throw Error("partial initialization");' : bundle.body
+      const body = id.startsWith('unsafe') ? 'window.partialWrites=(window.partialWrites||0)+1;throw Error("partial initialization");' : executionBundle
       return res.writeHead(fail ? 503 : 200, { 'content-type': bundle.mediaType }).end(fail ? 'unavailable' : body)
     }
     if (url.pathname === '/api/dsh-tavern/static-assets') {
@@ -173,8 +197,10 @@ const server = createServer(async (req, res) => {
       else if (method === 'releaseTavernHelperRuntime') result = gate.dispose(sessionId, args.runtimeId)
       else if (method === 'updateTavernHelperVariables') result = args.option?.type === 'global' ? { updated: true } : await adapter.updateVariables(sessionId, args.option, args.variables, args.expectedLifecycleRevision, args.eventId)
       else if (method === 'updateTavernHelperMessages') result = await adapter.updateMessages(sessionId, args.messages, args.expectedLifecycleRevision, args.eventId)
+      else if (method === 'updateTavernHelperPrompts') result = await adapter.updatePrompts(sessionId, args.operation, args.expectedLifecycleRevision, args.eventId)
+      else if (method === 'trace') { state(sessionId).trace = args.trace; result = { recorded: true } }
       else if (method === 'saveTavernExtensionSettings') result = { updated: true, extensionSettings: args.settings }
-      else if (method === 'loadTavernWorldInfo') result = { worldInfo: { entries: {} } }
+      else if (method === 'loadTavernWorldInfo') result = { worldInfo: bookFor(sessionId) ? exportSillyTavernWorldBook(bookFor(sessionId).document) : { entries: {} } }
       else if (method === 'getTavernHelperWorldbook') result = await adapter.getWorldbook(sessionId, args.name)
       else if (method === 'replaceTavernHelperWorldbook') result = await adapter.replaceWorldbook(sessionId, args.name, args.entries, args.expectedEntries)
       else if (method === 'recover') { state(sessionId).available = true; result = { available: true } }
@@ -207,6 +233,16 @@ const server = createServer(async (req, res) => {
           }
         }
         result = { pass: true, zipBytes: zip.buffer.length, records: log.records }
+      }
+      else if (method === 'timings') result = (await diagnostics.read(sessionId)).records.filter(row => row.diagnostic?.phase === 'initialization-timing')
+      else if (method === 'verify-initialization') {
+        const s = state(sessionId), saved = journal ? await journal.read(sessionId) : s.chat
+        assert.equal(saved.mvu.openingInitialization?.status, 'complete', 'initial variables never persisted')
+        const message = saved.messages[0]
+        assert.equal(message.variables.length, message.swipes.length)
+        assert.ok(message.variables.every(v => v && typeof v.stat_data === 'object' && v.schema !== undefined), 'all opening swipes must have initial variables')
+        assert.equal(s.calls, 0, 'initialization must not call a model')
+        result = { pass: true, initializationMs: saved.mvu.openingInitialization.completedAt - s.startedAt, swipes: message.variables.length, writes: s.writes, persisted: !!journal, modelCalls: s.calls, schemaKinds: [...new Set(message.variables.map(v => typeof v.schema))] }
       }
       else if (method === 'status') {
         const s = state(sessionId)
@@ -273,12 +309,13 @@ const server = createServer(async (req, res) => {
       tavernHelperWorldbook: bookFor(id) ? projectTavernHelperWorldbook(bookFor(id).view) : null,
       tavernMvuRuntime: { owner: 'official', assetUrl: '/mvu.js?id=' + id } }
     if (id.startsWith('opening')) view.tavernHelperScripts.push({ id: 'opening-companion', name: '开场配套脚本', content: 'await updateVariablesWith(v=>({...v,enabled:true}),{type:"script"});', data: {}, enabled: true })
+    if (mode === 'opening-slow') view.tavernHelperScripts.unshift({ id: 'slow-companion', name: '延迟测试', content: 'await new Promise(resolve=>setTimeout(resolve,20000));', data: {}, enabled: true })
     if (id.startsWith('opening-card')) {
       assert.ok(realCard, 'set MVU_SMOKE_CARD_PATH for mode=opening-card')
       view.card = realCard; view.tavernHelperScripts = realScripts
     }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(`<!doctype html><meta charset="utf-8"><title>MVU 初始化验证</title>
-      <div id="recovery"></div><button id="network">恢复下载服务</button><button id="run" disabled>验证结算</button><button id="diagnostics">验证诊断包</button><pre id="logs"></pre><pre id="result">加载中</pre>
+      <div id="recovery"></div><button id="network">恢复下载服务</button><button id="run" disabled>验证结算</button><button id="diagnostics">验证诊断包</button><pre id="logs"></pre><pre id="trace"></pre><pre id="result">加载中</pre>
       ${url.searchParams.has('navigation') ? '<button id="child">查看子代理</button><button id="parent">返回主对话</button><button id="other">切换另一游戏</button><p id="navigation">主对话</p>' : ''}
       <script>
       const react={createElement(tag,props,...children){const node=document.createElement(tag);for(const [key,value] of Object.entries(props||{})){if(key==='onClick')node.onclick=value;else if(key==='style')Object.assign(node.style,value);else if(key==='className')node.className=value;else node.setAttribute(key,value);}for(const child of children)if(child!==null&&child!==false)node.append(child);return node;}};
@@ -305,6 +342,7 @@ const server = createServer(async (req, res) => {
         execution=client.createTavernScriptExecutionModule({rpc,invalidate(){},onMvuLoadState(state){display(state,()=>execution.retryMvuLoad());}});
         execution.sync(id,view);
       }
+      window.addEventListener('message',event=>{if(event.data?.type==='mvu-smoke-trace'){document.querySelector('#trace').textContent=JSON.stringify(event.data.trace);void rpc('trace',{trace:event.data.trace});}});
       let ran=false;const timer=setInterval(async()=>{const s=await rpc('status');output.textContent=JSON.stringify(s,null,2);if(!ran&&(s.ready||s.initializationError||s.downloads>=3))document.querySelector('#run').disabled=false;},100);
       document.querySelector('#network').onclick=()=>rpc('recover');
       document.querySelector('#diagnostics').onclick=async()=>{try{document.querySelector('#logs').textContent=JSON.stringify(await rpc('diagnostics'),null,2);}catch(e){document.querySelector('#logs').textContent='FAIL: '+e.message;}};
@@ -312,4 +350,4 @@ const server = createServer(async (req, res) => {
       </script>`)
   } catch (error) { res.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: error.message })) }
 })
-server.listen(0, '127.0.0.1', () => console.log('MVU_INITIALIZATION_SMOKE_URL=http://127.0.0.1:' + server.address().port))
+server.listen(Number(process.env.MVU_SMOKE_PORT) || 0, '127.0.0.1', () => console.log('MVU_INITIALIZATION_SMOKE_URL=http://127.0.0.1:' + server.address().port))

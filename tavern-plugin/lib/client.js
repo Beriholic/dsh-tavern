@@ -1892,7 +1892,9 @@ window.__ModuleLoader__.load({
 				if (!listeners[name] || !listeners[name].has(entry)) return;
 				// Remove before calling so recursive emits cannot invoke a once-listener twice.
 				if (entry.once) removeEventEntry(name, entry);
-				return await withScript(entry.scriptId, function () { return entry.handler.apply(null, args); });
+				const pending = withScript(entry.scriptId, function () { return entry.handler.apply(null, args); });
+                return name === "mag_variable_initialized" && options.initializationTiming
+                    ? await options.initializationTiming.wait("variable-initialized", pending, entry.scriptId) : await pending;
 			}
 			async function eventEmit(name) {
 				name = eventName(name);
@@ -2251,7 +2253,57 @@ window.__ModuleLoader__.load({
 			return { sync: chatData.sync };
 		}
 
+        // Bounded, value-free timings shared by every card's initialization.
+        function createTavernInitializationTiming(options = {}) {
+            const now = options.now || Date.now;
+            const schedule = options.schedule || setTimeout;
+            const cancel = options.cancel || clearTimeout;
+            const report = options.report || function () {};
+            const startedAt = now(), groups = new Map(), active = new Map();
+            let nextId = 0, timer = null, closed = false, dirty = false, dropped = 0;
+            function snapshot() {
+                const at = now();
+                return { elapsedMs: Math.max(0, at - startedAt), dropped,
+                    entries: Array.from(groups.values()).map(function (row) {
+                        const starts = Array.from(active.values()).filter(item => item.key === row.key).map(item => item.at);
+                        const { key, ...value } = row;
+                        return { ...value, pending: starts.length, oldestPendingMs: starts.length ? Math.max(0, at - Math.min(...starts)) : 0 };
+                    }) };
+            }
+            function flush() {
+                timer = null;
+                if (dirty || active.size) { dirty = false; try { report(snapshot()); } catch (_) {} }
+                if (closed) return;
+                if (now() - startedAt >= 180000) { closed = true; return; }
+                if (active.size || dirty) arm();
+            }
+            function arm() { timer = schedule(flush, 5000); if (timer && typeof timer.unref === "function") timer.unref(); }
+            async function wait(stage, promise, scriptId = '') {
+                if (closed) return await promise;
+                const key = stage + '\n' + scriptId;
+                if (!groups.has(key)) {
+                    if (groups.size >= 32) { dropped++; return await promise; }
+                    groups.set(key, { key, stage, scriptId, count: 0, failures: 0, totalMs: 0, maxMs: 0 });
+                }
+                const row = groups.get(key), id = ++nextId, at = now();
+                active.set(id, { key, at }); dirty = true;
+                if (!timer) arm();
+                try { return await promise; }
+                catch (error) { row.failures++; throw error; }
+                finally {
+                    const duration = Math.max(0, now() - at);
+                    active.delete(id); row.count++; row.totalMs += duration; row.maxMs = Math.max(row.maxMs, duration); dirty = true;
+                    if (!closed && !timer) arm();
+                }
+            }
+            function dispose() { if (timer) cancel(timer); timer = null; closed = true; flush(); }
+            return { wait, snapshot, dispose };
+        }
+
 		function tavernHelperScriptBootstrap(metadata, initialContext, modules) {
+            const initializationTiming = modules.createInitializationTiming({ report: function (timings) { parent.postMessage({ type: "dsh-tavern-mvu-load-diagnostic", token: metadata.token, diagnostic: { phase: "initialization-timing", timings: timings } }, "*"); } });
+            window.__dshTavernInitializationTiming = initializationTiming;
+            window.addEventListener("pagehide", initializationTiming.dispose, { once: true });
 			try { void window.localStorage; }
 			catch (_) {
 				let values = Object.create(null);
@@ -2330,7 +2382,11 @@ window.__ModuleLoader__.load({
 					});
 				}
 			});
-			const call = transport.request;
+			const call = function (method, args) {
+                const stage = { getTavernHelperWorldbook: "worldbook-read", loadTavernWorldInfo: "worldbook-read", updateTavernHelperPrompts: "prompt-write", updateTavernHelperMessages: "message-write", updateTavernHelperVariables: "variable-write" }[method];
+                const pending = transport.request(method, args);
+                return stage ? initializationTiming.wait(stage, pending, currentScript().id) : pending;
+            };
 			// Persistence receipts belong to the script that issued the write. A
 			// different script's event must not drain this entire shared sandbox.
 			const promptWritesByScript = new Map();
@@ -2369,7 +2425,7 @@ window.__ModuleLoader__.load({
 			window.uninjectPrompts = function (ids) { writePrompts({ kind: "remove", ids: copy(ids) }); };
 
 			const events = modules.createEvents({ currentScript: currentScript, withScript: withScript,
-				reportSubscriptions: reportSubscriptions, post: transport.post, document: window.document });
+				reportSubscriptions: reportSubscriptions, post: transport.post, document: window.document, initializationTiming: initializationTiming });
 			function copy(value) {
 				try { return structuredClone(value); }
 				catch (_) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
@@ -2379,7 +2435,7 @@ window.__ModuleLoader__.load({
 				const previous = currentScriptId;
 				currentScriptId = String(scriptId || previous || "");
 				const ownerId = currentScript().id;
-				try { const result = await factory(); await drainPromptWrites(ownerId); return result; }
+				try { const result = await initializationTiming.wait("script-callback", factory(), ownerId); await initializationTiming.wait("prompt-drain", drainPromptWrites(ownerId), ownerId); return result; }
 				finally { currentScriptId = previous; }
 			}
 			function stringHash(value, seed) {
@@ -2740,7 +2796,7 @@ window.__ModuleLoader__.load({
 			window.eventRemoveListener = window.eventOff;
 			window.eventEmit = events.emit;
 			let resolveCompanionScriptsReady;
-			window.__dshTavernCompanionScriptsReady = new Promise(function (resolve) { resolveCompanionScriptsReady = resolve; });
+			window.__dshTavernCompanionScriptsReady = initializationTiming.wait("companion-barrier", new Promise(function (resolve) { resolveCompanionScriptsReady = resolve; }));
 			window.__dshTavernResolveCompanionScriptsReady = function () {
 				if (!resolveCompanionScriptsReady) return;
 				const resolve = resolveCompanionScriptsReady;
@@ -3133,6 +3189,7 @@ window.__ModuleLoader__.load({
 			const safeMetadata = JSON.stringify(metadata).replace(/</g, "\\u003c");
 			const safeContext = JSON.stringify(context).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
 			const bootstrap = '(' + tavernHelperScriptBootstrap.toString() + ')(' + safeMetadata + ',' + safeContext + ',{'
+				+ 'createInitializationTiming:' + createTavernInitializationTiming.toString() + ','
 				+ 'createTransport:' + createTavernHelperTransport.toString() + ','
 				+ 'createEvents:' + createTavernHelperEventBus.toString() + ','
 				+ 'createPopup:' + createTavernHelperPopup.toString() + ','
@@ -3153,7 +3210,7 @@ window.__ModuleLoader__.load({
 				+ 'if(script.system==="official-mvu"&&script.assetUrl){const loader=createMvuLoader({fetch:window.fetch.bind(window),evaluate:loadModule,onDiagnostic(diagnostic){parent.postMessage({type:"dsh-tavern-mvu-load-diagnostic",token,diagnostic},"*");},onState(state){parent.postMessage({type:"dsh-tavern-mvu-load-state",token,state},"*");}});'
 				+ 'const retry=event=>{if(event.source===parent&&event.data?.token===token&&event.data.type==="dsh-tavern-mvu-reload")loader.retry();};'
 				+ 'window.addEventListener("message",retry);window.addEventListener("pagehide",()=>loader.dispose(),{once:true});'
-				+ 'try{await loader.load(new URL(script.assetUrl,document.baseURI).href);}finally{window.removeEventListener("message",retry);}}else await loadModule(script.content);'
+				+ 'try{await loader.load(new URL(script.assetUrl,document.baseURI).href);}finally{window.removeEventListener("message",retry);}}else await window.__dshTavernInitializationTiming.wait("companion-module",loadModule(script.content),script.id);'
 				+ 'if(script.system==="official-mvu")await window.waitGlobalInitialized("Mvu");window.__dshTavernHelperSubscriptionsReady(script.id);'
 				+ '}catch(error){window.__dshTavernHelperSubscriptionsFailed(script.id,error);if(script.system==="official-mvu")break;}}}catch(error){for(const script of scripts)window.__dshTavernHelperSubscriptionsFailed(script.id,error);}finally{window.__dshTavernResolveCompanionScriptsReady();}';
 			const moduleUrl = "data:text/javascript;base64," + encodeTavernScriptSource(loaderSource);
@@ -9057,6 +9114,7 @@ window.__ModuleLoader__.load({
 		exports.openingPreviewSelection = openingPreviewSelection;
 		exports.syncTavernSubagentCatalogs = syncTavernSubagentCatalogs;
 		exports.createTavernHelperTransport = createTavernHelperTransport;
+		exports.createTavernInitializationTiming = createTavernInitializationTiming;
 		exports.createTavernHelperEventBus = createTavernHelperEventBus;
 		exports.buildTavernHelperScriptDocument = buildTavernHelperScriptDocument;
 		exports.createTavernHostStylesheetBridge = createTavernHostStylesheetBridge;
