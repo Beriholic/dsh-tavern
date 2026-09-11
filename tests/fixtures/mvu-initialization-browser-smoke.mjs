@@ -1,3 +1,6 @@
+// MVU_SMOKE_CURRENT_ONLY=1 covers enabling MVU after earlier floors already exist.
+// MVU_SMOKE_POLL_SIGNALS=1 substitutes polling notifications in a standalone page;
+// the production execution lease, MVU callbacks and transaction adapter remain real.
 // Real browser loader, execution lease, event gate and settlement. Only the model
 // and persistence are isolated. ?mode=manual|auto|unsafe|json|server-error covers recovery/diagnostics.
 // Add navigation=1 to test game ownership across parent/child header unmounts.
@@ -267,6 +270,10 @@ const server = createServer(async (req, res) => {
             input = { ...input, messageId, swipeId, storyText: s.chat.messages[messageId].text, currentVariables: s.chat.messages[messageId].variables[swipeId] }
           } else {
             s.chat.messages.push({ role: 'user', text: '继续', turn: 2, variables: [{}] }, { role: 'assistant', text: '测试正文', turn: 2, swipeId: 0, swipes: ['测试正文'], variables: [variables] })
+            if (process.env.MVU_SMOKE_CURRENT_ONLY === '1') {
+              s.chat.messages[0].variables = s.chat.messages[0].variables.map(() => ({}))
+              openingBefore = structuredClone(s.chat.messages[0])
+            }
             input = { ...input, messageId: 2, currentVariables: variables }
           }
         }
@@ -339,7 +346,7 @@ const server = createServer(async (req, res) => {
         document.querySelector('#parent').onclick=()=>navigate(id,'主对话');
         document.querySelector('#other').onclick=()=>navigate('other-game','另一游戏');
       } else {
-        execution=client.createTavernScriptExecutionModule({rpc,invalidate(){},onMvuLoadState(state){display(state,()=>execution.retryMvuLoad());}});
+        execution=client.createTavernScriptExecutionModule({rpc,${process.env.MVU_SMOKE_POLL_SIGNALS === '1' ? 'signals:{subscribe(id,kind,run){const timer=setInterval(run,100);return()=>clearInterval(timer);}},' : ''}invalidate(){},onMvuLoadState(state){display(state,()=>execution.retryMvuLoad());}});
         execution.sync(id,view);
       }
       window.addEventListener('message',event=>{if(event.data?.type==='mvu-smoke-trace'){document.querySelector('#trace').textContent=JSON.stringify(event.data.trace);void rpc('trace',{trace:event.data.trace});}});
