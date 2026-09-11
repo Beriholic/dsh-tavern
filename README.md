@@ -119,7 +119,22 @@ dsh-tavern update    # 更新
 
 ### Android（实验性）
 
-通过 [DSHA](https://github.com/DSH-APP/DSHA) 安装，推荐 **[1.2.0-rc1.4](https://github.com/DSH-APP/DSHA/releases/tag/v1.2.0-rc1.4)**（[历史 Release 下载](https://github.com/DSH-APP/DSHA/releases)）。请尽量使用推荐版本，否则很可能无法安装或运行。Android 属于实验性支持，不保证一定可用，步骤见 [Android 安装说明](docs/android-install.md)。
+通过 [DSHA](https://github.com/DSH-APP/DSHA) 安装，推荐 **[1.2.0-rc1.4](https://github.com/DSH-APP/DSHA/releases/tag/v1.2.0-rc1.4)**（[历史 Release 下载](https://github.com/DSH-APP/DSHA/releases)）。请尽量使用推荐版本，否则很可能无法安装或运行。Android 属于实验性支持，不保证一定可用。
+
+1. **安装 DSHA**：点击上面的推荐版本，展开 **Assets**，下载适合手机的 **APK** 并安装（不要下载 Source code）。
+2. **先启动一次**：打开 DSHA，配置模型和 API 密钥，确认 DSHA 可以正常启动。
+3. **安装酒馆**：打开 DSHA 底部的 **终端**，完整复制下面这一条命令，粘贴后回车，保持 DSHA 打开并等待执行结束。
+
+```bash
+node -e "fetch('https://cdn.jsdelivr.net/gh/flizzywine/dsh-tavern@69d74f5/android/setup.sh').then(async r=>{if(!r.ok)throw Error('HTTP '+r.status);require('fs').writeFileSync('/tmp/dsh-tavern-setup.sh',await r.text())}).then(()=>{const r=require('child_process').spawnSync('bash',['/tmp/dsh-tavern-setup.sh'],{stdio:'inherit'});process.exit(r.status??1)}).catch(e=>{console.error(e);process.exit(1)})"
+```
+
+4. **进入酒馆**：看到“全部完成”后重启 DSHA，打开底部 **启动** 页 → 点 **启动** → 等待“已就绪，可进入” → 点 **进入** → 从侧栏打开 **酒馆工作台**。
+5. **开始游玩**：导入人物卡，选择人物卡开始。如果无法读取 Download 目录，请在 Android 系统设置中允许 DSHA **访问所有文件**，或尝试系统文件选择器。
+
+**以后打开：DSHA → 启动 → 进入 → 酒馆工作台。** 使用期间保持 DSHA 运行，从这个入口进入即可，无需手动输入浏览器地址。
+
+**更新：**点击酒馆左侧栏底部的 **更新到最新版**；酒馆打不开时，可在 DSHA 的 **酒馆工作台**入口点击 **更新/修复**。安装报错或找不到入口时，见 [Android 安装与排错说明](docs/android-install.md)。
 
 ## 开始游玩
 
