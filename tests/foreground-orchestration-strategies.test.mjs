@@ -503,3 +503,16 @@ test('卡片回合没有实际资料片段时不追加空快照消息', async ()
 
   assert.deepEqual(prepared.messages, [original])
 })
+
+test('失败清理与回退留下的空占位不进入提供商请求，工具消息保留', async () => {
+  const run = strategies(), chat = run.chats.get('native')
+  const payload = { turn: 8, step: 1, messages: [userMessage('继续')] }
+  await run.value.prepareStep({ chat, sessionId: 'native', payload, decision: { kind: 'enter', messages: payload.messages }, requestId: 'retry' })
+  const tool = { role: 'assistant', content: [{ type: 'tool-call', id: 'call', name: 'lookup', arguments: {} }] }
+  const input = [userMessage('上一轮'), { role: 'user', content: [], source: { kind: 'plugin', plugin: 'dsh-tavern-failed-turn-cleanup' } }, { role: 'assistant', content: [] }, userMessage('  '), tool, userMessage('继续')]
+  const result = run.value.projectRequest({ sessionId: 'native', messages: input }, { turn: 8, step: 1 })
+  assert.ok(result.messages.every(m => m.content.length && m.content.some(b => b.type !== 'text' || b.text.trim())))
+  assert.ok(result.messages.includes(tool))
+  assert.equal(input.length, 6)
+  assert.equal(input[1].content.length, 0)
+})

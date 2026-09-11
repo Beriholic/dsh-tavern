@@ -266,7 +266,13 @@ export function createNativePlayOrchestrationStrategy(options) {
     const sessionId = str(optionsValue && optionsValue.sessionId)
     const staged = stagedRequests.get(sessionId)
     if (optionsValue === null || typeof optionsValue !== 'object' || optionsValue.purpose !== undefined || staged === undefined || redispatches.has(optionsValue)) return null
-    const regeneratedMessages = projectRegenerationRequestMessages(optionsValue.messages)
+    // Empty surface tombstones preserve append-only history, but are not messages
+    // for the provider. Remove them before choosing a regeneration target.
+    const visibleMessages = (optionsValue.messages || []).filter(message => {
+      if (!message || !['user', 'assistant'].includes(message.role) || !Array.isArray(message.content)) return true
+      return message.content.some(block => block && (block.type !== 'text' || str(block.text).trim() !== ''))
+    })
+    const regeneratedMessages = projectRegenerationRequestMessages(visibleMessages.length === optionsValue.messages?.length ? optionsValue.messages : visibleMessages)
     const nativeMessages = regeneratedMessages.some(isNativeStablePrefix) ? regeneratedMessages.filter(message => !isNativeStablePrefix(message)) : regeneratedMessages
     const baseRequest = nativeMessages === optionsValue.messages
       ? optionsValue : Object.assign({}, optionsValue, { messages: nativeMessages })
