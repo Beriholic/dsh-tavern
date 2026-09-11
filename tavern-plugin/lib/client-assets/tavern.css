@@ -627,3 +627,7 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-image-preview::backdrop { background: rgba(0,0,0,.8); }
 .dsh-tavern-image-preview img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 .dsh-tavern-image-preview button { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); min-height: 40px; padding: 8px 16px; border: 1px solid #aaa; border-radius: 8px; background: #fff; color: #111; cursor: pointer; font-size: 16px; }
+
+.dsh-tavern-error-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 12px; font-size: 12px; }
+.dsh-tavern-error-controls[hidden] { display: none; }
+.dsh-tavern-error-controls button { color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 5px; padding: 3px 8px; cursor: pointer; }

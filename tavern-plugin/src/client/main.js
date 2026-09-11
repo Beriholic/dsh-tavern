@@ -7360,6 +7360,8 @@ window.__ModuleLoader__.load({
 			return null;
 		}
 
+		// @include turn-error-controls.js
+
 		function createSupersededErrorProjection(root) {
 			const owned = new Map();
 			function restore(row, previous) {
@@ -8320,11 +8322,12 @@ window.__ModuleLoader__.load({
 				const root = marker.current && marker.current.closest("[data-conversation-scroll]");
 				if (!root) return;
 				const projection = createSupersededErrorProjection(root);
-				const apply = function () { projection.apply(turns); };
+				const controls = createTurnErrorControls(root, { sessionId: props.sessionId, storage: window.localStorage });
+				const apply = function () { projection.apply(turns); controls.apply(); };
 				apply();
 				const observer = new window.MutationObserver(apply);
 				observer.observe(root, { childList: true, subtree: true });
-				return function () { observer.disconnect(); projection.dispose(); };
+				return function () { observer.disconnect(); controls.dispose(); projection.dispose(); };
 			}, [props.sessionId, revision]);
 			return React.createElement("span", { ref: marker, hidden: true, "data-tavern-error-projection": props.sessionId });
 		}
@@ -8729,6 +8732,7 @@ window.__ModuleLoader__.load({
 		exports.TavernMvuLoadRecovery = TavernMvuLoadRecovery;
 		exports.apply = apply;
 		exports.createTurnHistoryProjection = createTurnHistoryProjection;
+		exports.createTurnErrorControls = createTurnErrorControls;
 		exports.createSupersededErrorProjection = createSupersededErrorProjection;
 		exports.inject = inject;
 		exports.buildOpeningPreviewDocument = buildOpeningPreviewDocument;

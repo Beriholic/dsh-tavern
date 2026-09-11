@@ -148,5 +148,5 @@ test('宿主提供独立错误投影，前端按 Session 隔离并只观察对�
   const component = source.slice(source.indexOf('function SupersededTurnErrors('), source.indexOf('function CandidateQuestion('))
   assert.match(component, /closest\("\[data-conversation-scroll\]"\)/)
   assert.match(component, /observer.observe\(root,/)
-  assert.match(component, /observer.disconnect\(\); projection.dispose\(\)/)
+  assert.match(component, /observer.disconnect\(\); controls.dispose\(\); projection.dispose\(\)/)
 })

@@ -1,3 +1,4 @@
+import { presentModelError } from './domain/model-error-presentation.js'
 import { validateCardFile } from './domain/card-validation.js'
 import { resolveAgentCompaction } from './agent-compaction.js'
 import { createAutoCompaction, installCompactionPolicy } from './domain/auto-compaction.js'
@@ -3373,8 +3374,9 @@ export async function apply(ctx) {
           yield chunk
         }
       } catch (error) {
-        failure = str(error && error.message || error)
-        throw error
+        const displayedError = chat ? presentModelError(error) : error
+        failure = str(displayedError && displayedError.message || displayedError)
+        throw displayedError
       } finally {
         const completed = finish && finish.kind !== 'error' && finish.kind !== 'aborted'
         foregroundStrategies.completeRequest(options, completed)
