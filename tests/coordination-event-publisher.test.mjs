@@ -160,3 +160,20 @@ test('人物卡展示投影修订变化时，即使后台状态不变也发布�
   assert.equal(received.length, 2)
   close()
 })
+
+ test('首次保存人物卡发布绑定变化，即使任务和投影版本未变化', async function () {
+  let cardPath = ''
+  const received = []
+  const clock = intervals()
+  const publisher = createPublisher(received, {
+    load: async () => ({ cardPath, cardName: 'Demo', projectionRevision: 0 }),
+    startInterval: clock.start, stopInterval: clock.stop
+  })
+  const close = publisher.watch('new-card')
+  await new Promise(resolve => setImmediate(resolve))
+  cardPath = 'cards/demo.json'
+  await publisher.publish('new-card')
+  assert.equal(received.length, 2)
+  assert.equal(received[1].snapshot.cardPath, cardPath)
+  close()
+})

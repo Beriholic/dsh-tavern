@@ -7,6 +7,7 @@ export function coordinationEventId(snapshot) {
   const task = snapshot && snapshot.task || {}
   return [
     str(snapshot && snapshot.runtimeGeneration),
+    JSON.stringify([str(snapshot && snapshot.cardPath), str(snapshot && snapshot.cardName)]),
     snapshot && snapshot.liveSession === true ? '1' : '0',
     Number(snapshot && snapshot.mailboxVersion) || 0,
     str(activity.operationId),
