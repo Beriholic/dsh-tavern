@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "b75de131ec1aef9616d11f249fdbb87010837ea8",
-  "releaseSequence": 154,
+  "revision": "277fa65aa56385739d0b5b0b0cabbfb26bef639e",
+  "releaseSequence": 155,
   "version": "1.6.0",
   "files": [
     {
@@ -26,8 +26,8 @@
     },
     {
       "path": "bin/dsh-compatibility.mjs",
-      "sha256": "37b9ce1dd9e84e119f32961b5790f71b85bc99f2f360838fab718524d57456f4",
-      "size": 1598
+      "sha256": "60af9b1b6b24cabe82d125a7fd32f822ce42822f9a6ccf42213c0dde3bfeb622",
+      "size": 2110
     },
     {
       "path": "bin/dsh-tavern",
@@ -66,8 +66,8 @@
     },
     {
       "path": "bin/profile-installation.mjs",
-      "sha256": "e745293182a9efbb8f129716c6b929b3a8a6ad2786cf529160ca93b4ba42a65a",
-      "size": 13279
+      "sha256": "821b3db1bfa84428d36056194e3b070c5940b6cb41abacab0e67bb98bce118b2",
+      "size": 13356
     },
     {
       "path": "bin/service-lifecycle.mjs",
