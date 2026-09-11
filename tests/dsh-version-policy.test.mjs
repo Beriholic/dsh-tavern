@@ -34,7 +34,7 @@ test('所有平台仅允许完全匹配的 DSH 版本', () => {
   }
 })
 
-test('两平台都在下载源码后读取推荐版本，DSH 下载交给共享安装模块', () => {
+test('两平台都在下载源码后读取适配版本，DSH 下载交给共享安装模块', () => {
   assert.ok(unix.indexOf('ADAPTED_DSH_VERSION=$(node') > unix.indexOf('[ -f "${SOURCE_DIR}/package.json" ]'))
   assert.ok(windows.indexOf('$AdaptedDshVersion = (& node') > windows.indexOf("Join-Path $SourceDir.FullName 'package.json'"))
   assert.doesNotMatch(unix + windows, /@deepseek-ai\/dsh["']/)
@@ -81,7 +81,7 @@ fail() { printf 'FAIL:%s\\n' "$1"; exit 1; }
 })
 
 
-test('Desktop 和 DSHA 各有一个明确推荐版本，提示与安装文档包含下载入口', async () => {
+test('Desktop 和 DSHA 各有一个明确适配版本，提示与安装文档包含下载入口', async () => {
   const config = JSON.parse(await readFile(new URL('../config/dsh-compatibility.json', import.meta.url), 'utf8'))
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8')
   const manual = await readFile(new URL('../docs/index.html', import.meta.url), 'utf8')

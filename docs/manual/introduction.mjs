@@ -84,11 +84,11 @@ export const installation = `
 
 桌面版与命令行版选择一种即可，不要同时运行。下方命令会下载并执行本项目安装脚本，请在确认项目来源可信后运行；网页本身不会自动执行安装。
 
-命令行版独立安装固定的 DSH {{dshVersion}}。Desktop / DSHA 复用宿主，要求内置 DSH 版本完全匹配，不匹配时停止安装；请自行下载安装推荐版本。
+命令行版独立安装固定的 DSH {{dshVersion}}。Desktop / DSHA 复用宿主，要求内置 DSH 版本完全匹配，不匹配时停止安装；请自行下载安装适配版本。
 
 ## 方式一：桌面版
 
-1. 推荐安装 **DSH Desktop 2.0.5**（内置 DSH {{dshVersion}}）。打开 [历史版本下载页面](https://github.com/anywhere-labs/dsh-desktop/releases)，找到 **v2.0.5**，展开 **Assets**，下载适合自己系统的安装包；不要下载 Source code。内置 DSH 版本不匹配时会停止安装，请使用推荐版本。
+1. 安装适配版本 **DSH Desktop 2.0.5**（内置 DSH {{dshVersion}}）。打开 [历史版本下载页面](https://github.com/anywhere-labs/dsh-desktop/releases)，找到 **v2.0.5**，展开 **Assets**，下载适合自己系统的安装包；不要下载 Source code。内置 DSH 版本不匹配时会停止安装，请使用适配版本。
 2. 启动后，从系统托盘或 macOS 菜单栏打开 **Open DSH Terminal**。
 3. 在这个终端里，运行你所用平台的命令。
 
@@ -143,7 +143,7 @@ export const installation = `
 
 ## Android：通过 DSHA 安装
 
-推荐使用 **DSHA 1.2.0-rc1.4**（预览版，内置 DSH {{dshVersion}}）。内置 DSH 版本必须匹配，否则停止安装。请自行打开 [DSHA 历史版本下载页面](https://github.com/DSH-APP/DSHA/releases)，找到 **v1.2.0-rc1.4**，展开 **Assets**，下载适合手机系统的 APK；不要下载 Source code。
+适配版本：**DSHA 1.2.0-rc1.4**（预览版，内置 DSH {{dshVersion}}）。内置 DSH 版本必须匹配，否则停止安装。请自行打开 [DSHA 历史版本下载页面](https://github.com/DSH-APP/DSHA/releases)，找到 **v1.2.0-rc1.4**，展开 **Assets**，下载适合手机系统的 APK；不要下载 Source code。
 
 **Android 属于实验性支持，不保证一定可用。** 不同手机系统、DSHA 版本、网络和后台限制都可能导致安装或运行失败。
 
