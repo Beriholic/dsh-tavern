@@ -150,6 +150,12 @@ export const installation = `
 ` + code('text', androidAgentPrompt) + `
 4. 看到“全部完成”后重启 DSHA，在底部“启动”页点“启动”；显示“已就绪，可进入”后点“进入”，再从侧栏打开“酒馆工作台”。
 
+**日常打开：DSHA → 底部“启动”→“进入”→ 侧栏“酒馆工作台”。** 未运行时先点“启动”，等待“已就绪，可进入”。这条路径自动处理认证，无需复制 token。
+
+浏览器显示 **dsh web authentication required; reopen the URL printed by dsh web.**，表示当前浏览器缺少登录凭证（401），不代表安装失败。回到 DSHA 按上述路径进入即可，不必重装。
+
+必须使用外部浏览器时，在 DSHA“启动”页本次启动日志中找到“本机打开”，复制完整地址（包括 ?token= 后全部字符），在同一台安卓设备的浏览器打开，再点“酒馆工作台”。不要直接输入裸的 3080 / 3088 地址；内置页面与外部浏览器不共享登录状态。完整地址不要公开分享。MuMu 用户在模拟器里的浏览器操作。详细步骤见 [Android 认证排错](https://github.com/flizzywine/dsh-tavern/blob/main/docs/android-install.md#浏览器提示需要认证怎么办)。
+
 从手机 Download 目录导入人物卡前，请在 Android 系统设置中允许 DSHA“访问所有文件”。未授权时酒馆会给出提示，也可尝试系统文件选择器。
 
 以后可使用“更新到最新版”；打不开时尝试 DSHA 酒馆工作台入口中的“更新/修复”。使用时请允许 DSHA 后台运行，避免系统省电策略中断服务。
