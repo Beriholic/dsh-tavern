@@ -147,6 +147,11 @@ body.dsh-tavern-shell-active [data-ref-chip="file"] { max-width: calc(100% - 4px
 .dsh-tavern-settings-switch input:focus-visible + .dsh-tavern-settings-track { outline: 2px solid #a66b35; outline-offset: 2px; }
 .dsh-tavern-settings-model-row { flex-wrap: wrap; }
 .dsh-tavern-settings-select { flex: 1 1 220px; max-width: 320px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; color: inherit; background: var(--dsw-specific-input-major); }
+.dsh-tavern-compaction-settings { display: flex; flex-direction: column; align-items: stretch; gap: 16px; padding: 20px; }
+.dsh-tavern-compaction-settings > h3, .dsh-tavern-compaction-settings > p { margin: 0; }
+.dsh-tavern-compaction-field { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 24px; font-size: 14px; line-height: 1.6; }
+.dsh-tavern-compaction-field .dsh-tavern-settings-select { box-sizing: border-box; min-width: 0; width: 100%; font: inherit; }
+.dsh-tavern-compaction-settings > .dsh-tavern-btn { align-self: flex-start; margin-top: 4px; }
 .dsh-tavern-settings-error { color: #c45f5f; font-size: 13px; }
 .dsh-tavern-background-model { min-width: 0; max-width: min(360px,45cqw); height: 28px; display: flex; align-items: center; padding: 0 8px; color: var(--dsw-alias-label-secondary); font-size: 13px; font-weight: 500; line-height: 20px; }
 .dsh-tavern-background-model span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
