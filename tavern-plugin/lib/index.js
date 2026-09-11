@@ -1378,8 +1378,15 @@ export async function apply(ctx) {
     const chat = await chatForSession(sessionId)
     if (chat === undefined) return null
     const isCard = (chat.mode || 'story') === 'card'
-    const card = isCard && str(chat.cardPath) === '' ? null : await readChatCard(chat)
+    let card = null, cardReadError = null
+    try { card = isCard && str(chat.cardPath) === '' ? null : await readChatCard(chat) }
+    catch (error) {
+      if (!isCard) throw error
+      cardReadError = '人物卡暂时无法读取，请在工作台校验并修复：' + chat.cardPath
+      card = { name: chat.cardName || chat.cardPath }
+    }
     const result = await view(chat, card)
+    if (cardReadError) result.cardReadError = cardReadError
     if (isCard) result.workspace = workspaceViewOf(chat)
     if ((chat.mode || 'story') === 'script') result.scriptPreview = await scriptPreviewOf(chat)
     return result

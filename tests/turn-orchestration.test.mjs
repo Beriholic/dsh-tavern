@@ -49,7 +49,7 @@ function harness(mode, options = {}) {
   const timeline = createStoryTimeline({ id: (prefix) => prefix + '-' + Math.random().toString(36).slice(2), now: () => 2000 })
   const store = {
     async chatForSession() { return clone(chat) },
-    async readCard() { return options.draft && !chat.cardPath ? undefined : clone(card) },
+    async readCard() { if (options.brokenCard) throw new SyntaxError('invalid JSON'); return options.draft && !chat.cardPath ? undefined : clone(card) },
     async readCardExtensions() { return clone(options.extensions || { regexScripts: [] }) },
     async readScript() { return mode === 'script' || (mode === 'card' && !options.draft) ? clone(script()) : undefined },
     async readBoundWorldBook() { return clone(options.boundWorldBook || null) },
@@ -799,4 +799,16 @@ test('new card is created and bound before tool returns; next write updates the 
   await run.orchestrator.saveChanges({ sessionId: 'session-1', turn: 1, fields: { description: '第二次修改' } })
   assert.equal(run.card().description, '第二次修改')
   assert.equal(run.createdCards.length, 1)
+})
+
+
+test('repair workbench reaches tools and completes even when its card cannot parse', async () => {
+  const run = harness('card', { brokenCard: true })
+  const prepared = await run.orchestrator.prepare({ sessionId: 'session-1', turn: 1, userText: '校验并修复人物卡' })
+  assert.equal(prepared.ready, true)
+  assert.ok((await run.orchestrator.visibleTools('session-1')).includes('tavern_validate_card'))
+  const done = await run.orchestrator.finalize({ sessionId: 'session-1', turn: 1, userText: '校验', assistantText: '文件格式仍需修复' })
+  assert.equal(done.saved, true)
+  const play = harness('story', { brokenCard: true })
+  await assert.rejects(play.orchestrator.prepare({ sessionId: 'session-1', turn: 1, userText: '继续' }), /invalid JSON/)
 })

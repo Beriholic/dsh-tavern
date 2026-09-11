@@ -295,7 +295,8 @@ export function createTurnOrchestrator(options) {
     }
 
     const cardPath = cardPathOf(chat)
-    const card = cardPath === '' ? null : await store.readCard(cardPath)
+    // Workbench tools must remain available when the file being repaired is invalid.
+    const card = cardPath === '' ? null : mode === 'card' ? { name: chat.cardName } : await store.readCard(cardPath)
     if (cardPath !== '' && card === undefined) throw new Error('人物卡不存在: ' + cardPath)
     if ((mode === 'story' || mode === 'script') && !reusedRuntimeInput) {
       const extensions = typeof store.readCardExtensions === 'function'
@@ -548,8 +549,7 @@ export function createTurnOrchestrator(options) {
 
     if (mode === 'card') {
       let changed = false
-      let savedCard = await store.readCard(cardPath)
-      if (savedCard === undefined) throw new Error('人物卡不存在: ' + cardPath)
+      let savedCard = { name: chat.cardName }
       if (Object.keys(object(stage.fields)).length > 0 || (Array.isArray(stage.rawOperations) && stage.rawOperations.length > 0)) {
         const result = await store.updateCard(cardPath, object(stage.fields), {
           ts: now(), instruction: userText, summary: '通过卡片模式设定对话更新人物卡'
