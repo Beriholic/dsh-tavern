@@ -114,7 +114,13 @@ test('代码块保持命令原文，转义 HTML 且不误识别管道和 Markdow
 })
 
 test('文档只采用独立样例截图，不复用旧图片或加载远程脚本', () => {
-  assert.doesNotMatch(html, /<picture\b|<video\b|<iframe\b|images\/readme\//)
+  assert.doesNotMatch(html, /<picture\b|<video\b|images\/readme\//)
+  const frames = [...html.matchAll(/<iframe\b[^>]*>/g)].map(match => match[0])
+  assert.equal(frames.length, 1)
+  assert.match(frames[0], /src="https:\/\/player\.bilibili\.com\/player\.html\?/)
+  assert.match(frames[0], /bvid=BV1Bibx61EAC/)
+  assert.match(frames[0], /autoplay=0/)
+  assert.match(frames[0], /title="[^"]+"/)
   assert.doesNotMatch(html, /<script[^>]+src="https?:/)
   assert.ok(!/预设库（实验性）|保证永不失忆/.test(html))
   assert.match(pages.find(p => p.id === 'd11').body, /已停用/)

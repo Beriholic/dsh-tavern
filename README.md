@@ -8,6 +8,10 @@
 
 它可以直接导入酒馆人物卡，也可以从小说、剧本和人物素材中制作新卡。选一张卡后，你既可以自由游玩，也可以绑定一份剧本，让故事沿着既定主线长期推进。
 
+## 宣传视频
+
+[▶ DSH Tavern：类酒馆文字游戏agent，基于Deepseek Harness](https://www.bilibili.com/video/BV1Bibx61EAC/)
+
 ## 使用文档
 
 **[打开在线文档与功能指南](https://flizzywine.github.io/dsh-tavern/)** · [安装与启动](https://flizzywine.github.io/dsh-tavern/#a02) · [全部功能索引](https://flizzywine.github.io/dsh-tavern/#index)
