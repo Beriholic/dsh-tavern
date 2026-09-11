@@ -579,7 +579,7 @@ test('正文替代先回到 checkpoint 再提交，剧本游标不会推进两�
   assert.equal(run.chat().messages.at(-1).text, '替代正文')
 })
 
-test('卡片修改先校验暂存，只在最终回复完成后写入', async () => {
+test('兼容旧暂存记录：在最终回复完成后写入', async () => {
   const run = harness('card')
   await run.orchestrator.prepare({ sessionId: 'session-1', turn: 5, userText: '参考 @[人物设定](tavern-file:materials%2F%E4%BA%BA%E7%89%A9%E8%AE%BE%E5%AE%9A.md)，确认改成新描述' })
   assert.deepEqual(run.chat().workspace.mountedResources, [{ kind: 'source', path: 'materials/人物设定.md', label: '人物设定' }])
@@ -620,6 +620,7 @@ test('卡片修改先校验暂存，只在最终回复完成后写入', async ()
     'tavern_update_preset',
     'tavern_update_card',
     'tavern_restore_card',
+    'tavern_validate_card',
   ])
 })
 
@@ -666,6 +667,7 @@ test('Windows 卡片模式暴露 PowerShell 而不是 Bash', async () => {
     'tavern_update_preset',
     'tavern_update_card',
     'tavern_restore_card',
+    'tavern_validate_card',
   ])
 })
 
@@ -686,7 +688,7 @@ test('空白卡片工作台确认完整设定后直接创建并绑定正式人�
   const duplicate = await run.orchestrator.finalize({ sessionId: 'session-1', turn: 6, userText: '确认角色和玩家', assistantText: '重复回调' })
   assert.equal(duplicate.duplicate, true)
   assert.equal(run.createdCards.length, 1)
-  assert.deepEqual(await run.orchestrator.visibleTools('session-1'), ['web_search', 'bash', 'str_replace_editor', 'read', 'write', 'edit', 'read_image', 'skill', 'tavern_save_skill', 'cordis_inspect_list', 'cordis_inspect_query', 'cordis_inspect_self', 'cordis_define', 'cordis_run', 'cordis_stop', 'cordis_undefine', 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card'])
+  assert.deepEqual(await run.orchestrator.visibleTools('session-1'), ['web_search', 'bash', 'str_replace_editor', 'read', 'write', 'edit', 'read_image', 'skill', 'tavern_save_skill', 'cordis_inspect_list', 'cordis_inspect_query', 'cordis_inspect_self', 'cordis_define', 'cordis_run', 'cordis_stop', 'cordis_undefine', 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card'])
 })
 
 test('前台自由故事和剧本模式稳定暴露历史正文检索工具', async () => {
@@ -772,4 +774,29 @@ test('动态常驻只进入系统区块，正文条件条目继承本次宏变�
   const text = foregroundFrameText(prepared.frame)
   assert.match(text, /城市：龙姬解封/)
   assert.doesNotMatch(text, /系统常驻正文/)
+})
+
+
+test('card tool saves immediately; failed turn and finalization do not undo or replay writes', async () => {
+  const run = harness('card')
+  await run.orchestrator.prepare({ sessionId: 'session-1', turn: 9, userText: '修改描述' })
+  const saved = await run.orchestrator.saveChanges({ sessionId: 'session-1', turn: 9, fields: { description: '已写入' } })
+  assert.equal(saved.saved, true)
+  assert.equal(run.card().description, '已写入')
+  assert.equal(run.chat().pendingCardChanges?.['9'], undefined)
+  await run.orchestrator.discard({ sessionId: 'session-1', turn: 9 })
+  assert.equal(run.card().description, '已写入')
+  await run.orchestrator.saveChanges({ sessionId: 'session-1', turn: 10, fields: { description: '校验后修正' } })
+  await run.orchestrator.finalize({ sessionId: 'session-1', turn: 10, userText: '修正', assistantText: '已校验' })
+  assert.equal(run.card().description, '校验后修正')
+})
+
+test('new card is created and bound before tool returns; next write updates the same file', async () => {
+  const run = harness('card', { draft: true })
+  await run.orchestrator.saveChanges({ sessionId: 'session-1', turn: 1, fields: { name: '新角色', player: '旅人' } })
+  assert.equal(run.chat().cardPath, 'cards/新角色.json')
+  assert.equal(run.createdCards.length, 1)
+  await run.orchestrator.saveChanges({ sessionId: 'session-1', turn: 1, fields: { description: '第二次修改' } })
+  assert.equal(run.card().description, '第二次修改')
+  assert.equal(run.createdCards.length, 1)
 })

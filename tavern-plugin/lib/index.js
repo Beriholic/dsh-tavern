@@ -1,3 +1,4 @@
+import { validateCardFile } from './domain/card-validation.js'
 import { resolveAgentCompaction } from './agent-compaction.js'
 import { createAutoCompaction, installCompactionPolicy } from './domain/auto-compaction.js'
 import { createPerformanceDiagnostics } from './domain/performance-diagnostics.js'
@@ -3216,7 +3217,7 @@ export async function apply(ctx) {
     })
   }
 
-  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card'])
+  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card'])
   const foregroundStrategies = createForegroundOrchestrationStrategies({
     compatibility: {
       beforeTurn: async function (input) {
@@ -3605,6 +3606,32 @@ export async function apply(ctx) {
         if (chat === undefined || (chat.mode || 'story') !== 'card') throw new Error('Tavern Skill 只能在卡片工作台中创建或修改')
         const saved = await tavernSkills.write(args)
         return { name: saved.name, chars: saved.chars, overwritten: saved.overwritten, saved: true }
+      }
+    }))
+
+    tools.register(defineTool({
+      name: 'tavern_validate_card',
+      description: '只读校验人物卡 JSON、字段类型和 MVU 扩展结构。写入后必须调用，始终读取磁盘文件。不会执行脚本、自动修复或覆盖文件。',
+      parameters: { path: { type: 'string', description: '可选的 cards/... 相对路径；省略时检查当前已保存人物卡' } },
+      output: {
+        schema: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            valid: { type: 'boolean', required: true },
+            errors: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: { path: { type: 'string', required: true }, message: { type: 'string', required: true } } } },
+            warnings: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: { path: { type: 'string', required: true }, message: { type: 'string', required: true } } } }
+          }
+        },
+        render: function (_args, value) { return [{ type: 'text', text: JSON.stringify(value, null, 2) }] }
+      },
+      isConcurrencySafe: function () { return true },
+      async execute(args, exec) {
+        const chat = await chatForSession(exec.agent.session.id)
+        if (!chat || chat.mode !== 'card') throw new Error('人物卡校验只能在卡片工作台使用')
+        const requested = str(args.path).trim()
+        const cardPath = requested || str(chat.cardPath)
+        const normalized = cardPath ? normalizeResourcePath(cardPath, 'card') : ''
+        return await validateCardFile({ path: normalized, readText: fileResources.readText })
       }
     }))
 
@@ -4020,7 +4047,7 @@ export async function apply(ctx) {
 
     tools.register(defineTool({
       name: 'tavern_update_card',
-      description: '仅当用户明确要求或确认修改时，提交最小的人物卡变更；本轮最终回复完成后自动保存。空白工作台会直接创建并绑定正式人物卡文件，必须同时具备角色名和玩家身份。只讨论时不要调用。',
+      description: '仅当用户明确要求或确认修改时，立即保存最小的人物卡变更；保存后调用 tavern_validate_card 检查实际文件。空白工作台会直接创建并绑定正式人物卡文件，必须同时具备角色名和玩家身份。只讨论时不要调用。',
       parameters: {
         fields: {
           type: 'object', additionalProperties: false,
@@ -4056,7 +4083,7 @@ export async function apply(ctx) {
         schema: {
           type: 'object', additionalProperties: false,
           properties: {
-            staged: { type: 'boolean', required: true },
+            saved: { type: 'boolean', required: true },
             mode: { type: 'string', required: true, enum: ['card'] },
             changed: { type: 'boolean', required: true },
             createsCard: { type: 'boolean', required: true },
@@ -4065,14 +4092,14 @@ export async function apply(ctx) {
         },
         render: function (_args, value) {
           const detail = value.changedFields.length > 0 ? '：' + value.changedFields.join('、') : ''
-          if (value.createsCard) return [{ type: 'text', text: '本轮回复完成后将创建并绑定正式人物卡' + detail }]
+          if (value.createsCard) return [{ type: 'text', text: '已创建并绑定正式人物卡' + detail }]
           if (!value.changed) return [{ type: 'text', text: '提交内容与当前设定相同，无需改动' }]
-          return [{ type: 'text', text: '本轮回复完成后将保存人物卡变更' + detail }]
+          return [{ type: 'text', text: '已保存人物卡变更' + detail }]
         }
       },
       async execute(args, exec) {
         const sessionId = exec && exec.agent && exec.agent.session ? exec.agent.session.id : ''
-        return await turnOrchestrator.stageChanges({
+        return await turnOrchestrator.saveChanges({
           sessionId,
           turn: activeTurnOf(exec),
           fields: args.fields,

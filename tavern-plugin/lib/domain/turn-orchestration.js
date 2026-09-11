@@ -396,6 +396,33 @@ export function createTurnOrchestrator(options) {
     return { ready: true, mode, userText }
   }
 
+  // Tool writes are immediate, so a subsequent validation reads these bytes.
+  // Finalize still records the conversation; it must not replay this change.
+  async function saveChanges(input) {
+    const chat = await store.chatForSession(input.sessionId)
+    if (!chat || chat.mode !== 'card') throw new Error('人物卡只能在卡片模式中修改')
+    const cardPath = cardPathOf(chat)
+    const fields = object(input.fields), rawOperations = Array.isArray(input.rawOperations) ? input.rawOperations : []
+    if (!Object.keys(fields).length && !rawOperations.length) throw new Error('没有提供需要修改的字段')
+    let result
+    if (!cardPath) {
+      if (rawOperations.length) throw new Error('新人物卡创建前不能修改 raw，请先创建人物卡')
+      const state = object(chat.workspace)
+      const change = cards.update({ kind: 'draft', card: object(state.draft), player: state.player, patch: fields })
+      const next = { ...state, draft: change.card, player: change.player }
+      const created = await store.createCard(chat, next)
+      chat.workspace = { ...next, done: true }
+      chat.cardPath = created.path; chat.cardName = created.card.name
+      result = { changed: true, changedFields: change.changedFields }
+    } else {
+      result = await store.updateCard(cardPath, fields, { ts: now(), summary: '卡片 Agent 直接保存' }, rawOperations)
+      chat.cardName = result.card.name
+    }
+    if (chat.pendingCardChanges) delete chat.pendingCardChanges[String(input.turn)]
+    await store.writeChat(chat, { source: 'card.save' })
+    return { saved: true, mode: 'card', changed: result.changed, createsCard: !cardPath, changedFields: result.changedFields || [] }
+  }
+
   async function stageChanges(input) {
     const chat = await store.chatForSession(input.sessionId)
     if (chat === undefined) throw new Error('当前会话没有绑定人物卡')
@@ -662,7 +689,7 @@ export function createTurnOrchestrator(options) {
     const mode = chat.mode || 'story'
     const webTools = chat.webSearchEnabled === true ? ['web_search'] : []
     if (mode === 'script') return ['tavern_read_script', 'tavern_recall_history', ...webTools]
-    if (mode === 'card') return ['web_search', shellToolName, ...dshFileToolNames, 'skill', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card']
+    if (mode === 'card') return ['web_search', shellToolName, ...dshFileToolNames, 'skill', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card']
     return ['tavern_recall_history', ...webTools]
   }
 
@@ -671,5 +698,5 @@ export function createTurnOrchestrator(options) {
     return chat === undefined ? null : (chat.mode || 'story')
   }
 
-  return Object.freeze({ prepare, beginCompatibility, stageChanges, finalize, recordFailure, discard, visibleTools, modeFor })
+  return Object.freeze({ prepare, beginCompatibility, saveChanges, stageChanges, finalize, recordFailure, discard, visibleTools, modeFor })
 }
