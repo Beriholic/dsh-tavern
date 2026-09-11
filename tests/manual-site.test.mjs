@@ -63,11 +63,11 @@ test('产品概览和安装是独立入门入口，默认首页先讲产品和�
   assert.equal(resolveRoute('#start', routeIds).id, 'a02')
 })
 
-test('安装页提供与 README 一致的可复制命令、当前适配版本和各平台步骤', async () => {
-  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8')
+test('安装页提供与完整安装说明一致的可复制命令、当前适配版本和各平台步骤', async () => {
+  const installationGuide = await readFile(new URL('installation.md', root), 'utf8')
   const install = pages.find(p => p.id === 'a02').body
   for (const command of Object.values(installCommands)) {
-    assert.ok(readme.includes(command), 'Installation command must match README')
+    assert.ok(installationGuide.includes(command), 'Installation command must match installation guide')
     assert.ok(install.includes(`<code>${escapeHTML(command)}</code>`), 'Commands must remain literal text')
   }
   for (const term of ['方式一：桌面版', '方式二：命令行版', 'Open DSH Terminal', '配置模型并开始第一局', '关机后如何重新打开', '更新与重新安装', 'Android：通过 DSHA 安装', '安装失败时', adaptedDshVersion]) assert.ok(install.includes(term), term)
@@ -77,9 +77,9 @@ test('安装页提供与 README 一致的可复制命令、当前适配版本和
 })
 
 test('Android 公开安装命令固定引导脚本版本，避免 jsDelivr main 缓存倒退', async () => {
-  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8')
+  const installationGuide = await readFile(new URL('installation.md', root), 'utf8')
   const androidGuide = await readFile(new URL('android-install.md', root), 'utf8')
-  for (const content of [readme, androidGuide, installCommands.android]) {
+  for (const content of [installationGuide, androidGuide, installCommands.android]) {
     assert.match(content, /cdn\.jsdelivr\.net\/gh\/flizzywine\/dsh-tavern@[0-9a-f]{7,40}\/android\/setup\.sh/)
     assert.doesNotMatch(content, /dsh-tavern@main\/android\/setup\.sh/)
   }
@@ -93,10 +93,10 @@ test('Android 公开安装命令不依赖 DSHA rc1 未提供的 curl', () => {
 })
 
 test('Android 安装明确使用 DSHA 终端，并为小白提供可整段复制的 Agent 话术', async () => {
-  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8')
+  const installationGuide = await readFile(new URL('installation.md', root), 'utf8')
   const androidGuide = await readFile(new URL('android-install.md', root), 'utf8')
   const install = pages.find(p => p.id === 'a02').body
-  for (const content of [readme, androidGuide]) {
+  for (const content of [installationGuide, androidGuide]) {
     assert.match(content, /DSHA 底部的.*终端/)
     assert.ok(content.includes(androidAgentPrompt), 'Agent fallback must be one complete copyable prompt')
     assert.doesNotMatch(content, /命令执行入口/)

@@ -15,4 +15,4 @@
 - [`reviews/`](reviews/)：历史审查及实施记录，不作为当前架构入口。
 - [`research/`](research/)：外部项目、兼容机制、产品判断与故障研究。统一入口见[参考项目库](research/reference-projects.md)，已有专题包括[《灯火阑珊》MVU 兼容链路验收](research/lighthouse-mvu-compatibility-e2e-2026-08-28.md)、[人物卡自带 `phone-ctn` 小手机调研](research/card-native-phone-phone-ctn-audit-2026-09-05.md)、[强烈而旺盛的角色扮演游戏需求备忘](research/roleplaying-demand-memo.md)、[酒馆预设兼容边界备忘](research/preset-compatibility-boundary-memo.md)、[酒馆正则如何把 `【首页】` 变成可交互卡片](research/sillytavern-regex-rendering-memo.md)、[梨园架构研究与借鉴范围](research/liyuan-architecture-reference.md)、[dsh-visualize HTML 嵌入机制](research/dsh-visualize-html-embedding.md)以及[Windows 聊天落盘、候选失败与后台压缩排查报告](research/windows-chat-persistence-and-background-compaction-diagnosis-2026-08-27.md)。研究文档通常只提供证据；其中正则渲染备忘已由对应设计明确采纳为兼容基线。
 
-用户功能、演示和安装方式见项目 [README](../README.md)。
+用户功能和演示见项目 [README](../README.md)；安装、更新、数据备份及排错见[安装说明](installation.md)。
