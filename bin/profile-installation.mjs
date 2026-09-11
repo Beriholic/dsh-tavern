@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { stopService } from './service-lifecycle.mjs'
 import { installCliRuntime, migrateCliHome } from './cli-runtime.mjs'
-import { dshCompatibilityNotice } from './dsh-compatibility.mjs'
+import { assertCompatibleDshVersion, dshCompatibilityNotice } from './dsh-compatibility.mjs'
 import { installPluginDependencies } from './plugin-dependencies.mjs'
 import { migrateLegacyTavernData, resolveTavernDataRoot } from '../tavern-plugin/lib/domain/tavern-data.js'
 import { ensureUserExtensions } from '../tavern-plugin/lib/domain/user-extensions.js'
@@ -224,6 +224,7 @@ export async function installProfile(host = RUNTIME_HOST) {
   try {
     const dsh = runtime?.command || findDshCommand(host)
     const dshVersion = extractDshVersion(runDsh(dsh, ['--version'], { capture: true, host }))
+    assertCompatibleDshVersion(dshVersion, host)
     console.log(dshCompatibilityNotice(dshVersion, host))
 
     mkdirSync(PROFILE_DIR, { recursive: true })

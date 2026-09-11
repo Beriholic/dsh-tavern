@@ -83,12 +83,12 @@ test('CLI migration copies native history once, leaves originals and host depend
 })
 
 for (const host of ['desktop', 'android']) {
-  test(`${host}: migration never adopts external host data and mismatched versions only warn`, t => {
+  test(`${host}: migration never adopts external host data and mismatched versions report installation stopped`, t => {
     const source = temporary(t), target = path.join(source, 'private')
     put(path.join(source, 'profiles/tavern/package.json'), JSON.stringify({ dshTavern: { host } }))
     assert.equal(migrateCliHome({ source, target }), false)
     const notice = dshCompatibilityNotice('99.0.0', host)
-    assert.match(notice, /保留当前版本，继续安装/)
+    assert.match(notice, /已停止安装/)
     assert.match(notice, /https:\/\/github.com\//)
   })
 }

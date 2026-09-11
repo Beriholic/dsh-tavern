@@ -10,11 +10,19 @@ if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(adaptedDshVersion)) throw new Er
 export function dshCompatibilityNotice(currentVersion = '', host = 'desktop') {
   if (host === 'cli') return `命令行版独立安装并使用 DSH ${adaptedDshVersion}，不复用或修改全局 DSH。`
   const notice = host === 'android'
-    ? `推荐 DSHA ${recommendedDshaVersion}（内置 DSH ${adaptedDshVersion}），不强制锁定；如遇兼容报错，请自行下载安装推荐版本：${dshaReleasesUrl}`
-    : `推荐 DSH Desktop ${recommendedDesktopVersion}（内置 DSH ${adaptedDshVersion}），不强制锁定；如遇兼容报错，请自行下载安装推荐版本：${desktopReleasesUrl}`
+    ? `推荐 DSHA ${recommendedDshaVersion}（内置 DSH ${adaptedDshVersion}），要求内置 DSH 版本完全匹配；请下载安装推荐版本：${dshaReleasesUrl}`
+    : `推荐 DSH Desktop ${recommendedDesktopVersion}（内置 DSH ${adaptedDshVersion}），要求内置 DSH 版本完全匹配；请下载安装推荐版本：${desktopReleasesUrl}`
   return currentVersion && currentVersion !== adaptedDshVersion
-    ? `${notice}\n当前 DSH ${currentVersion} 与推荐版本不同；保留当前版本，继续安装。`
+    ? `${notice}\n当前 DSH ${currentVersion} 与要求版本 ${adaptedDshVersion} 不同；已停止安装，不会修改宿主版本。`
     : notice
+}
+
+export function assertCompatibleDshVersion(currentVersion, host = 'cli') {
+  if (currentVersion === adaptedDshVersion) return
+  const guidance = host === 'cli'
+    ? '请重新安装独立运行时：设置 DSH_TAVERN_REINSTALL_RUNTIME=1 后重试安装或更新。'
+    : dshCompatibilityNotice(currentVersion, host)
+  throw new Error(`已停止安装：DSH 版本不兼容，当前 ${currentVersion || '未知'}，必须使用 ${adaptedDshVersion}。${guidance}`)
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

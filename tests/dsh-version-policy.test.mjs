@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { adaptedDshVersion, dshCompatibilityNotice } from '../bin/dsh-compatibility.mjs'
+import { adaptedDshVersion, assertCompatibleDshVersion, dshCompatibilityNotice } from '../bin/dsh-compatibility.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const unix = await readFile(new URL('../install.sh', import.meta.url), 'utf8')
@@ -20,15 +20,17 @@ test('README、安装提示和独立版本查询使用同一适配版本', async
   assert.equal(result.stdout.trim(), adaptedDshVersion)
 })
 
-test('匹配版本与其他新旧版本均只提示，不抛错或要求切换版本', () => {
-  for (const version of [adaptedDshVersion, '0.1.1-rc.2', '99.0.0']) {
-    const notice = dshCompatibilityNotice(version)
-    assert.match(notice, /不强制锁定/)
-    assert.match(notice, /如遇兼容报错/)
-    if (version !== adaptedDshVersion) {
-      assert.ok(notice.includes('当前 DSH ' + version))
-      assert.match(notice, /保留当前版本，继续安装/)
-    } else assert.doesNotMatch(notice, /版本不同/)
+test('所有平台仅允许完全匹配的 DSH 版本', () => {
+  for (const host of ['cli', 'desktop', 'android']) {
+    assert.doesNotThrow(() => assertCompatibleDshVersion(adaptedDshVersion, host))
+    for (const version of ['', '0.1.1-rc.2', '0.1.5-rc.1', '99.0.0']) {
+      assert.throws(() => assertCompatibleDshVersion(version, host), error => {
+        assert.match(error.message, /必须使用/)
+        assert.ok(error.message.includes(adaptedDshVersion))
+        if (host !== 'cli') { assert.match(error.message, /已停止安装/); assert.match(error.message, /https:\/\/github.com\//) }
+        return true
+      })
+    }
   }
 })
 
