@@ -2071,13 +2071,13 @@ function novelaiRequest(input, config) {
 			params_version: 4,
 			width,
 			height,
-			scale: guidance,
-			steps: 23,
+			scale: config.guidance ? Number(config.guidance) : guidance,
+			steps: config.steps ? Number(config.steps) : 23,
 			sampler: "k_euler_ancestral",
 			noise_schedule: "karras",
 			n_samples: 1,
 			seed,
-			negative_prompt: "",
+			negative_prompt: config.negativePrompt || "",
 			cfg_rescale: 0,
 			dynamic_thresholding: false,
 			legacy: false,
@@ -2097,7 +2097,7 @@ function novelaiRequest(input, config) {
 				},
 				v4_negative_prompt: {
 					caption: {
-						base_caption: "",
+						base_caption: config.negativePrompt || "",
 						char_captions: captions.map(() => ({
 							char_caption: "",
 							centers: [{
@@ -2209,17 +2209,42 @@ function comfyWorkflow(value) {
 			seed: [samplerSeedBinding(prompt, id)],
 			batch: []
 		};
+		if (Array.isArray(negative) && prompt[negative[0]]?.class_type === "CLIPTextEncode" && typeof prompt[negative[0]].inputs.text === "string") bindings.negative = [{
+			node: negative[0],
+			input: "text"
+		}];
+		if (Number.isSafeInteger(node.inputs.steps)) bindings.steps = [{
+			node: id,
+			input: "steps"
+		}];
+		if (typeof node.inputs.cfg === "number" && Number.isFinite(node.inputs.cfg)) bindings.guidance = [{
+			node: id,
+			input: "cfg"
+		}];
 	}
 	if (!object(bindings) || Object.keys(bindings).some((key) => ![
 		"positive",
 		"seed",
-		"batch"
-	].includes(key))) fail$1("映射只能包含 positive、seed、batch");
+		"batch",
+		"negative",
+		"steps",
+		"guidance"
+	].includes(key))) fail$1("映射只能包含 positive、seed、batch、negative、steps、guidance");
+	for (const key of [
+		"negative",
+		"steps",
+		"guidance"
+	]) if (Object.hasOwn(bindings, key) && !Array.isArray(bindings[key])) fail$1("可选参数映射必须是数组");
 	const normalized = {}, used = /* @__PURE__ */ new Set();
 	for (const key of [
 		"positive",
 		"seed",
-		"batch"
+		"batch",
+		...[
+			"negative",
+			"steps",
+			"guidance"
+		].filter((key) => bindings[key]?.length)
 	]) {
 		const items = bindings[key] || [];
 		if (!Array.isArray(items) || items.length > 32 || key === "positive" && !items.length) fail$1("正向提示词映射不能为空，单项最多 32 个");
@@ -2230,8 +2255,13 @@ function comfyWorkflow(value) {
 			if (used.has(slot)) fail$1(`映射重复：${field} 已被使用`);
 			if (!Object.hasOwn(prompt[item.node].inputs, item.input)) fail$1(`${field} 不存在，请检查映射字段`);
 			if (Array.isArray(value)) fail$1(`${field} 是节点连接；种子等映射需指向源节点的实际字段，请维护者提供映射文件`);
-			if (key === "positive" && typeof value !== "string") fail$1(`${field} 必须是直接填写的字符串`);
-			if (key !== "positive" && !Number.isSafeInteger(value)) fail$1(`${field} 必须是直接填写的安全整数（绝对值不超过 9007199254740991）`);
+			if (["positive", "negative"].includes(key) && typeof value !== "string") fail$1(`${field} 必须是直接填写的字符串`);
+			if (![
+				"positive",
+				"negative",
+				"guidance"
+			].includes(key) && !Number.isSafeInteger(value)) fail$1(`${field} 必须是直接填写的安全整数（绝对值不超过 9007199254740991）`);
+			if (key === "guidance" && (typeof value !== "number" || !Number.isFinite(value))) fail$1(`${field} 必须是有限数值`);
 			used.add(slot);
 			return {
 				node: item.node,
@@ -2252,11 +2282,20 @@ function comfyWorkflow(value) {
 		digest: hash(result)
 	};
 }
-function compileComfyWorkflow(workflow, text) {
+function compileComfyWorkflow(workflow, text, options = {}) {
 	const config = comfyWorkflow(workflow);
 	if (!config) fail$1("请先导入工作流");
 	if (typeof text !== "string" || !text.trim() || text.length > 16e3) fail$1("画面提示词为空或过长");
 	const prompt = structuredClone(config.prompt), seed = randomInt(0, 2 ** 47);
+	for (const [field, binding] of [
+		["negativePrompt", "negative"],
+		["steps", "steps"],
+		["guidance", "guidance"]
+	]) {
+		if (!options[field]) continue;
+		if (!config.bindings[binding]?.length) fail$1("缺少 " + binding + " 映射");
+		for (const item of config.bindings[binding]) prompt[item.node].inputs[item.input] = field === "negativePrompt" ? options[field] : Number(options[field]);
+	}
 	for (const item of config.bindings.positive) prompt[item.node].inputs[item.input] = text;
 	for (const item of config.bindings.seed) prompt[item.node].inputs[item.input] = seed;
 	for (const item of config.bindings.batch) prompt[item.node].inputs[item.input] = 1;
@@ -2266,6 +2305,14 @@ function compileComfyWorkflow(workflow, text) {
 	}
 	return {
 		prompt,
+		generationParameters: Object.fromEntries([
+			"negative",
+			"steps",
+			"guidance"
+		].filter((key) => config.bindings[key]?.length).map((key) => [key, config.bindings[key].map((item) => ({
+			...item,
+			value: prompt[item.node].inputs[item.input]
+		}))])),
 		outputNode: config.outputNode,
 		digest: config.digest,
 		...config.bindings.seed.length ? { seed } : {}
@@ -2435,6 +2482,19 @@ const channels = [
 		hint: "使用已开启 API 的 WebUI / Forge 服务，沿用服务端模型与默认采样参数。本机地址指 Tavern 服务器，不是访问页面的手机；不会安装模型或修改服务端全局设置。"
 	}
 ];
+const IMAGE_ADVANCED_FIELDS = [
+	"negativePrompt",
+	"steps",
+	"guidance"
+];
+for (const channel of channels) {
+	const advanced = [
+		"novelai",
+		"webui",
+		"comfyui"
+	].includes(channel.id) ? IMAGE_ADVANCED_FIELDS : channel.id === "qwen" ? ["negativePrompt"] : [];
+	channel.fields = [...channel.fields, ...advanced];
+}
 const SCENE_IMAGE_CHANNELS = channels.filter((channel) => channel.id !== "dsh-image-gen").map(({ id, label, fields, hint, model }) => ({
 	id,
 	label,
@@ -2460,7 +2520,13 @@ function channelSettings(value = {}, id = value.provider || "openai") {
 	for (const field of defaults.fields) {
 		if (value[field] !== void 0 && typeof value[field] !== "string") throw new Error("渠道配置须为文本");
 		result[field] = (value[field] ?? defaults[field] ?? "").trim();
-		if (result[field].length > (field === "baseURL" ? 2e3 : 200)) throw new Error("渠道配置过长");
+		if (result[field].length > (field === "negativePrompt" ? 4e3 : field === "baseURL" ? 2e3 : 200)) throw new Error("渠道配置过长");
+	}
+	for (const field of ["steps", "guidance"]) {
+		if (!result[field]) continue;
+		const number = Number(result[field]), max = field === "steps" ? id === "novelai" ? 50 : 150 : id === "novelai" ? 10 : 30;
+		if (!/^\d+(?:\.\d+)?$/.test(result[field]) || !Number.isFinite(number) || number < (field === "steps" ? 1 : 0) || number > max || field === "steps" && !Number.isInteger(number)) throw new Error(`${field === "steps" ? "生成步数" : "提示词引导强度"}须为 ${field === "steps" ? 1 : 0}–${max}${field === "steps" ? " 的整数" : " 的数值"}`);
+		result[field] = String(number);
 	}
 	if (result.baseURL) {
 		const url = new URL(result.baseURL);
@@ -2480,7 +2546,10 @@ function channelSettings(value = {}, id = value.provider || "openai") {
 		if (!dimensions || dimensions.slice(1).some((value) => Number(value) < 64 || Number(value) > 2048 || Number(value) % 8)) throw new Error("WebUI 尺寸须为宽x高，每边 64–2048 且为 8 的倍数");
 	}
 	if (id === "novelai") novelaiSettings(result);
-	if (id === "comfyui") result.workflow = comfyWorkflow(value.workflow);
+	if (id === "comfyui") {
+		result.workflow = comfyWorkflow(value.workflow);
+		for (const field of IMAGE_ADVANCED_FIELDS) if (result[field] && !result.workflow?.bindings[field === "negativePrompt" ? "negative" : field]?.length) throw new Error("工作流缺少 " + field + " 映射，请重新导入支持该参数的工作流或清空该设置");
+	}
 	return result;
 }
 function imageCredentialRef(provider = "openai", authType) {
@@ -2524,7 +2593,10 @@ function imageChannelRequest(input) {
 			n_iter: 1,
 			seed: -1,
 			send_images: true,
-			save_images: false
+			save_images: false,
+			...config.negativePrompt ? { negative_prompt: config.negativePrompt } : {},
+			...config.steps ? { steps: Number(config.steps) } : {},
+			...config.guidance ? { cfg_scale: Number(config.guidance) } : {}
 		};
 	} else if (config.provider === "gemini") {
 		path = "interactions";
@@ -2584,7 +2656,8 @@ function imageChannelRequest(input) {
 			parameters: {
 				size: config.size,
 				n: 1,
-				prompt_extend: false
+				prompt_extend: false,
+				...config.negativePrompt ? { negative_prompt: config.negativePrompt } : {}
 			}
 		};
 	} else if (config.provider === "grok") {
@@ -3149,7 +3222,7 @@ async function generateComfyImage(input, deps) {
 	if (task) {
 		if (task.provider !== "comfyui" || !opaqueId(task.promptId) || task.baseURL !== config.baseURL || task.workflowDigest !== config.workflow.digest || task.outputNode !== config.workflow.outputNode) throw new Error("原 ComfyUI 任务与当前配置不匹配，请恢复原配置后查询");
 	} else {
-		const compiled = compileComfyWorkflow(config.workflow, input.prompt);
+		const compiled = compileComfyWorkflow(config.workflow, input.prompt, config);
 		task = {
 			provider: "comfyui",
 			promptId: randomUUID(),
@@ -3158,6 +3231,7 @@ async function generateComfyImage(input, deps) {
 			workflowDigest: compiled.digest,
 			outputNode: compiled.outputNode,
 			state: "submitting",
+			generationParameters: compiled.generationParameters,
 			...compiled.seed === void 0 ? {} : { seed: compiled.seed }
 		};
 		await saveTask({});
@@ -3231,6 +3305,7 @@ async function generateComfyImage(input, deps) {
 					metadata: {
 						promptId: task.promptId,
 						workflowDigest: task.workflowDigest,
+						...task.generationParameters ? { generationParameters: task.generationParameters } : {},
 						...task.seed === void 0 ? {} : { seed: task.seed }
 					}
 				};
@@ -3464,6 +3539,16 @@ async function requestSceneImage(input, deps) {
 		if (typeof info?.sd_model_hash === "string" && /^[a-f0-9]{8,64}$/i.test(info.sd_model_hash)) values.modelHash = info.sd_model_hash;
 		if (Object.keys(values).length) metadata = values;
 	} catch {}
+	const controls = Object.fromEntries([
+		"negative_prompt",
+		"steps",
+		"cfg_scale"
+	].filter((key) => spec.body[key] !== void 0).map((key) => [key, spec.body[key]]));
+	if (spec.body.parameters?.negative_prompt !== void 0) controls.negative_prompt = spec.body.parameters.negative_prompt;
+	if (Object.keys(controls).length) metadata = {
+		...metadata,
+		generationParameters: controls
+	};
 	const finish = (data) => ({
 		...imageBytes(data, maxBytes),
 		...metadata ? { metadata } : {}
@@ -3649,13 +3734,14 @@ function createImageConfiguration({ read, write, restore = void 0, credentials, 
 				input.signal?.throwIfAborted();
 				const current = await inspect(input.provider);
 				if ([
+					...IMAGE_ADVANCED_FIELDS,
 					"baseURL",
 					"model",
 					"size",
 					"aspectRatio",
 					"authType",
 					"username"
-				].some((key) => current[key] !== input[key]) || current.workflow?.digest !== input.workflow?.digest) throw Object.assign(/* @__PURE__ */ new Error("生图配置已变化，请重新整理画面；未请求生图"), { imageOutcome: "not_requested" });
+				].some((key) => IMAGE_ADVANCED_FIELDS.includes(key) ? (current[key] || "") !== (input[key] || "") : current[key] !== input[key]) || current.workflow?.digest !== input.workflow?.digest) throw Object.assign(/* @__PURE__ */ new Error("生图配置已变化，请重新整理画面；未请求生图"), { imageOutcome: "not_requested" });
 				if (!channelReady(input, input.apiKey)) throw Object.assign(/* @__PURE__ */ new Error("请先完成生图配置"), { imageOutcome: "not_requested" });
 				return {
 					...input,
