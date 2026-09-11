@@ -241,7 +241,9 @@ export function createFileResourceStore(options = {}) {
     const normalized = normalizeResourcePath(relative, 'card')
     const text = await readText(normalized)
     if (text === undefined) return undefined
-    return JSON.parse(text)
+    try { return JSON.parse(text) } catch {
+      throw new Error('人物卡 JSON 格式无效：' + normalized)
+    }
   }
 
   async function scanFiles(folder, prefix) {

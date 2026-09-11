@@ -702,15 +702,25 @@ export async function apply(ctx) {
     const cardPaths = await fileResources.list('card')
     const scriptBindings = await fileResources.scriptBindingsForCards(cardPaths)
     const cards = await Promise.all(cardPaths.map(async function (cardPath) {
-      const [workspace, hasImage] = await Promise.all([readCardWorkspace(cardPath), fileResources.hasCardImage(cardPath)])
-      const card = cardPreparation.project(workspace)
-      const scriptPath = scriptBindings[cardPath]
-      return {
-        path: cardPath,
-        name: card.name,
-        importedAt: Number(workspace && workspace.meta && workspace.meta.importedAt) || 0,
-        hasImage,
-        script: scriptPath === undefined ? null : { path: scriptPath, title: scriptPath.split('/').pop() }
+      try {
+        const [workspace, hasImage] = await Promise.all([readCardWorkspace(cardPath), fileResources.hasCardImage(cardPath)])
+        const card = cardPreparation.project(workspace)
+        const scriptPath = scriptBindings[cardPath]
+        return {
+          path: cardPath,
+          name: card.name,
+          importedAt: Number(workspace && workspace.meta && workspace.meta.importedAt) || 0,
+          hasImage,
+          script: scriptPath === undefined ? null : { path: scriptPath, title: scriptPath.split('/').pop() }
+        }
+      } catch {
+        // A broken working file must not hide the remaining library. Keep its
+        // identity visible; do not leak parser excerpts or overwrite evidence.
+        return {
+          path: cardPath, name: cardPath.split('/').pop().replace(/\.[^.]+$/, ''),
+          importedAt: 0, hasImage: false, script: null,
+          readError: '人物卡无法读取，请检查文件格式或访问权限：' + cardPath
+        }
       }
     }))
     return orderCardsByNewestImport(cards)
