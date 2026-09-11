@@ -34,3 +34,23 @@ test('分色包装原样交给宿主 Markdown，既不插入 HTML，也不改变
   assert.equal(rendered.children[0].props, props)
   assert.equal(rendered.children[0].props.text, props.text)
 })
+
+test('自选配色持久保存，恢复默认不改变分色开关，损坏数据安全回退', async () => {
+  const values = new Map(), events = []
+  const host = { localStorage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }, dispatchEvent: event => events.push(event.type) }
+  const context = vm.createContext({ window: host, CustomEvent: class { constructor(type) { this.type = type } } })
+  vm.runInContext(await readFile(new URL('../tavern-plugin/src/client/text-colors.js', import.meta.url), 'utf8'), context)
+  context.setTavernTextColorsEnabled(false)
+  context.setTavernTextColorOverrides({ quote: '#123456', em: '#abcdef' })
+  assert.equal(context.tavernTextColorOverrides(host).quote, '#123456')
+  assert.equal(context.tavernTextColorOverrides(host).em, '#abcdef')
+  context.setTavernTextColorOverrides({})
+  assert.equal(Object.keys(context.tavernTextColorOverrides(host)).length, 0)
+  assert.equal(context.tavernTextColorsEnabled(host), false)
+  values.set('dsh-tavern-text-color-overrides', '{broken')
+  assert.equal(Object.keys(context.tavernTextColorOverrides(host)).length, 0)
+  values.set('dsh-tavern-text-color-overrides', '{"quote":"red;}body{display:none}","em":"#fedcba"}')
+  assert.equal(context.tavernTextColorOverrides(host).quote, undefined)
+  assert.equal(context.tavernTextColorOverrides(host).em, '#fedcba')
+  assert.equal(events.length, 3)
+})

@@ -9,7 +9,7 @@ let frame = client.buildTavernFrameDocument({ content: '<style>.cote-content{col
 frame = frame.replace(/<link\b[^>]*>/g,'');
 const inside = `<script>window.cardLoadCount=1;parent.postMessage({type:'color-test-boot'},'*');
 addEventListener('message',event=>{if(event.data?.type!=='inspect-colors')return;
-setTimeout(()=>parent.postMessage({type:'frame-colors', count:Array.from(CSS.highlights.values()).reduce((sum,h)=>sum+h.size,0), loads:window.cardLoadCount},'*'),60);});<\/script>`;
+setTimeout(()=>parent.postMessage({type:'frame-colors', count:Array.from(CSS.highlights.values()).reduce((sum,h)=>sum+h.size,0), loads:window.cardLoadCount, styles:document.querySelector('style[data-dsh-tavern-text-colors]')?.textContent},'*'),60);});<\/script>`;
 frame = frame.replace('</body>', inside+'</body>');
 const server=createServer((request,response)=>{
  if(request.url.startsWith('/api/')) {response.writeHead(200,{'Content-Type':'text/css'});response.end('');return;}
@@ -17,20 +17,27 @@ const server=createServer((request,response)=>{
  response.end(`<!doctype html><meta charset="utf-8"><title>正文分色验证</title>
  <style>body{background:#f5f3ee;color:#252830;font:17px/1.8 sans-serif;max-width:1100px;margin:30px auto}h1{font-size:24px}main{display:grid;grid-template-columns:1fr 1fr;gap:24px}article{padding:20px;background:white;border-radius:12px}iframe{width:100%;height:390px;border:0}button{padding:4px 12px}code{font-size:13px}.own-color{color:#458270}pre{font-size:12px}#result{margin-top:20px}</style>
  <h1>正文分色</h1><p>普通文字保持原色 · 引号文字为金色 · 斜体为紫色</p>
- <main><article><h2>普通正文 · 浅色</h2><div id="prose">${sample}</div></article><article style="background:#20212c;color:#d4d4d8"><h2>人物卡 HTML · 深色</h2><iframe id="frame" sandbox="allow-scripts"></iframe></article></main><pre id="result">RUNNING</pre>
+ <p><label>对白颜色 <input id=quote type=color value="#edb75f"></label>　<label>斜体颜色 <input id=em type=color value="#bba4e3"></label>　<button id=reset>恢复默认配色</button></p><main><article><h2>普通正文 · 浅色</h2><div id="prose">${sample}</div></article><article style="background:#20212c;color:#d4d4d8"><h2>人物卡 HTML · 深色</h2><iframe id="frame" sandbox="allow-scripts"></iframe></article></main><pre id="result">RUNNING</pre>
  <script>
  const create=${client.installTavernTextColors.toString()}, find=${client.findTavernQuoteRanges.toString()};
  const prose=document.querySelector('#prose'), original=prose.innerHTML, controls=create(prose,{enabled:true},find);
  const textRanges=()=>Array.from(CSS.highlights.values()).flatMap(h=>Array.from(h,r=>r.toString()));
  const check=(ok,label)=>{if(!ok)throw Error(label)};
  let frameStep=0; const frame=document.querySelector('#frame');
- function send(enabled){frame.contentWindow.postMessage({type:'dsh-tavern-text-colors',token:'color-smoke',enabled},'*');frame.contentWindow.postMessage({type:'inspect-colors'},'*');}
+ let overrides={};
+ function send(enabled){frame.contentWindow.postMessage({type:'dsh-tavern-text-colors',token:'color-smoke',enabled,textColorOverrides:overrides},'*');frame.contentWindow.postMessage({type:'inspect-colors'},'*');}
  try {
   const ranges=textRanges();
   check(ranges.some(x=>x.includes('很高兴')),'quote across inline markup');
   check(ranges.some(x=>x.includes('昨天的约定')),'emphasis');
   check(!ranges.some(x=>/保持原样|指定的颜色/.test(x)),'preserve code UI links and author colors');
   check(prose.innerHTML===original,'DOM/source unchanged');
+  controls.setColors({quote:'#112233',em:'#445566'});
+  check(document.querySelector('style[data-dsh-tavern-text-colors]').textContent.includes('#112233'),'custom quote color');
+  check(document.querySelector('style[data-dsh-tavern-text-colors]').textContent.includes('#445566'),'custom emphasis color');
+  check(prose.innerHTML===original,'color change preserves DOM');
+  controls.setColors({});
+  check(document.querySelector('style[data-dsh-tavern-text-colors]').textContent.includes('#875000'),'restore adaptive palette');
   controls.setEnabled(false);check(textRanges().length===0,'disable');controls.setEnabled(true);
   const stream=document.createElement('p');stream.textContent='“还没说完';prose.appendChild(stream);
   setTimeout(()=>{try{
@@ -41,13 +48,15 @@ const server=createServer((request,response)=>{
   addEventListener('message',event=>{try {
    if(event.source!==frame.contentWindow)return;
    if(['dsh-tavern-frame-ready','color-test-boot'].includes(event.data?.type)&&frameStep===0){frameStep=1;document.querySelector('#result').textContent='RUNNING ready';send(true);}
-   if(event.data?.type==='frame-colors'){document.querySelector('#result').textContent='RUNNING frame phase '+frameStep;
+   if(event.data?.type==='frame-colors'&&frameStep<4){document.querySelector('#result').textContent='RUNNING frame phase '+frameStep;
     check(event.data.loads===1,'toggle does not reload card');
     if(frameStep===1){check(event.data.count>0,'isolated iframe enabled');frameStep=2;send(false);}
-    else if(frameStep===2){check(event.data.count===0,'isolated iframe disabled');frameStep=3;send(true);}
-    else if(frameStep===3){check(event.data.count>0,'isolated iframe restored');frameStep=4;setTimeout(()=>{if(!document.querySelector('#result').textContent.startsWith('FAIL'))document.querySelector('#result').textContent='PASS — 分色、原卡颜色、流式更新、开关、独立 iframe 均通过';},200);}
+    else if(frameStep===2){check(event.data.count===0,'isolated iframe disabled');frameStep=3;overrides={quote:'#112233',em:'#445566'};send(true);}
+    else if(frameStep===3){check(event.data.count>0,'isolated iframe restored');check(event.data.styles.includes('#112233')&&event.data.styles.includes('#445566'),'iframe custom colors');frameStep=4;overrides={};send(true);setTimeout(()=>{if(!document.querySelector('#result').textContent.startsWith('FAIL'))document.querySelector('#result').textContent='PASS — 分色、原卡颜色、流式更新、开关、独立 iframe 均通过';},200);}
    }
   } catch(error){document.querySelector('#result').textContent='FAIL '+error.message}});
+  for(const key of ['quote','em'])document.querySelector('#'+key).addEventListener('input',event=>{overrides={...overrides,[key]:event.target.value};controls.setColors(overrides);send(true);});
+  document.querySelector('#reset').onclick=()=>{overrides={};controls.setColors(overrides);send(true);document.querySelector('#quote').value='#edb75f';document.querySelector('#em').value='#bba4e3';};
   frame.srcdoc=${JSON.stringify(frame).replace(/</g,'\\u003c')};
  }catch(error){document.querySelector('#result').textContent='FAIL '+error.message}
  </script>`);

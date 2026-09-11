@@ -1833,13 +1833,20 @@ window.__ModuleLoader__.load({
 
 		function installTavernTextColors(root, options, findQuotes) {
 		    const doc = root.ownerDocument, win = doc.defaultView;
-		    if (!win.CSS || !win.CSS.highlights || typeof win.Highlight !== 'function') return { setEnabled() {}, dispose() {} };
+		    if (!win.CSS || !win.CSS.highlights || typeof win.Highlight !== 'function') return { setEnabled() {}, setColors() {}, dispose() {} };
 		    const prefix = 'dsh-tavern-text-' + Math.random().toString(36).slice(2);
 		    const colors = { 'quote-light': '#875000', 'quote-dark': '#edb75f', 'em-light': '#75529b', 'em-dark': '#bba4e3' };
 		    const highlights = new Map();
 		    const style = doc.createElement('style');
 		    style.setAttribute('data-dsh-tavern-text-colors', '');
-		    style.textContent = Object.entries(colors).map(([kind, color]) => '::highlight(' + prefix + '-' + kind + '){color:' + color + '}').join('\n');
+		    function setColors(overrides) {
+		        style.textContent = Object.entries(colors).map(([kind, fallback]) => {
+		            const value = overrides && overrides[kind.startsWith('quote') ? 'quote' : 'em'];
+		            const color = typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+		            return '::highlight(' + prefix + '-' + kind + '){color:' + color + '}';
+		        }).join('\n');
+		    }
+		    setColors(options.colors);
 		    doc.head.appendChild(style);
 		    for (const kind of Object.keys(colors)) {
 		        const highlight = new win.Highlight();
@@ -1914,6 +1921,7 @@ window.__ModuleLoader__.load({
 		    if (doc.documentElement !== root) observer.observe(doc.documentElement, { attributes: true, attributeFilter: ['style', 'class'] });
 		    refresh();
 		    return {
+		        setColors,
 		        setEnabled(value) { enabled = value !== false; if (timer !== null) win.clearTimeout(timer); refresh(); },
 		        dispose() {
 		            disposed = true; observer.disconnect(); if (timer !== null) win.clearTimeout(timer);
@@ -1930,11 +1938,23 @@ window.__ModuleLoader__.load({
 		    try { window.localStorage.setItem('dsh-tavern-text-colors', enabled ? 'on' : 'off'); } catch (_) {}
 		    window.dispatchEvent(new CustomEvent('dsh-tavern-text-colors-changed', { detail: enabled }));
 		}
+		function tavernTextColorOverrides(host) {
+		    try {
+		        const value = JSON.parse(host.localStorage.getItem('dsh-tavern-text-color-overrides') || '{}');
+		        const result = {};
+		        for (const key of ['quote', 'em']) if (value && typeof value[key] === 'string' && /^#[0-9a-f]{6}$/i.test(value[key])) result[key] = value[key];
+		        return result;
+		    } catch (_) { return {}; }
+		}
+		function setTavernTextColorOverrides(colors) {
+		    try { window.localStorage.setItem('dsh-tavern-text-color-overrides', JSON.stringify(colors)); } catch (_) {}
+		    window.dispatchEvent(new CustomEvent('dsh-tavern-text-colors-changed'));
+		}
 		function TavernColoredMarkdown(props) {
 		    const root = React.useRef(null);
 		    React.useEffect(function () {
-		        const colors = installTavernTextColors(root.current, { enabled: tavernTextColorsEnabled(window) }, findTavernQuoteRanges);
-		        const changed = event => colors.setEnabled(event.type === 'storage' ? tavernTextColorsEnabled(window) : event.detail);
+		        const colors = installTavernTextColors(root.current, { enabled: tavernTextColorsEnabled(window), colors: tavernTextColorOverrides(window) }, findTavernQuoteRanges);
+		        const changed = () => { colors.setColors(tavernTextColorOverrides(window)); colors.setEnabled(tavernTextColorsEnabled(window)); };
 		        window.addEventListener('dsh-tavern-text-colors-changed', changed);
 		        window.addEventListener('storage', changed);
 		        return function () { window.removeEventListener('dsh-tavern-text-colors-changed', changed); window.removeEventListener('storage', changed); colors.dispose(); };
@@ -1943,8 +1963,9 @@ window.__ModuleLoader__.load({
 		}
 		function TavernTextColorSettings() {
 		    const [enabled, setEnabled] = React.useState(() => tavernTextColorsEnabled(window));
+		    const [overrides, setOverrides] = React.useState(() => tavernTextColorOverrides(window));
 		    React.useEffect(function () {
-		        const changed = event => setEnabled(event.type === 'storage' ? tavernTextColorsEnabled(window) : event.detail !== false);
+		        const changed = () => { setEnabled(tavernTextColorsEnabled(window)); setOverrides(tavernTextColorOverrides(window)); };
 		        window.addEventListener('dsh-tavern-text-colors-changed', changed);
 		        window.addEventListener('storage', changed);
 		        return function () { window.removeEventListener('dsh-tavern-text-colors-changed', changed); window.removeEventListener('storage', changed); };
@@ -1953,8 +1974,17 @@ window.__ModuleLoader__.load({
 		        React.createElement('label', { className: 'dsh-tavern-settings-row' },
 		            React.createElement('span', { className: 'dsh-tavern-settings-copy' },
 		                React.createElement('span', { className: 'dsh-tavern-settings-title' }, '正文分色'),
-		                React.createElement('span', { className: 'dsh-tavern-settings-desc' }, '引号内文字用金色，斜体用紫色，普通文字保持原色。保留人物卡已有配色；仅影响当前浏览器显示。')),
-		            React.createElement('input', { type: 'checkbox', checked: enabled, onChange: event => { setEnabled(event.target.checked); setTavernTextColorsEnabled(event.target.checked); } })));
+		                React.createElement('span', { className: 'dsh-tavern-settings-desc' }, '为引号内对白和斜体文字分别选色，普通文字保持原色。保留人物卡已有配色；仅影响当前浏览器显示。')),
+		            React.createElement('input', { type: 'checkbox', checked: enabled, onChange: event => { setEnabled(event.target.checked); setTavernTextColorsEnabled(event.target.checked); } })),
+		        ...[['quote', '对白颜色', '#edb75f'], ['em', '斜体颜色', '#bba4e3']].map(([key, label, fallback]) =>
+		            React.createElement('label', { key, className: 'dsh-tavern-settings-row' },
+		                React.createElement('span', { className: 'dsh-tavern-settings-copy' },
+		                    React.createElement('span', { className: 'dsh-tavern-settings-title' }, label),
+		                    React.createElement('span', { className: 'dsh-tavern-settings-desc' }, overrides[key] ? overrides[key].toUpperCase() : '默认：自动适配深浅背景')),
+		                React.createElement('input', { type: 'color', 'aria-label': label, style: { width: 48, height: 32, flexShrink: 0, cursor: 'pointer' }, value: overrides[key] || fallback, disabled: !enabled,
+		                    onChange: event => { const next = { ...overrides, [key]: event.target.value }; setOverrides(next); setTavernTextColorOverrides(next); } }))),
+		        React.createElement('div', { className: 'dsh-tavern-settings-row' }, React.createElement('button', { type: 'button', className: 'dsh-tavern-btn', disabled: !Object.keys(overrides).length,
+		            onClick: () => { setOverrides({}); setTavernTextColorOverrides({}); } }, '恢复默认配色')));
 		}
 
 		function buildTavernFrameDocument(input) {
@@ -1974,7 +2004,7 @@ window.__ModuleLoader__.load({
 			const readyReporter = '<script data-dsh-tavern-frame-ready>(function(){var token=' + token + ',armed=false,timer=0,reported=false;function report(){timer=0;if(reported)return;reported=true;var finish=function(){parent.postMessage({type:"dsh-tavern-frame-ready",token:token},"*");};if(typeof requestAnimationFrame==="function")requestAnimationFrame(function(){requestAnimationFrame(finish);});else setTimeout(finish,0);}function schedule(){if(!armed||reported)return;if(timer)clearTimeout(timer);timer=setTimeout(report,240);}new MutationObserver(schedule).observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});addEventListener("load",schedule);Promise.resolve(window.__dshTavernHelperReady).catch(function(){return false;}).then(function(){armed=true;schedule();});})();<\/script>';
 			const layoutNormalizer = '<script data-dsh-tavern-layout>(function(){if(!document.body)return;Array.prototype.slice.call(document.body.childNodes).forEach(function(node){var value=String(node.nodeValue||"");if(node.nodeType===3&&!/\\S/.test(value)&&/[\\r\\n]/.test(value))node.nodeValue="";});})();<\/script>';
 			const fontRuntime = '<script data-dsh-tavern-font-runtime>(' + installTavernFrameFonts.toString() + ')(' + token + ',' + restoreTavernFrameFontStyles.toString() + ');<\/script>';
-            const textColorRuntime = '<script data-dsh-tavern-text-colors>(function(){const colors=(' + installTavernTextColors.toString() + ')(document.body,{enabled:false},' + findTavernQuoteRanges.toString() + ');addEventListener("message",function(event){const data=event.data;if(event.source===parent&&data&&data.token===' + token + '&&(data.type==="dsh-tavern-text-colors"||data.type==="dsh-tavern-font-size"))colors.setEnabled(data.type==="dsh-tavern-font-size"?data.textColorsEnabled:data.enabled);});addEventListener("pagehide",()=>colors.dispose(),{once:true});})();<\/script>';
+            const textColorRuntime = '<script data-dsh-tavern-text-colors>(function(){const colors=(' + installTavernTextColors.toString() + ')(document.body,{enabled:false},' + findTavernQuoteRanges.toString() + ');addEventListener("message",function(event){const data=event.data;if(event.source===parent&&data&&data.token===' + token + '&&(data.type==="dsh-tavern-text-colors"||data.type==="dsh-tavern-font-size")){colors.setColors(data.textColorOverrides);colors.setEnabled(data.type==="dsh-tavern-font-size"?data.textColorsEnabled:data.enabled);}});addEventListener("pagehide",()=>colors.dispose(),{once:true});})();<\/script>';
 			const cleanRuntimeReporter = runtimeReporter.replace('dom=copy.innerHTML;', '(' + restoreTavernFrameFontStyles.toString() + ')(copy);Array.from(copy.querySelectorAll("script[data-dsh-tavern-font-runtime],script[data-dsh-tavern-text-colors]")).forEach(function(node){node.remove();});dom=copy.innerHTML;');
 			return '<!doctype html><html><head><meta charset="utf-8">'
 				+ '<meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -4512,7 +4542,7 @@ window.__ModuleLoader__.load({
                 channels.forEach(function (channel, token) {
                     if (document && token !== document.token) return;
                     const node = channel.element();
-                    if (node && node.contentWindow) node.contentWindow.postMessage({ type: "dsh-tavern-text-colors", token: token, enabled: tavernTextColorsEnabled(hostWindow) }, "*");
+                    if (node && node.contentWindow) node.contentWindow.postMessage({ type: "dsh-tavern-text-colors", token: token, enabled: tavernTextColorsEnabled(hostWindow), textColorOverrides: tavernTextColorOverrides(hostWindow) }, "*");
                 });
             }
 			function sendFontSize(document) {
@@ -4525,7 +4555,7 @@ window.__ModuleLoader__.load({
 				channels.forEach(function (channel, token) {
 					if (document && token !== document.token) return;
 					const node = channel.element();
-					if (node && node.contentWindow) node.contentWindow.postMessage({ type: "dsh-tavern-font-size", token: token, fontSize: fontSize, textColorsEnabled: tavernTextColorsEnabled(hostWindow) }, "*");
+					if (node && node.contentWindow) node.contentWindow.postMessage({ type: "dsh-tavern-font-size", token: token, fontSize: fontSize, textColorsEnabled: tavernTextColorsEnabled(hostWindow), textColorOverrides: tavernTextColorOverrides(hostWindow) }, "*");
 				});
 			}
 			function reconcile() {
