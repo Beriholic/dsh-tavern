@@ -225,6 +225,8 @@ curl -fsSL https://cdn.jsdelivr.net/gh/flizzywine/dsh-tavern@main/install.sh | D
 
 首次使用时，在左侧栏底部打开 **设置 → 模型**，填写模型服务的 API 密钥。
 
+长对话可在 **设置 → Tavern → 上下文压缩** 中选择每 N 轮或达到指定上下文占用比例时自动压缩，默认保持手动。自动压缩会等待剧情后台结算结束，再一起处理前后台；手动入口仍在 **更多 → 压缩上下文**。详见[上下文压缩说明](docs/auto-compaction.md)。
+
 命令行版的运行时、Profile、配置和游戏数据默认位于 `~/.dsh-tavern/`，与外部 DSH 分开。可通过 `DSH_TAVERN_CLI_HOME` 指定位置；安装后启动器会记住该路径。首次升级时会复制旧 CLI 的配置和游戏数据，保留原件；Desktop / DSHA 数据不会自动迁入。Node.js 仍使用系统安装的版本。
 
 #### 手动安装

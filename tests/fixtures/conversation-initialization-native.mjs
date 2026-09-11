@@ -96,6 +96,7 @@ export async function createInitializationNative(bootPath) {
     return initialization
   }
   return {
+    ctx,
     importHistory: async input => { open(); return importer.import(input) },
     open, state, requests, input: { cardPath: card.path, sessionId, mode: 'play', userName: '玩家' },
     get target() { return target }, get persistence() { return persistence },

@@ -91,7 +91,7 @@ test('实验分支始终公开兼容模式，旧关闭信任值不影响运行',
 })
 
 test('设置界面只提供联网搜索与后台模型选择，不渲染兼容模式和旧样式选项', () => {
-  const context = { SceneImageSettings: function SceneImageSettings() {}, React: {
+  const context = { ContextCompactionSettings: function ContextCompactionSettings() {}, SceneImageSettings: function SceneImageSettings() {}, React: {
     useState: initial => [initial, () => {}],
     useEffect() {},
     createElement: (type, props, ...children) => ({ type, props, children })
@@ -200,6 +200,7 @@ test('旧 play-mode 覆盖保留在数据中，但不再出现在可用提示词
 test('系统正文提示词默认使用内置内容，并可保存自定义覆盖', function () {
   const defaults = { story: '内置正文提示词' }
   assert.deepEqual(presentTavernSettings({}, defaults), {
+    contextCompaction: { mode: 'manual', rounds: 20, percent: 80, revision: 0 },
     compatibilityMode: true,
     webSearchEnabled: false,
     backgroundModel: null,
@@ -214,6 +215,7 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
   assert.equal(saved.unknown, 1)
   assert.equal(resolveSystemPrompt(saved, 'story', function () { return '默认' }), '用户正文提示词')
   assert.deepEqual(presentTavernSettings(saved, defaults), {
+    contextCompaction: { mode: 'manual', rounds: 20, percent: 80, revision: 0 },
     compatibilityMode: true,
     webSearchEnabled: false,
     backgroundModel: null,
@@ -227,11 +229,13 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
 
 test('恢复默认只删除正文覆盖并保留其他设置', function () {
   const saved = applyTavernSettingsPatch({
+    contextCompaction: { mode: 'manual', rounds: 20, percent: 80, revision: 0 },
     compatibilityMode: true,
     promptOverrides: { story: '用户正文提示词', future: '保留' }
   }, { storyPrompt: null })
 
   assert.deepEqual(saved, {
+    contextCompaction: { mode: 'manual', rounds: 20, percent: 80, revision: 0 },
     compatibilityMode: true,
     promptOverrides: { future: '保留' }
   })

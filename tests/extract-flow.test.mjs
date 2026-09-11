@@ -929,33 +929,11 @@ test('Session 顶栏工具区可以把服务端投影后的纯对话下载为 TX
   assert.doesNotMatch(sidebar, /导出 TXT|exportConversation/)
 })
 
-test('游玩对话压缩前台与后台 Session，并保留各自的压缩结果', () => {
-  const action = between(clientSource, 'function TavernCompactionAction', 'function TavernPlayerNameAction')
-  const dock = between(clientSource, 'function CandidateDockActions', 'function CandidateQuestion')
-
-  assert.match(action, /rpc\("prepareCompaction", \{\}, props\.sessionId\)/)
-  assert.match(action, /executeTarget\(plan\.foregroundSessionId/)
-  assert.match(action, /rpc\("compactBackground", \{ operationId: plan\.operationId \}, props\.sessionId\)/)
-  assert.doesNotMatch(action, /executeTarget\(plan\.backgroundSessionId/)
-  assert.match(action, /props\.executeCompact\(sessionId\)/)
-  assert.match(action, /rpc\("completeCompaction"/)
-  assert.match(action, /部分成功/)
-  assert.match(action, /setResultTitle\("前台：" \+ foreground\.message \+ "；后台：" \+ background\.message\)/)
-  assert.match(action, /前台/)
-  assert.match(action, /后台/)
-  assert.match(action, /"压缩上下文"/)
-  assert.match(action, /busy \|\| running/)
-  assert.match(action, /className: props\.inMenu \? "" : "dsh-tavern-choice-trigger"/)
-  assert.match(dock, /React\.createElement\(TavernMoreActions, props\)/)
-  assert.match(dock, /React\.createElement\(TavernCompactionAction, props\)/)
-  assert.match(dock, /if \(!sessionMode\) return null/)
-  assert.match(dock, /isPlayMode\(sessionMode\) && latestMessageId \? React\.createElement\(CandidateAction/)
-  assert.ok(dock.indexOf('if (!sessionMode) return null') < dock.indexOf('React.createElement(TavernCompactionAction, props)'))
-  assert.doesNotMatch(action, /rpc\("getSession"/)
-  assert.doesNotMatch(clientSource, /id: "dsh-tavern-context-compaction"/)
-  assert.match(clientSource, /ctx\.remote\.commands\.execute\(sessionId, "\/compact", \[\]\)/)
-  assert.match(serverSource, /case 'compactBackground'/)
-  assert.match(clientSource, /"remote", "remote\.commands"/)
+test('游玩对话由服务端联合压缩，浏览器只发起一次操作', () => {
+  assert.match(clientSource, /rpc\("runCompaction", \{\}, props.sessionId\)/)
+  assert.match(clientSource, /operation\.foreground\.message/)
+  assert.match(clientSource, /operation\.background\.message/)
+  assert.doesNotMatch(clientSource, /rpc\("prepareCompaction"/)
 })
 
 test('人物卡库通过列表进入详情，世界书编辑跳转到独立世界书库', () => {

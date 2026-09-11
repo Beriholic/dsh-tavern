@@ -213,5 +213,5 @@ export function createBackgroundTaskCoordinator(options = {}) {
     })
   }
 
-  return Object.freeze({ activity, operation, begin, recover })
+  return Object.freeze({ activity, operation, begin, recover, exclusive: serialize })
 }

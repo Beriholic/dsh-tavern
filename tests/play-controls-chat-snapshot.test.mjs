@@ -12,7 +12,7 @@ function dockWith(nodes, mode = 'story', releaseCapabilities = { sceneImages: tr
   const context = {
     React: { createElement: (type, props, ...children) => ({ type, props, children }) },
     useTavernSessionMode: () => mode,
-    useLiveTavernView: () => ({ view: { releaseCapabilities, replyProjections: nodes.some(node => node.kind === 'assistant') ? [{ turn: 1 }, { turn: 2 }] : [] } }),
+    useLiveTavernView: () => ({ view: { releaseCapabilities, latestAssistantTurn: nodes.some(node => node.kind === 'assistant') ? 2 : 0, replyProjections: nodes.some(node => node.kind === 'assistant') ? [{ turn: 1 }, { turn: 2 }] : [] } }),
     isPlayMode: value => ['story', 'free', 'script'].includes(value),
     CandidateAction: 'actions', TavernCompactionAction: 'compact', TavernMoreActions: 'more', SceneImageAction: 'scene-image',
     props: {

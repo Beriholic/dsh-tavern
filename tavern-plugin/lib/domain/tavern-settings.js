@@ -1,3 +1,4 @@
+import { compactionPolicy } from './auto-compaction.js'
 import { normalizeBackgroundModel } from './background-model-selection.js'
 
 function object(value) {
@@ -17,6 +18,7 @@ export function normalizeBackgroundTasks(value) {
 export function applyTavernSettingsPatch(current, patch) {
   const next = Object.assign({}, object(current))
   const input = object(patch)
+  if (Object.hasOwn(input, 'contextCompaction')) next.contextCompaction = { ...compactionPolicy(input.contextCompaction), revision: Date.now() }
   if (Object.prototype.hasOwnProperty.call(input, 'backgroundTasks')) {
     next.backgroundTasks = normalizeBackgroundTasks({ ...normalizeBackgroundTasks(next.backgroundTasks), ...object(input.backgroundTasks) })
   }
@@ -73,6 +75,7 @@ export function presentTavernSettings(document, defaults) {
   })
   const story = prompts.find(function (item) { return item.name === 'story' }) || { text: '', customized: false }
   return {
+    contextCompaction: compactionPolicy(object(document).contextCompaction),
     compatibilityMode: true,
     webSearchEnabled: object(document).webSearchEnabled === true,
     backgroundModel: normalizeBackgroundModel(object(document).backgroundModel),

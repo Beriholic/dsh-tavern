@@ -1,3 +1,4 @@
+import { createAutoCompaction, installCompactionPolicy } from './domain/auto-compaction.js'
 import { createPerformanceDiagnostics } from './domain/performance-diagnostics.js'
 import { backgroundSuppressedTurns } from './domain/background-surface.js'
 import { ensureCardWorkspaceMessage } from './domain/card-workspace-message.js'
@@ -139,7 +140,22 @@ export async function apply(ctx) {
     return
   }
   const agentDefaultModel = ctx.get('agentDefaultModel')
+  let autoCompaction = null
+  const compactionTimers = new Map()
+  const compactionAbort = new AbortController()
   const sessionSignals = createSessionSignalTransport()
+  function queueAutoCompaction(sessionId) {
+    if (!autoCompaction || compactionAbort.signal.aborted || compactionTimers.has(sessionId)) return
+    const timer = setTimeout(async () => {
+      compactionTimers.delete(sessionId)
+      const agent = agentRegistry.get(sessionId)
+      if (!agent || agent.phase?.kind === 'running') return
+      try { await autoCompaction.run(sessionId, { agent, signal: compactionAbort.signal }) }
+      catch (error) { if (!compactionAbort.signal.aborted) console.warn('dsh-tavern: 自动压缩暂未执行:', str(error.message || error)) }
+    }, 50)
+    timer.unref?.(); compactionTimers.set(sessionId, timer)
+  }
+  ctx.effect(() => () => { compactionAbort.abort(); for (const timer of compactionTimers.values()) clearTimeout(timer) })
 	const tavernScriptDispatch = createTavernScriptDispatch({
     publishSignal: function (sessionId, signal) { sessionSignals.publish(sessionId, signal) }
   })
@@ -626,13 +642,17 @@ export async function apply(ctx) {
     const saved = await rawWriteChat(chat, metadata)
     await syncChatSummary(saved)
     void coordinationEvents?.publish(saved.sessionId)
+    if (!str(metadata?.source).startsWith('compaction.')) queueAutoCompaction(saved.sessionId)
     return saved
   }
   async function updateChat(chatId, mutation, metadata) {
     if (deletedChatIds.has(chatId)) throw new Error('对话已删除')
     const saved = await rawUpdateChat(chatId, mutation, metadata)
     await syncChatSummary(saved)
-    if (saved !== undefined) void coordinationEvents?.publish(saved.sessionId)
+    if (saved !== undefined) {
+      void coordinationEvents?.publish(saved.sessionId)
+      if (!str(metadata?.source).startsWith('compaction.')) queueAutoCompaction(saved.sessionId)
+    }
     return saved
   }
   conversationRegistry = createTavernConversationRegistry({
@@ -1169,6 +1189,7 @@ export async function apply(ctx) {
       .map(Number).filter(function (turn) { return Number.isSafeInteger(turn) && turn > 0 }))).sort(function (left, right) { return left - right })
     return {
       chatId: chat.id,
+      contextCompaction: chat.contextCompaction || null,
       mode: chat.mode || 'story',
       requestMode: chat.requestMode === 'sillytavern' ? 'sillytavern' : 'dsh',
       playerName: str(chat.macroState && chat.macroState.userName).trim() || '你',
@@ -1524,7 +1545,7 @@ export async function apply(ctx) {
   const backgroundTasks = createBackgroundTaskCoordinator({
     store: { readChat, writeChat, updateChat },
     timeline: storyTimeline,
-    blocked: function (chat) { return tavernCompaction !== null && tavernCompaction.blocked(chat) }
+    blocked: function (chat) { return (tavernCompaction !== null && tavernCompaction.blocked(chat)) || Boolean(autoCompaction?.blocked(chat)) }
   })
   tavernCompaction = createTavernCompactionCoordinator({
     store: { chatForSession, updateChat },
@@ -1548,6 +1569,88 @@ export async function apply(ctx) {
       return { status: 'failed', message: str(error && error.message || error) || '后台压缩失败' }
     }
   }
+  const configuredCompactionEngines = new WeakSet()
+  const pendingCompactionMessages = new WeakMap()
+  const compactionDisposers = []
+  ctx.effect(() => () => { for (const dispose of compactionDisposers) dispose() })
+  function agentCompaction(agent) {
+    const engine = agent?.ctx?.get('compaction')
+    if (!engine || typeof engine.compactNow !== 'function') throw new Error('当前 Agent 未提供原生压缩能力')
+    return engine
+  }
+  async function withCompactionSession(id, work) {
+    const live = agentRegistry.get(id)
+    if (live) return work(live)
+    const handle = await agentRegistry.resume({ resumeSessionId: id })
+    try { return await work(handle.agent) } finally { await handle.dispose() }
+  }
+  autoCompaction = createAutoCompaction({
+    readChat: chatForSession, updateChat,
+    policy: async () => (await readTavernSettings()).contextCompaction,
+    activity: chat => backgroundTasks.activity(chat),
+    exclusive: backgroundTasks.exclusive,
+    settle: chat => queueSettlement(chat.id),
+    async pressure(agent, signal, pendingMessages = []) {
+      if (!agent) return null
+      let selected
+      try { const state = ctx.get('sessionProjections')?.stateOf(agent.session, 'modelSelection'); selected = state?.pending || state?.lastUsed } catch {}
+      const target = selected || agent.session.requestHeader()?.config
+      if (!target?.provider || !target?.model) return null
+      const info = await ctx.llm.resolveModelInfo(target.provider, target.model, signal)
+      const capacity = info?.context?.contextWindow
+      if (!Number.isFinite(capacity) || capacity <= 0) return null
+      const meter = ctx.get('tokenMeter'), previous = agent.session.requestHeader()
+      const envelope = previous ? { ...previous, config: { ...previous.config, ...target } } : undefined
+      const pendingTokens = pendingMessages.reduce((sum, message) => sum + meter.estimateMessage(message), 0)
+      return { percent: 100 * (meter.measure(agent.session, envelope).totalTokens + pendingTokens) / capacity }
+    },
+    checkpoint: id => withCompactionSession(id, agent => agent.session.seq),
+    recover: (id, before) => withCompactionSession(id, agent => {
+      const events = sessionEvents(agent.session).filter(event => event.seq >= before)
+      const summary = events.find(event => event.type === 'compaction/summary')
+      const completed = summary && events.some(event => event.type === 'compaction/end' && event.data?.compactionId === summary.data.compactionId && !event.data?.error)
+      const replaced = summary && events.some(event => event.type === 'user/message' && event.surfaceOp?.op === 'replace' && event.data?.source?.compactionId === summary.data.compactionId)
+      return completed && replaced ? 'succeeded' : 'unknown'
+    }),
+    markBackground: (id, target) => updateChat(id, chat => {
+      const participant = chat.timeline?.participants?.background
+      if (participant?.sessionId === target) { participant.requiresNewSessionOnRewind = true; participant.compactionPlannedAt = Date.now() }
+      return chat
+    }, { source: 'compaction.background' }),
+    async compact(id, side, options, signal) {
+      if (side === 'foreground' && options.openTurnCompact) return options.openTurnCompact()
+      if (side === 'background') return backgroundAgentRunner.compact({ sessionId: id, signal })
+      return withCompactionSession(id, agent => agentCompaction(agent).compactNow(agent, signal))
+    }
+  })
+  function configureAgentCompaction(agent) {
+    const engine = agentCompaction(agent)
+    if (configuredCompactionEngines.has(engine)) return
+    configuredCompactionEngines.add(engine)
+    compactionDisposers.push(installCompactionPolicy(engine, async (target, trigger, signal, fallback, forced) => {
+      const background = backgroundAgentRunner.requestContext(target.session.id)
+      if (background && !['image', 'phone'].includes(background.task)) return null
+      const chat = await chatForSession(target.session.id)
+      if (!chat || !['story', 'script'].includes(chat.mode)) return fallback()
+      await autoCompaction.run(target.session.id, { agent: target, signal, openTurnCompact: forced, pendingMessages: pendingCompactionMessages.get(target) || [] })
+      return null
+    }))
+  }
+  ctx.on('agent/pre-step', async (payload, next) => {
+    const id = payload.agent.session.id, background = backgroundAgentRunner.requestContext(id)
+    const chat = background ? null : await chatForSession(id)
+    if (background && ['image', 'phone'].includes(background.task)) return next()
+    if (background || chat && ['story', 'script'].includes(chat.mode)) {
+      configureAgentCompaction(payload.agent)
+      pendingCompactionMessages.set(payload.agent, payload.messages || [])
+      try {
+        await agentCompaction(payload.agent).compactIfNeeded(payload.agent, 'pressure', payload.signal)
+        return await next()
+      } finally { pendingCompactionMessages.delete(payload.agent) }
+    }
+    return next()
+  }, { prepend: true })
+  ctx.on('agent/status', ({ agent, status }) => { if (status === 'idle') queueAutoCompaction(agent.session.id) })
   async function nativeWorldBookTemplateContext(chat, card) {
     let worldBook
     try {
@@ -2547,6 +2650,13 @@ export async function apply(ctx) {
       }
       case 'getSession': return { view: await sessionView(args && args.sessionId) }
       case 'sendPhoneMessage': return { phoneChat: await phoneChat.send(args || {}) }
+      case 'runCompaction': {
+        const id = str(args && args.sessionId), chat = await chatForSession(id)
+        if (chat && ['story', 'script'].includes(chat.mode)) return { result: await autoCompaction.run(id, { manual: true, signal: compactionAbort.signal }) }
+        const result = await withCompactionSession(id, agent => agentCompaction(agent).compactNow(agent, compactionAbort.signal))
+        return { result: { status: 'completed', foreground: { status: 'succeeded', message: result ? '压缩完成' : '没有可压缩的历史' }, background: { status: 'skipped' } } }
+      }
+      case 'compactionStatus': return { state: (await chatForSession(args && args.sessionId))?.contextCompaction || null }
       case 'prepareCompaction': return { plan: await tavernCompaction.prepare(args && args.sessionId) }
       case 'compactBackground': return { result: await compactBackground(args && args.sessionId, args && args.operationId) }
       case 'completeCompaction': return { result: await tavernCompaction.complete(args && args.sessionId, args) }

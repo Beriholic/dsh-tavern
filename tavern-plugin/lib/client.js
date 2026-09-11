@@ -6348,6 +6348,23 @@ window.__ModuleLoader__.load({
 				notice ? React.createElement("div", { role: "status", className: "dsh-tavern-settings-desc" }, notice) : null
 			);
 		}
+        function ContextCompactionSettings() {
+            const [policy, setPolicy] = React.useState(null), [notice, setNotice] = React.useState(""), [busy, setBusy] = React.useState(false);
+            React.useEffect(function () { let active = true; rpc("getTavernSettings").then(function (result) { if (active) setPolicy(result.settings.contextCompaction || { mode: "manual", rounds: 20, percent: 80 }); }, function (error) { if (active) setNotice(error.message); }); return function () { active = false; }; }, []);
+            async function save() {
+                setBusy(true); setNotice("");
+                try { const result = await rpc("updateTavernSettings", { patch: { contextCompaction: { mode: policy.mode, rounds: Number(policy.rounds), percent: Number(policy.percent) } } }); setPolicy(result.settings.contextCompaction); setNotice("已保存，下一个安全边界生效"); }
+                catch (error) { setNotice(String(error.message || error)); } finally { setBusy(false); }
+            }
+            return React.createElement("div", { className: "dsh-tavern-settings-group" },
+                React.createElement("h3", null, "上下文压缩"),
+                React.createElement("p", null, "默认手动。自动模式在剧情后台结算后联合压缩前后台，再继续下一轮；不会删除原始剧情记录。"),
+                policy ? React.createElement("label", null, "压缩模式", React.createElement("select", { value: policy.mode, disabled: busy, onChange: function (e) { setPolicy(Object.assign({}, policy, { mode: e.target.value })); } }, [["manual", "手动压缩（默认）"], ["rounds", "每 N 轮自动压缩"], ["percent", "上下文达到 X% 自动压缩"]].map(function (item) { return React.createElement("option", { key: item[0], value: item[0] }, item[1]); }))) : null,
+                policy && policy.mode !== "manual" ? React.createElement("label", null, policy.mode === "rounds" ? "剧情轮数（1–1000）" : "上下文占用百分比（10–95，估算）", React.createElement("input", { type: "number", min: policy.mode === "rounds" ? 1 : 10, max: policy.mode === "rounds" ? 1000 : 95, step: 1, value: policy[policy.mode], disabled: busy, onChange: function (e) { setPolicy(Object.assign({}, policy, { [policy.mode]: e.target.value })); } })) : null,
+                React.createElement("p", null, "重写同一轮、工具调用和生图不计轮数。模型窗口未知时百分比模式会提示；可改用轮数模式。"),
+                React.createElement("button", { disabled: busy || !policy, onClick: save }, busy ? "保存中…" : "保存压缩设置"),
+                notice ? React.createElement("p", { role: "status" }, notice) : null);
+        }
 		const EMPTY_PROJECTION_FACE = Object.freeze({ subscribe: function () { return function () {}; }, getSnapshot: function () { return null; } });
 
 		function backgroundModelLabel(selection, catalog) {
@@ -6440,6 +6457,7 @@ window.__ModuleLoader__.load({
 			}
 			return React.createElement("div", { className: "dsh-tavern-settings-section" },
 				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "设置开局选项和后台任务。"),
+                React.createElement(ContextCompactionSettings),
 				React.createElement("div", { className: "dsh-tavern-settings-group" },
 					React.createElement("label", { className: "dsh-tavern-settings-row" },
 						React.createElement("span", { className: "dsh-tavern-settings-copy" },
@@ -8111,36 +8129,17 @@ window.__ModuleLoader__.load({
 				const [resultLabel, setResultLabel] = React.useState("");
 				const [resultTitle, setResultTitle] = React.useState("");
 				const running = props.useSession(function (snapshot) { return snapshot.running; });
-				async function executeTarget(sessionId, missingMessage) {
-					if (!sessionId) return { status: "skipped", message: missingMessage };
-					try {
-						const result = await props.executeCompact(sessionId);
-						if (!result.ok) throw new Error(result.error && result.error.message ? result.error.message : "无法执行上下文压缩");
-						if (result.value === undefined) throw new Error("当前会话不支持 /compact");
-						if (result.value.result && result.value.result.kind === "error") throw new Error(result.value.result.text || "上下文压缩失败");
-						return { status: "succeeded", message: result.value.result && result.value.result.text || "压缩完成" };
-					} catch (error) {
-						return { status: "failed", message: String(error && error.message || error) };
-					}
-				}
 				async function compactContext() {
 					setBusy(true);
 					setResultLabel("");
 					setResultTitle("");
 					try {
-						const prepared = await rpc("prepareCompaction", {}, props.sessionId);
-						const plan = prepared.plan;
-						const foreground = await executeTarget(plan.foregroundSessionId, "没有前台 Session");
-						const background = plan.backgroundSessionId
-							? (await rpc("compactBackground", { operationId: plan.operationId }, props.sessionId)).result
-							: { status: "skipped", message: "没有后台 Session" };
-						const completed = await rpc("completeCompaction", { operationId: plan.operationId, foreground: foreground, background: background }, props.sessionId);
-						setResultTitle("前台：" + foreground.message + "；后台：" + background.message);
-						if (completed.result.status === "completed") setResultLabel(plan.backgroundSessionId ? "前台和后台已压缩" : "前台已压缩");
-						else if (completed.result.status === "partial") {
-							setResultLabel("部分成功");
-							throw new Error("上下文压缩部分成功。前台：" + foreground.message + "；后台：" + background.message);
-						} else throw new Error("上下文压缩失败。前台：" + foreground.message + "；后台：" + background.message);
+                        const response = await rpc("runCompaction", {}, props.sessionId);
+                        const operation = response.result;
+                        if (!operation) throw new Error("当前会话不支持剧情压缩");
+                        setResultTitle("前台：" + operation.foreground.message + "；后台：" + (operation.background.message || "无后台"));
+                        if (operation.status !== "completed") throw new Error("上下文压缩未全部完成。前台：" + operation.foreground.message + "；后台：" + (operation.background.message || "无后台"));
+                        setResultLabel(operation.backgroundSessionId ? "前台和后台已压缩" : "前台已压缩");
 					} catch (err) { tavernErrorHub.report("压缩上下文", err); }
 					finally { setBusy(false); }
 				}
@@ -8895,7 +8894,8 @@ window.__ModuleLoader__.load({
 			return h("div", { className: "dsh-tavern-dock-actions" },
 				isPlayMode(sessionMode) && latestMessageId ? React.createElement(CandidateAction, Object.assign({}, props, { messageId: latestMessageId })) : null,
 				isPlayMode(sessionMode) && live.view && live.view.releaseCapabilities && live.view.releaseCapabilities.sceneImages ? React.createElement(SceneImageAction, { key: props.sessionId + ":" + imageTurn, sessionId: props.sessionId, turn: imageTurn, running: running }) : null,
-				isPlayMode(sessionMode) ? React.createElement(TavernMoreActions, props) : React.createElement(TavernCompactionAction, props)
+				isPlayMode(sessionMode) ? React.createElement(TavernMoreActions, props) : React.createElement(TavernCompactionAction, props),
+                live.view && live.view.contextCompaction && (live.view.contextCompaction.warning || live.view.contextCompaction.operation && live.view.contextCompaction.operation.status === "running") ? h("span", { role: "status", className: "dsh-tavern-settings-desc" }, live.view.contextCompaction.warning || "正在压缩前后台上下文…") : null
 			);
 		}
 
