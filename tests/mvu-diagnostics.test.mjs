@@ -196,6 +196,12 @@ test('真实 iframe bootstrap 捕获 console.warn 和 toastr，带事件编号�
   sandbox.console.warn('initialization warning')
   assert.equal(messages.at(-1).type, 'dsh-tavern-helper-diagnostic')
   assert.equal(messages.at(-1).eventId, '')
+  assert.equal(messages.at(-1).scriptId, '', 'unowned logs do not borrow the last script id')
+  const deferredError = new Error('earlier callback')
+  deferredError.stack = 'Error: earlier callback\n at run (dsh-tavern-script:previous:1:20)'
+  sandbox.console.warn('deferred', deferredError)
+  assert.equal(messages.at(-1).scriptId, 'previous')
+  const initialDiagnostics = messages.filter(item => item.type === 'dsh-tavern-helper-diagnostic').length
   sandbox.eventOn('MESSAGE_RECEIVED', () => sandbox.toastr.warning('schema rejected'))
   for (const listener of listeners.get('message')) listener({ source: parent, data: { token: 'test', type: 'dsh-tavern-helper-event', eventId: 'event-1', name: 'MESSAGE_RECEIVED', args: [0] } })
   await new Promise(resolve => setImmediate(resolve))
@@ -205,7 +211,7 @@ test('真实 iframe bootstrap 捕获 console.warn 和 toastr，带事件编号�
   const completed = messages.find(item => item.type === 'dsh-tavern-helper-event-complete')
   assert.equal(completed.error, undefined)
   for (let i = 0; i < 100; i++) sandbox.console.warn('repeated')
-  assert.ok(messages.filter(item => item.type === 'dsh-tavern-helper-diagnostic').length <= 51)
+  assert.ok(messages.filter(item => item.type === 'dsh-tavern-helper-diagnostic').length <= initialDiagnostics + 50)
 })
 
 test('诊断包包含界面按钮错误并脱敏', async () => {

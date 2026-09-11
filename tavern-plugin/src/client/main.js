@@ -1884,6 +1884,7 @@ window.__ModuleLoader__.load({
 			for (const script of scriptList) scriptsById[script.id] = script;
 			let currentScriptId = scriptList[0] ? scriptList[0].id : "";
 			let activeHostEventId = "";
+			let synchronousScriptId = "";
 			let hostEventTail = Promise.resolve();
 			let facade;
 			const transport = modules.createTransport({ parent: parent, token: token, copy: copy,
@@ -1998,7 +1999,12 @@ window.__ModuleLoader__.load({
 				const previous = currentScriptId;
 				currentScriptId = String(scriptId || previous || "");
 				const ownerId = currentScript().id;
-				try { const result = await initializationTiming.wait("script-callback", factory(), ownerId); await initializationTiming.wait("prompt-drain", drainPromptWrites(ownerId), ownerId); return result; }
+				try {
+                    let pending;
+                    const previousSync = synchronousScriptId;
+                    synchronousScriptId = ownerId;
+                    try { pending = factory(); } finally { synchronousScriptId = previousSync; }
+                    const result = await initializationTiming.wait("script-callback", pending, ownerId); await initializationTiming.wait("prompt-drain", drainPromptWrites(ownerId), ownerId); return result; }
 				finally { currentScriptId = previous; }
 			}
 			function stringHash(value, seed) {
@@ -2460,7 +2466,7 @@ window.__ModuleLoader__.load({
 					try {
 						const message = Array.from(arguments).map(function (value) { return typeof value === "string" ? value : value && value.message || "[structured diagnostic omitted]"; }).join(" ").slice(0, 4000);
 						const failure = Array.from(arguments).find(value => value && value.dshTavernScriptId !== undefined);
-						parent.postMessage({ type: "dsh-tavern-helper-diagnostic", token: token, eventId: failure ? failure.dshTavernEventId : activeHostEventId, scriptId: failure ? failure.dshTavernScriptId : errorScriptId(Array.from(arguments).find(value => value && value.stack)), level: level, message: message }, "*");
+						parent.postMessage({ type: "dsh-tavern-helper-diagnostic", token: token, eventId: failure ? failure.dshTavernEventId : activeHostEventId, scriptId: failure ? failure.dshTavernScriptId : errorScriptId(Array.from(arguments).find(value => value && value.stack) || new Error()) || synchronousScriptId, level: level, message: message }, "*");
 					} catch (_) {}
 				};
 			}

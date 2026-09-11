@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import vm from 'node:vm'
 import { helperHostHarness } from './fixtures/helper-host-harness.mjs'
 
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -247,11 +248,14 @@ test('awaited MVU event writes retain the host event identity across asynchronou
   assert.equal(h.sent.find(item => item.type === 'dsh-tavern-helper-event-complete').eventId, 'settlement-1')
 })
 
- test('前端卡关闭 ST 文本改写选项时可读取实际关闭状态', () => {
-  const run = helperHostHarness()
-  const power = run.window.SillyTavern.powerUserSettings
-  for (const setting of ['auto_fix_generated_markdown', 'trim_sentences', 'forbid_external_media', 'encode_tags']) {
-    assert.equal(power[setting], false)
+test('原卡关闭前端不兼容选项的 ready 回调无需写入不存在的 ST 设置', async () => {
+  const run = helperHostHarness(), callbacks = []
+  run.window.$ = value => {
+    if (typeof value === 'function') { callbacks.push(value); return }
+    throw new Error('Already disabled settings must not access a missing checkbox')
   }
+  // The reported card's callback, without its unrelated character/story data.
+  vm.runInNewContext(`$((async()=>{const power_user=SillyTavern.powerUserSettings;["auto_fix_generated_markdown","trim_sentences","forbid_external_media","encode_tags"].map((setting=>function toggle_if_not_allowed(setting,expected){return power_user[setting]!==expected&&(power_user[setting]=expected,$("#"+setting).prop("checked",expected),!0)}(setting,!1))).some((is_changed=>!!is_changed))&&SillyTavern.saveSettingsDebounced()}));`, run.window)
+  await callbacks[0]()
   assert.equal(run.calls().length, 0)
- })
+})
