@@ -12,7 +12,42 @@ $CdnRootUrl = if ($env:DSH_TAVERN_CDN_ROOT_URL) { $env:DSH_TAVERN_CDN_ROOT_URL.T
 $DshRoot = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.dsh' }
 $LegacyDshRoot = if ($env:DSH_TAVERN_LEGACY_DSH_HOME) { $env:DSH_TAVERN_LEGACY_DSH_HOME } else { $DshRoot }
 if ($InstallHost -eq 'cli') {
-  $DshRoot = if ($env:DSH_TAVERN_CLI_HOME) { $env:DSH_TAVERN_CLI_HOME } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.dsh-tavern' }
+  # CLI directory selection: explicit paths and existing installations never prompt.
+  $DefaultCliRoot = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.dsh-tavern'
+  $CurrentCliRoot = (Get-Location).ProviderPath
+  $DshRoot = $env:DSH_TAVERN_CLI_HOME
+  if (-not $DshRoot) {
+    if ((Test-Path -LiteralPath (Join-Path $CurrentCliRoot 'apps/dsh-tavern/.dsh-tavern-local.json') -PathType Leaf) -or (Test-Path -LiteralPath (Join-Path $CurrentCliRoot '.dsh-tavern-install-root') -PathType Leaf)) { $DshRoot = $CurrentCliRoot }
+    elseif ((Test-Path -LiteralPath (Join-Path $DefaultCliRoot 'apps/dsh-tavern/.dsh-tavern-local.json') -PathType Leaf) -or (Test-Path -LiteralPath (Join-Path $DefaultCliRoot '.dsh-tavern-install-root') -PathType Leaf)) { $DshRoot = $DefaultCliRoot }
+    else {
+      if ([Console]::IsInputRedirected) { throw '无法交互选择安装目录。请设置 DSH_TAVERN_CLI_HOME 后重新运行。' }
+      Write-Host "请选择 CLI 安装目录：`n  1. 默认目录：$DefaultCliRoot`n  2. 当前目录：$CurrentCliRoot（回车默认）`n  3. 其他目录"
+      Write-Host '程序、运行时和游戏数据存入所选目录；命令入口和包管理器缓存可能位于目录外。'
+      while (-not $DshRoot) {
+        $Choice = Read-Host '请选择 [1/2/3，默认 2]'
+        switch ($Choice) {
+          '1' { $DshRoot = $DefaultCliRoot }
+          '2' { $DshRoot = $CurrentCliRoot }
+          '' { $DshRoot = $CurrentCliRoot }
+          '3' {
+            $SelectedCliRoot = Read-Host '请输入完整安装路径'
+            if ($SelectedCliRoot -match '^(?:[A-Za-z]:[\\/]|\\\\[^\\]+\\[^\\]+)') { $DshRoot = $SelectedCliRoot }
+            else { Write-Host '请输入完整路径，例如 D:\Games\dsh-tavern。' }
+          }
+          default { Write-Host '请输入 1、2 或 3。' }
+        }
+      }
+    }
+  }
+  $DshRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DshRoot)
+  if (-not (Test-Path -LiteralPath (Join-Path $DshRoot 'apps/dsh-tavern/.dsh-tavern-local.json') -PathType Leaf) -and -not (Test-Path -LiteralPath (Join-Path $DshRoot '.dsh-tavern-install-root') -PathType Leaf)) {
+    foreach ($Entry in @('apps', 'runtime', 'tools', 'profiles', 'profile-data', 'source-cache', 'logs', 'backups', 'settings.yaml')) {
+      if (Test-Path -LiteralPath (Join-Path $DshRoot $Entry)) { throw "安装目录存在冲突：$DshRoot\$Entry。请选择空目录，或使用原有安装目录。" }
+    }
+  }
+  Write-Host "CLI 安装目录：$DshRoot"
+  New-Item -ItemType Directory -Force -Path $DshRoot | Out-Null
+  Set-Content -LiteralPath (Join-Path $DshRoot '.dsh-tavern-install-root') -Value 'cli-v1'
 }
 
 $AppDir = if ($env:DSH_TAVERN_APP_DIR) { $env:DSH_TAVERN_APP_DIR } else { Join-Path $DshRoot 'apps\dsh-tavern' }

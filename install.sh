@@ -22,7 +22,45 @@ CDN_ROOT_URL=${DSH_TAVERN_CDN_ROOT_URL:-https://cdn.jsdelivr.net/gh/${REPOSITORY
 LEGACY_DSH_ROOT=${DSH_TAVERN_LEGACY_DSH_HOME:-${DSH_HOME:-${HOME}/.dsh}}
 DSH_ROOT=${DSH_HOME:-${HOME}/.dsh}
 if [ "${INSTALL_HOST}" = "cli" ]; then
-  DSH_ROOT=${DSH_TAVERN_CLI_HOME:-${HOME}/.dsh-tavern}
+  # CLI directory selection: explicit paths and existing installations never prompt.
+  DSH_ROOT=${DSH_TAVERN_CLI_HOME:-}
+  if [ -z "$DSH_ROOT" ]; then
+    if [ -f "$PWD/apps/dsh-tavern/.dsh-tavern-local.json" ] || [ -f "$PWD/.dsh-tavern-install-root" ]; then
+      DSH_ROOT=$PWD
+    elif [ -f "$HOME/.dsh-tavern/apps/dsh-tavern/.dsh-tavern-local.json" ] || [ -f "$HOME/.dsh-tavern/.dsh-tavern-install-root" ]; then
+      DSH_ROOT=$HOME/.dsh-tavern
+    else
+      if ! ( : </dev/tty ) 2>/dev/null; then
+        echo '无法交互选择安装目录。请设置 DSH_TAVERN_CLI_HOME 后重新运行。' >&2
+        exit 1
+      fi
+      printf '\n请选择 CLI 安装目录：\n  1. 默认目录：%s/.dsh-tavern\n  2. 当前目录：%s（回车默认）\n  3. 其他目录\n程序、运行时和游戏数据存入所选目录；命令入口和包管理器缓存可能位于目录外。\n' "$HOME" "$PWD" >/dev/tty
+      while :; do
+        printf '请选择 [1/2/3，默认 2]：' >/dev/tty
+        IFS= read -r choice </dev/tty || exit 1
+        case "$choice" in
+          1) DSH_ROOT=$HOME/.dsh-tavern; break ;;
+          2|'') DSH_ROOT=$PWD; break ;;
+          3) printf '请输入完整安装路径：' >/dev/tty
+             IFS= read -r DSH_ROOT </dev/tty || exit 1
+             case "$DSH_ROOT" in /*) break ;; *) echo '请输入绝对路径。' >/dev/tty ;; esac ;;
+          *) echo '请输入 1、2 或 3。' >/dev/tty ;;
+        esac
+      done
+    fi
+  fi
+  case "$DSH_ROOT" in /*) ;; *) DSH_ROOT=$PWD/$DSH_ROOT ;; esac
+  if [ ! -f "$DSH_ROOT/apps/dsh-tavern/.dsh-tavern-local.json" ] && [ ! -f "$DSH_ROOT/.dsh-tavern-install-root" ]; then
+    for entry in apps runtime tools profiles profile-data source-cache logs backups settings.yaml; do
+      if [ -e "$DSH_ROOT/$entry" ] || [ -L "$DSH_ROOT/$entry" ]; then
+        echo "安装目录存在冲突：$DSH_ROOT/$entry。请选择空目录，或使用原有安装目录。" >&2
+        exit 1
+      fi
+    done
+  fi
+  printf 'CLI 安装目录：%s\n' "$DSH_ROOT"
+  mkdir -p "$DSH_ROOT"
+  printf 'cli-v1\n' > "$DSH_ROOT/.dsh-tavern-install-root"
   DSH_TAVERN_CLI_HOME=${DSH_ROOT}
   DSH_TAVERN_LEGACY_DSH_HOME=${LEGACY_DSH_ROOT}
   export DSH_TAVERN_CLI_HOME DSH_TAVERN_LEGACY_DSH_HOME

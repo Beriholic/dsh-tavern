@@ -117,7 +117,7 @@ dsh-tavern restart   # 重启
 dsh-tavern update    # 更新
 ```
 
-运行时和数据默认保存在 `~/.dsh-tavern/`，与 Desktop / DSHA 分开，切换安装方式不会自动同步数据。备份、迁移、自定义目录和手动安装见[完整安装说明](docs/installation.md)。
+首次安装会询问目录：**1 默认目录 `~/.dsh-tavern/`、2 当前目录（回车默认）、3 其他完整路径**。程序、独立运行时和游戏数据存入所选目录；命令入口和 npm/pnpm 缓存可能位于目录外。更新沿用已安装位置；重新运行安装命令时，请在原安装根目录执行，或设置 `DSH_TAVERN_CLI_HOME` 指向原位置。与 Desktop / DSHA 的数据分开，切换安装方式不会自动同步数据。备份、迁移、自定义目录和手动安装见[完整安装说明](docs/installation.md)。
 
 ### Android（实验性）
 
