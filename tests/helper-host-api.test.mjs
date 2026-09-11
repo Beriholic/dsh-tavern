@@ -246,3 +246,12 @@ test('awaited MVU event writes retain the host event identity across asynchronou
   await tick()
   assert.equal(h.sent.find(item => item.type === 'dsh-tavern-helper-event-complete').eventId, 'settlement-1')
 })
+
+ test('前端卡关闭 ST 文本改写选项时可读取实际关闭状态', () => {
+  const run = helperHostHarness()
+  const power = run.window.SillyTavern.powerUserSettings
+  for (const setting of ['auto_fix_generated_markdown', 'trim_sentences', 'forbid_external_media', 'encode_tags']) {
+    assert.equal(power[setting], false)
+  }
+  assert.equal(run.calls().length, 0)
+ })

@@ -27,7 +27,9 @@ const scripts = [
   { id: 'missing-file', content: `import '${base}missing.js';` },
   { id: 'throw', content: "throw Error('runtime error');" },
   { id: 'reject', content: "await Promise.reject(Error('await error'));" },
-  { id: 'tail', content: "if(!window.schemaReady) throw Error('schema not registered'); window.tailReady = true;" }
+  { id: 'deferred', content: "setTimeout(() => { throw Error('earlier callback'); }, 10);" },
+  { id: 'style', content: "await new Promise(resolve => setTimeout(resolve, 30)); window.styleReady = true;" },
+  { id: 'tail', content: "if(!window.schemaReady || !window.styleReady) throw Error('schema not registered'); window.tailReady = true;" }
 ]
 let doc = client.buildTavernHelperScriptDocument({ token: 'smoke', scripts, context: {} })
 doc = doc.replace(/<script data-dsh-tavern-helper-dependency[^>]*>[\s\S]*?<\/script>/g, '')
@@ -35,6 +37,7 @@ doc = doc.replace(/<script data-dsh-tavern-helper-dependency[^>]*>[\s\S]*?<\/scr
   .replace(/<script data-dsh-tavern-helper-script>[\s\S]*?<\/script>/, `<script>
   const results=[];
   window.__dshTavernHelperReady=Promise.resolve();
+  window.__dshTavernInitializationTiming={wait:(_stage,promise)=>promise};
   window.__dshTavernHelperSetCurrentScript=()=>{};
   window.waitGlobalInitialized=async()=>{ if(!window.coreReady) throw Error('core not awaited'); };
   window.__dshTavernHelperSubscriptionsReady=id=>results.push({id,ok:true});
@@ -58,7 +61,7 @@ const server = createServer((request, response) => {
   response.writeHead(200, { 'Content-Type': 'text/html' })
   response.end(`<!doctype html><title>Helper module smoke</title><pre id="result">RUNNING</pre>
     <script>addEventListener('message',e=>{if(e.data.type!=='module-smoke')return;const r=e.data;
-    const pass=r.tail && JSON.stringify(r.results.map(x=>x.ok))===JSON.stringify([true,true,false,false,false,false,false,true]);
+    const pass=r.tail && JSON.stringify(r.results.map(x=>x.ok))===JSON.stringify([true,true,false,false,false,false,false,true,true,true]);
     document.querySelector('#result').textContent=(pass?'PASS':'FAIL')+'\\n'+JSON.stringify(r,null,2);});
     const frame=document.createElement('iframe');${url.searchParams.has('sandbox') ? "frame.sandbox='allow-scripts';" : ''}
     frame.srcdoc=${JSON.stringify(doc).replace(/</g, '\\u003c')};document.body.appendChild(frame);</script>`)

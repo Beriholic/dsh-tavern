@@ -50,7 +50,7 @@ function harness(scripts, onAppend, ready = Promise.resolve()) {
     body: { appendChild(element) {
       assert.equal(element.type, 'module')
       assert.equal(element.src, undefined, 'Card module must inherit the document base, not data/blob URL')
-      const footer = element.textContent.match(/\n(;window\["__dshTavernModuleComplete_[^"]+"\]\(\);)\n$/)[1]
+      const footer = element.textContent.split("\n").find(line => line.startsWith(";window["))
       const complete = () => vm.runInContext(footer, context)
       onAppend({ element, complete, listeners, events })
     } }
@@ -122,4 +122,13 @@ test('模块加载、执行和插入失败均清理监听并继续下一脚本',
     assert(run.elements.every(element => element.removed))
     assert(!Object.keys(run.window).some(key => key.startsWith('__dshTavernModuleComplete_')))
   }
+})
+
+test('前一个脚本的迟到异常不使正在加载的样式模块失败', async () => {
+  const run = harness([{ id: 'style', content: 'await style()' }], ({ complete, listeners }) => {
+    for (const listener of [...listeners]) listener({ filename: 'dsh-tavern-script:previous', error: new Error('previous callback') })
+    assert.doesNotThrow(complete)
+  })
+  await run.run()
+  assert.deepEqual(run.events, [['start', 'style'], ['ready', 'style'], ['done']])
 })

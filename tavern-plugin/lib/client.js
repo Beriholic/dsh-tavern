@@ -2237,6 +2237,8 @@ window.__ModuleLoader__.load({
 				POPUP_TYPE: Object.freeze({ DISPLAY: "display", TEXT: "text", CONFIRM: "confirm", INPUT: "input" }),
 				POPUP_RESULT: Object.freeze({ AFFIRMATIVE: 1, NEGATIVE: 0, CANCELLED: null, CUSTOM1: 2 }),
 				extensionSettings: extensionSettings,
+				// These ST rewriting/media restrictions are disabled in Tavern rendering.
+				powerUserSettings: Object.freeze({ auto_fix_generated_markdown: false, trim_sentences: false, forbid_external_media: false, encode_tags: false }),
 				get characters() {
 					const character = context().character;
 					if (!character || typeof character !== "object") return [];
@@ -2943,6 +2945,12 @@ window.__ModuleLoader__.load({
 					return true;
 				} catch (_) { return false; }
 			};
+			function errorScriptId(error, filename) {
+                if (error && error.dshTavernScriptId) return error.dshTavernScriptId;
+                const match = String(filename || error && error.stack || "").match(/dsh-tavern-script:([^\s):]+)/);
+                if (!match) return "";
+                try { return decodeURIComponent(match[1]); } catch (_) { return ""; }
+            }
 			// MVU reports some rejected operations through warn/toastr without throwing.
 			let diagnosticCount = 0;
 			for (const level of ["warn", "error"]) {
@@ -2953,7 +2961,7 @@ window.__ModuleLoader__.load({
 					try {
 						const message = Array.from(arguments).map(function (value) { return typeof value === "string" ? value : value && value.message || "[structured diagnostic omitted]"; }).join(" ").slice(0, 4000);
 						const failure = Array.from(arguments).find(value => value && value.dshTavernScriptId !== undefined);
-						parent.postMessage({ type: "dsh-tavern-helper-diagnostic", token: token, eventId: failure ? failure.dshTavernEventId : activeHostEventId, scriptId: failure ? failure.dshTavernScriptId : currentScript().id, level: level, message: message }, "*");
+						parent.postMessage({ type: "dsh-tavern-helper-diagnostic", token: token, eventId: failure ? failure.dshTavernEventId : activeHostEventId, scriptId: failure ? failure.dshTavernScriptId : errorScriptId(Array.from(arguments).find(value => value && value.stack)), level: level, message: message }, "*");
 					} catch (_) {}
 				};
 			}
@@ -2971,10 +2979,10 @@ window.__ModuleLoader__.load({
 				const target = event && event.target;
 				const resource = target && target !== window ? String(target.src || target.href || "") : "";
 				const message = event && event.message ? String(event.message) : (resource ? "资源加载失败: " + resource : "人物卡脚本加载失败");
-				parent.postMessage({ type: "dsh-tavern-helper-script-runtime", token: token, scriptId: currentScript().id, level: "error", message: message }, "*");
+				parent.postMessage({ type: "dsh-tavern-helper-script-runtime", token: token, scriptId: errorScriptId(event.error, event.filename), level: "error", message: message }, "*");
 			});
 			addEventListener("unhandledrejection", function (event) {
-				parent.postMessage({ type: "dsh-tavern-helper-script-runtime", token: token, scriptId: event.reason && event.reason.dshTavernScriptId || currentScript().id, eventId: event.reason && event.reason.dshTavernEventId || "", method: event.reason && event.reason.dshTavernMethod || "", level: "error", message: String(event.reason && event.reason.message || event.reason || "人物卡脚本 Promise 失败") }, "*");
+				parent.postMessage({ type: "dsh-tavern-helper-script-runtime", token: token, scriptId: errorScriptId(event.reason), eventId: event.reason && event.reason.dshTavernEventId || "", method: event.reason && event.reason.dshTavernMethod || "", level: "error", message: String(event.reason && event.reason.message || event.reason || "人物卡脚本 Promise 失败") }, "*");
 			});
 			parent.postMessage({ type: "dsh-tavern-helper-script-ready", token: token }, "*");
 		}
@@ -3131,7 +3139,8 @@ window.__ModuleLoader__.load({
 			});
 		}
 
-		function loadTavernHelperModule(source) {
+		function loadTavernHelperModule(source, scriptId) {
+			const sourceUrl = "dsh-tavern-script:" + encodeURIComponent(String(scriptId || "module"));
 			return new Promise(function (resolve, reject) {
 				const element = document.createElement("script");
 				const completionKey = "__dshTavernModuleComplete_" + Math.random().toString(36).slice(2);
@@ -3145,6 +3154,7 @@ window.__ModuleLoader__.load({
 					if (error) reject(error); else resolve();
 				}
 				function onError(event) {
+					if (String(event.filename || "").startsWith("dsh-tavern-script:") && event.filename !== sourceUrl) return;
 					finish(event.error || new Error(event.message || "人物卡模块或依赖加载失败"));
 				}
 				window[completionKey] = function () { finish(); };
@@ -3154,7 +3164,7 @@ window.__ModuleLoader__.load({
 				// Inline modules inherit srcdoc's document base. Native imports retain
 				// bindings/re-exports and dynamic imports can resolve local cache URLs.
 				// A completion footer waits for top-level await (a load event does not).
-				element.textContent = String(source) + "\n;window[" + JSON.stringify(completionKey) + "]();\n";
+				element.textContent = String(source) + "\n;window[" + JSON.stringify(completionKey) + "]?.();\n//# sourceURL=" + sourceUrl + "\n";
 				try { document.body.appendChild(element); } catch (error) { finish(error); }
 			});
 		}
@@ -3291,10 +3301,10 @@ window.__ModuleLoader__.load({
 				+ 'try{'
 				+ (input && input.trustedCardMode ? 'const ensureHostJQuery=' + ensureTavernHostJQuery.toString() + ';await ensureHostJQuery(window.parent);const ensureHostJQueryUi=' + ensureTavernHostJQueryUi.toString() + ';await ensureHostJQueryUi(window.parent);window.$=window.jQuery=window.parent.jQuery;const installHostFacade=' + installTavernTrustedHostFacade.toString() + ';const releaseHostFacade=installHostFacade(window.parent,window);window.addEventListener("pagehide",releaseHostFacade,{once:true});window.addEventListener("unload",releaseHostFacade,{once:true});\n' : '')
 				+ 'for(const script of scripts){window.__dshTavernHelperSetCurrentScript(script.id);try{'
-				+ 'if(script.system==="official-mvu"&&script.assetUrl){const loader=createMvuLoader({fetch:window.fetch.bind(window),evaluate:loadModule,onDiagnostic(diagnostic){parent.postMessage({type:"dsh-tavern-mvu-load-diagnostic",token,diagnostic},"*");},onState(state){parent.postMessage({type:"dsh-tavern-mvu-load-state",token,state},"*");}});'
+				+ 'if(script.system==="official-mvu"&&script.assetUrl){const loader=createMvuLoader({fetch:window.fetch.bind(window),evaluate:source=>loadModule(source,script.id),onDiagnostic(diagnostic){parent.postMessage({type:"dsh-tavern-mvu-load-diagnostic",token,diagnostic},"*");},onState(state){parent.postMessage({type:"dsh-tavern-mvu-load-state",token,state},"*");}});'
 				+ 'const retry=event=>{if(event.source===parent&&event.data?.token===token&&event.data.type==="dsh-tavern-mvu-reload")loader.retry();};'
 				+ 'window.addEventListener("message",retry);window.addEventListener("pagehide",()=>loader.dispose(),{once:true});'
-				+ 'try{await loader.load(new URL(script.assetUrl,document.baseURI).href);}finally{window.removeEventListener("message",retry);}}else await window.__dshTavernInitializationTiming.wait("companion-module",loadModule(script.content),script.id);'
+				+ 'try{await loader.load(new URL(script.assetUrl,document.baseURI).href);}finally{window.removeEventListener("message",retry);}}else await window.__dshTavernInitializationTiming.wait("companion-module",loadModule(script.content,script.id),script.id);'
 				+ 'if(script.system==="official-mvu")await window.waitGlobalInitialized("Mvu");window.__dshTavernHelperSubscriptionsReady(script.id);'
 				+ '}catch(error){window.__dshTavernHelperSubscriptionsFailed(script.id,error);if(script.system==="official-mvu")break;}}}catch(error){for(const script of scripts)window.__dshTavernHelperSubscriptionsFailed(script.id,error);}finally{window.__dshTavernResolveCompanionScriptsReady();}';
 			const moduleUrl = "data:text/javascript;base64," + encodeTavernScriptSource(loaderSource);
