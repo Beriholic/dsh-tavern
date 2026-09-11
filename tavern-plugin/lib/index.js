@@ -1,3 +1,4 @@
+import { resolveAgentCompaction } from './agent-compaction.js'
 import { createAutoCompaction, installCompactionPolicy } from './domain/auto-compaction.js'
 import { createPerformanceDiagnostics } from './domain/performance-diagnostics.js'
 import { backgroundSuppressedTurns } from './domain/background-surface.js'
@@ -1573,11 +1574,7 @@ export async function apply(ctx) {
   const pendingCompactionMessages = new WeakMap()
   const compactionDisposers = []
   ctx.effect(() => () => { for (const dispose of compactionDisposers) dispose() })
-  function agentCompaction(agent) {
-    const engine = agent?.ctx?.get('compaction')
-    if (!engine || typeof engine.compactNow !== 'function') throw new Error('当前 Agent 未提供原生压缩能力')
-    return engine
-  }
+  const agentCompaction = agent => resolveAgentCompaction(ctx, agent)
   async function withCompactionSession(id, work) {
     const live = agentRegistry.get(id)
     if (live) return work(live)
@@ -1620,12 +1617,12 @@ export async function apply(ctx) {
     async compact(id, side, options, signal) {
       if (side === 'foreground' && options.openTurnCompact) return options.openTurnCompact()
       if (side === 'background') return backgroundAgentRunner.compact({ sessionId: id, signal })
-      return withCompactionSession(id, agent => agentCompaction(agent).compactNow(agent, signal))
+      return withCompactionSession(id, async agent => (await agentCompaction(agent)).compactNow(agent, signal))
     }
   })
-  function configureAgentCompaction(agent) {
-    const engine = agentCompaction(agent)
-    if (configuredCompactionEngines.has(engine)) return
+  async function configureAgentCompaction(agent) {
+    const engine = await agentCompaction(agent)
+    if (configuredCompactionEngines.has(engine)) return engine
     configuredCompactionEngines.add(engine)
     compactionDisposers.push(installCompactionPolicy(engine, async (target, trigger, signal, fallback, forced) => {
       const background = backgroundAgentRunner.requestContext(target.session.id)
@@ -1635,16 +1632,17 @@ export async function apply(ctx) {
       await autoCompaction.run(target.session.id, { agent: target, signal, openTurnCompact: forced, pendingMessages: pendingCompactionMessages.get(target) || [] })
       return null
     }))
+    return engine
   }
   ctx.on('agent/pre-step', async (payload, next) => {
     const id = payload.agent.session.id, background = backgroundAgentRunner.requestContext(id)
     const chat = background ? null : await chatForSession(id)
     if (background && ['image', 'phone'].includes(background.task)) return next()
     if (background || chat && ['story', 'script'].includes(chat.mode)) {
-      configureAgentCompaction(payload.agent)
+      const engine = await configureAgentCompaction(payload.agent)
       pendingCompactionMessages.set(payload.agent, payload.messages || [])
       try {
-        await agentCompaction(payload.agent).compactIfNeeded(payload.agent, 'pressure', payload.signal)
+        await engine.compactIfNeeded(payload.agent, 'pressure', payload.signal)
         return await next()
       } finally { pendingCompactionMessages.delete(payload.agent) }
     }
@@ -2653,7 +2651,7 @@ export async function apply(ctx) {
       case 'runCompaction': {
         const id = str(args && args.sessionId), chat = await chatForSession(id)
         if (chat && ['story', 'script'].includes(chat.mode)) return { result: await autoCompaction.run(id, { manual: true, signal: compactionAbort.signal }) }
-        const result = await withCompactionSession(id, agent => agentCompaction(agent).compactNow(agent, compactionAbort.signal))
+        const result = await withCompactionSession(id, async agent => (await agentCompaction(agent)).compactNow(agent, compactionAbort.signal))
         return { result: { status: 'completed', foreground: { status: 'succeeded', message: result ? '压缩完成' : '没有可压缩的历史' }, background: { status: 'skipped' } } }
       }
       case 'compactionStatus': return { state: (await chatForSession(args && args.sessionId))?.contextCompaction || null }

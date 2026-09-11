@@ -59,6 +59,9 @@
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
 
+    - id: tavern-compaction
+      name: dsh-tavern-plugin/compaction
+
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
 
