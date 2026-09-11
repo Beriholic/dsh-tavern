@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "d731d8cd3bd54d6876309b5b0531b4113c7de228",
-  "releaseSequence": 150,
+  "revision": "e38b7912f95f2050b41c4a79b7ac1733478cc98a",
+  "releaseSequence": 151,
   "version": "1.6.0",
   "files": [
     {
@@ -56,8 +56,8 @@
     },
     {
       "path": "bin/plugin-dependencies.mjs",
-      "sha256": "7eff0a9a9ffa9384373d0d46b89e8068acfa42be0a44395703ab9a2c52ae395c",
-      "size": 7870
+      "sha256": "45c7edd653a7f24c9b4efd58c61c7bc407ded600d046ce395bf02613ddb8a740",
+      "size": 7913
     },
     {
       "path": "bin/profile-configuration.mjs",
@@ -136,8 +136,8 @@
     },
     {
       "path": "presets/tavern-background/agent.cordis.yml",
-      "sha256": "42870ec0d3b2eb89e32757e5ba51dac3054a9967a6708315945210db2a0d414e",
-      "size": 875
+      "sha256": "d00e39d9d529301bebb47427e186c4d24123f59de098ac86f9f786010583db80",
+      "size": 945
     },
     {
       "path": "presets/tavern-background/skills/tavern-character-design/SKILL.md",
@@ -146,8 +146,8 @@
     },
     {
       "path": "presets/tavern/agent.cordis.yml",
-      "sha256": "90f69e68f38d332cf237bd477bca32bf0cd63d26cc2a4bf1684eacf422cd7c6b",
-      "size": 2528
+      "sha256": "df15d370f94c3b9c49720ab1c65e65a1abcbdf9d3336602144bd9dc4413a7b42",
+      "size": 2598
     },
     {
       "path": "presets/tavern/preset.yml",
@@ -208,6 +208,11 @@
       "path": "tavern-plugin/cordis.patch.yml",
       "sha256": "d77156ec1fab1a3f5a1445960f18cbb3b71eced444e4798c106631f2db373290",
       "size": 1343
+    },
+    {
+      "path": "tavern-plugin/lib/agent-compaction.js",
+      "sha256": "832a89dfd4c67b20fb2c2a64eafcf8e18df5a89e5762bd9ae1b6e2dc48d3c142",
+      "size": 686
     },
     {
       "path": "tavern-plugin/lib/application-updater.js",
@@ -991,8 +996,8 @@
     },
     {
       "path": "tavern-plugin/lib/index.js",
-      "sha256": "5db71ad7f8588df6b7a6df836dd50fb85428b04e11100af14cb09e6449b67cc3",
-      "size": 236652
+      "sha256": "108802fa9e24c527c03e728776999df0c7bf12a453c1ef0796d20b8be43f192d",
+      "size": 236620
     },
     {
       "path": "tavern-plugin/lib/profile-data-store.js",
@@ -2611,8 +2616,8 @@
     },
     {
       "path": "tavern-plugin/package.json",
-      "sha256": "b50a11b79f4ada6171ec9c744e01329ece2449cf78340f24cff4d14b0e0b78a0",
-      "size": 1337
+      "sha256": "85c8010c727b24fdc4b278be7412de59a54881cf056293810ce7ff3397d951f2",
+      "size": 1439
     },
     {
       "path": "tavern-plugin/packages/dsh-image-gen/.github/workflows/ci.yml",
