@@ -15,6 +15,12 @@ const channels = [
   { id: 'qwen', label: '百炼 Qwen-Image', baseURL: 'https://dashscope.aliyuncs.com/api/v1', model: 'qwen-image-3.0', size: '1024*1024', fields: ['baseURL', 'model', 'size'], hint: '默认北京地址。其他地域或工作空间请填写控制台提供的 API 根地址，密钥须属于相同地域。' },
   { id: 'webui', label: 'SD WebUI / Forge', baseURL: '', size: '512x512', authType: 'none', username: '', fields: ['baseURL', 'size', 'authType', 'username'], hint: '使用已开启 API 的 WebUI / Forge 服务，沿用服务端模型与默认采样参数。本机地址指 Tavern 服务器，不是访问页面的手机；不会安装模型或修改服务端全局设置。' }
 ]
+// Advanced controls are optional strings, like the existing form fields.
+export const IMAGE_ADVANCED_FIELDS = ['negativePrompt', 'steps', 'guidance']
+for (const channel of channels) {
+  const advanced = ['novelai', 'webui', 'comfyui'].includes(channel.id) ? IMAGE_ADVANCED_FIELDS : channel.id === 'qwen' ? ['negativePrompt'] : []
+  channel.fields = [...channel.fields, ...advanced]
+}
 // Keep the old sentinel readable for stored records, never offer it as a provider.
 export const SCENE_IMAGE_CHANNELS = channels.filter(channel => channel.id !== 'dsh-image-gen').map(({ id, label, fields, hint, model }) => ({ id, label, fields, hint, models: id === 'novelai' ? NOVELAI_MODELS : model ? [model] : [], canListModels: ['openai', 'banana', 'gemini', 'grok', 'seedream'].includes(id) }))
 export function sceneImageChannel(id = 'openai') {
@@ -28,7 +34,13 @@ export function channelSettings(value = {}, id = value.provider || 'openai') {
   for (const field of defaults.fields) {
     if (value[field] !== undefined && typeof value[field] !== 'string') throw new Error('渠道配置须为文本')
     result[field] = (value[field] ?? defaults[field] ?? '').trim()
-    if (result[field].length > (field === 'baseURL' ? 2000 : 200)) throw new Error('渠道配置过长')
+    if (result[field].length > (field === 'negativePrompt' ? 4000 : field === 'baseURL' ? 2000 : 200)) throw new Error('渠道配置过长')
+  }
+  for (const field of ['steps', 'guidance']) {
+    if (!result[field]) continue
+    const number = Number(result[field]), max = field === 'steps' ? (id === 'novelai' ? 50 : 150) : (id === 'novelai' ? 10 : 30)
+    if (!/^\d+(?:\.\d+)?$/.test(result[field]) || !Number.isFinite(number) || number < (field === 'steps' ? 1 : 0) || number > max || field === 'steps' && !Number.isInteger(number)) throw new Error(`${field === 'steps' ? '生成步数' : '提示词引导强度'}须为 ${field === 'steps' ? 1 : 0}–${max}${field === 'steps' ? ' 的整数' : ' 的数值'}`)
+    result[field] = String(number)
   }
   if (result.baseURL) {
     const url = new URL(result.baseURL)
@@ -44,7 +56,10 @@ export function channelSettings(value = {}, id = value.provider || 'openai') {
     if (!dimensions || dimensions.slice(1).some(value => Number(value) < 64 || Number(value) > 2048 || Number(value) % 8)) throw new Error('WebUI 尺寸须为宽x高，每边 64–2048 且为 8 的倍数')
   }
   if (id === 'novelai') novelaiSettings(result)
-  if (id === 'comfyui') result.workflow = comfyWorkflow(value.workflow)
+  if (id === 'comfyui') {
+    result.workflow = comfyWorkflow(value.workflow)
+    for (const field of IMAGE_ADVANCED_FIELDS) if (result[field] && !result.workflow?.bindings[field === 'negativePrompt' ? 'negative' : field]?.length) throw new Error('工作流缺少 ' + field + ' 映射，请重新导入支持该参数的工作流或清空该设置')
+  }
   return result
 }
 export function imageCredentialRef(provider = 'openai', authType) {
@@ -85,7 +100,7 @@ export function imageChannelRequest(input) {
     if (config.authType === 'none') delete headers.authorization
     else if (config.authType === 'basic') headers.authorization = 'Basic ' + Buffer.from(config.username + ':' + input.apiKey, 'utf8').toString('base64')
     const [width, height] = config.size.split('x').map(Number)
-    body = { prompt, width, height, batch_size: 1, n_iter: 1, seed: -1, send_images: true, save_images: false }
+    body = { prompt, width, height, batch_size: 1, n_iter: 1, seed: -1, send_images: true, save_images: false, ...(config.negativePrompt ? { negative_prompt: config.negativePrompt } : {}), ...(config.steps ? { steps: Number(config.steps) } : {}), ...(config.guidance ? { cfg_scale: Number(config.guidance) } : {}) }
   } else if (config.provider === 'gemini') {
     path = 'interactions'; delete headers.authorization; headers['x-goog-api-key'] = input.apiKey
     body = { model: config.model, input: [{ type: 'text', text: prompt }], response_format: { type: 'image', mime_type: 'image/png', aspect_ratio: config.aspectRatio, image_size: config.size } }
@@ -100,7 +115,7 @@ export function imageChannelRequest(input) {
   } else if (config.provider === 'qwen') {
     if (!config.model.startsWith('qwen-image')) throw new Error('百炼渠道当前只接入 Qwen-Image，不支持其他万相模型')
     path = 'services/aigc/multimodal-generation/generation'
-    body = { model: config.model, input: { messages: [{ role: 'user', content: [{ text: prompt }] }] }, parameters: { size: config.size, n: 1, prompt_extend: false } }
+    body = { model: config.model, input: { messages: [{ role: 'user', content: [{ text: prompt }] }] }, parameters: { size: config.size, n: 1, prompt_extend: false, ...(config.negativePrompt ? { negative_prompt: config.negativePrompt } : {}) } }
   } else if (config.provider === 'grok') {
     if (!['1k', '2k'].includes(config.size)) throw new Error('Grok 分辨率须为 1k 或 2k')
     body = { model: config.model, prompt, n: 1, aspect_ratio: config.aspectRatio, resolution: config.size }

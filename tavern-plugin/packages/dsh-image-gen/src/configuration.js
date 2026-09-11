@@ -1,4 +1,4 @@
-import { channelSettings, channelNeedsKey, channelReady, imageCredentialRef, SCENE_IMAGE_CHANNELS } from './tavern/scene-image-channels.js'
+import { IMAGE_ADVANCED_FIELDS, channelSettings, channelNeedsKey, channelReady, imageCredentialRef, SCENE_IMAGE_CHANNELS } from './tavern/scene-image-channels.js'
 import { createSceneImageConnection } from './tavern/scene-image-connection.js'
 import { generateSceneImage } from './tavern/scene-image-provider.js'
 
@@ -95,8 +95,8 @@ export function createImageConfiguration({ read, write, restore = /** @type {((v
       const request = await serial(async () => {
         input.signal?.throwIfAborted()
         const current = await inspect(input.provider)
-        const fields = ['baseURL', 'model', 'size', 'aspectRatio', 'authType', 'username']
-        if (fields.some(key => current[key] !== input[key]) || current.workflow?.digest !== input.workflow?.digest) throw Object.assign(new Error('生图配置已变化，请重新整理画面；未请求生图'), { imageOutcome: 'not_requested' })
+        const fields = [...IMAGE_ADVANCED_FIELDS, 'baseURL', 'model', 'size', 'aspectRatio', 'authType', 'username']
+        if (fields.some(key => IMAGE_ADVANCED_FIELDS.includes(key) ? (current[key] || '') !== (input[key] || '') : current[key] !== input[key]) || current.workflow?.digest !== input.workflow?.digest) throw Object.assign(new Error('生图配置已变化，请重新整理画面；未请求生图'), { imageOutcome: 'not_requested' })
         // Keep the captured endpoint/key pair. Later saves only affect new jobs.
         if (!channelReady(input, input.apiKey)) throw Object.assign(new Error('请先完成生图配置'), { imageOutcome: 'not_requested' })
         return { ...input, ...structuredClone(channelSettings(input)) }

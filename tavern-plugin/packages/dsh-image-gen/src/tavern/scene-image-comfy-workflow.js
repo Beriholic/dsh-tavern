@@ -72,10 +72,14 @@ export function comfyWorkflow(value) {
     const id = samplers[0], node = prompt[id], positive = node.inputs.positive, negative = node.inputs.negative
     if (!Array.isArray(positive) || prompt[positive[0]]?.class_type !== 'CLIPTextEncode' || typeof prompt[positive[0]].inputs.text !== 'string' || positive[0] === negative?.[0]) fail('无法区分正负提示词，请维护者提供映射文件')
     bindings = { positive: [{ node: positive[0], input: 'text' }], seed: [samplerSeedBinding(prompt, id)], batch: [] }
+    if (Array.isArray(negative) && prompt[negative[0]]?.class_type === 'CLIPTextEncode' && typeof prompt[negative[0]].inputs.text === 'string') bindings.negative = [{ node: negative[0], input: 'text' }]
+    if (Number.isSafeInteger(node.inputs.steps)) bindings.steps = [{ node: id, input: 'steps' }]
+    if (typeof node.inputs.cfg === 'number' && Number.isFinite(node.inputs.cfg)) bindings.guidance = [{ node: id, input: 'cfg' }]
   }
-  if (!object(bindings) || Object.keys(bindings).some(key => !['positive', 'seed', 'batch'].includes(key))) fail('映射只能包含 positive、seed、batch')
+  if (!object(bindings) || Object.keys(bindings).some(key => !['positive', 'seed', 'batch', 'negative', 'steps', 'guidance'].includes(key))) fail('映射只能包含 positive、seed、batch、negative、steps、guidance')
+  for (const key of ['negative', 'steps', 'guidance']) if (Object.hasOwn(bindings, key) && !Array.isArray(bindings[key])) fail('可选参数映射必须是数组')
   const normalized = {}, used = new Set()
-  for (const key of ['positive', 'seed', 'batch']) {
+  for (const key of ['positive', 'seed', 'batch', ...['negative', 'steps', 'guidance'].filter(key => bindings[key]?.length)]) {
     const items = bindings[key] || []
     if (!Array.isArray(items) || items.length > 32 || key === 'positive' && !items.length) fail('正向提示词映射不能为空，单项最多 32 个')
     normalized[key] = items.map(item => {
@@ -85,8 +89,9 @@ export function comfyWorkflow(value) {
       if (used.has(slot)) fail(`映射重复：${field} 已被使用`)
       if (!Object.hasOwn(prompt[item.node].inputs, item.input)) fail(`${field} 不存在，请检查映射字段`)
       if (Array.isArray(value)) fail(`${field} 是节点连接；种子等映射需指向源节点的实际字段，请维护者提供映射文件`)
-      if (key === 'positive' && typeof value !== 'string') fail(`${field} 必须是直接填写的字符串`)
-      if (key !== 'positive' && !Number.isSafeInteger(value)) fail(`${field} 必须是直接填写的安全整数（绝对值不超过 9007199254740991）`)
+      if (['positive', 'negative'].includes(key) && typeof value !== 'string') fail(`${field} 必须是直接填写的字符串`)
+      if (!['positive', 'negative', 'guidance'].includes(key) && !Number.isSafeInteger(value)) fail(`${field} 必须是直接填写的安全整数（绝对值不超过 9007199254740991）`)
+      if (key === 'guidance' && (typeof value !== 'number' || !Number.isFinite(value))) fail(`${field} 必须是有限数值`)
       used.add(slot)
       return { node: item.node, input: item.input }
     })
@@ -99,11 +104,16 @@ export function comfyWorkflow(value) {
   return { ...result, digest: hash(result) }
 }
 
-export function compileComfyWorkflow(workflow, text) {
+export function compileComfyWorkflow(workflow, text, options = {}) {
   const config = comfyWorkflow(workflow)
   if (!config) fail('请先导入工作流')
   if (typeof text !== 'string' || !text.trim() || text.length > 16000) fail('画面提示词为空或过长')
   const prompt = structuredClone(config.prompt), seed = randomInt(0, 2 ** 47)
+  for (const [field, binding] of [['negativePrompt', 'negative'], ['steps', 'steps'], ['guidance', 'guidance']]) {
+    if (!options[field]) continue
+    if (!config.bindings[binding]?.length) fail('缺少 ' + binding + ' 映射')
+    for (const item of config.bindings[binding]) prompt[item.node].inputs[item.input] = field === 'negativePrompt' ? options[field] : Number(options[field])
+  }
   for (const item of config.bindings.positive) prompt[item.node].inputs[item.input] = text
   for (const item of config.bindings.seed) prompt[item.node].inputs[item.input] = seed
   for (const item of config.bindings.batch) prompt[item.node].inputs[item.input] = 1
@@ -111,5 +121,6 @@ export function compileComfyWorkflow(workflow, text) {
     if (typeof node.inputs.batch_size !== 'number') fail('批量数量由其他节点控制，请维护者改为单张模板')
     node.inputs.batch_size = 1
   }
-  return { prompt, outputNode: config.outputNode, digest: config.digest, ...(config.bindings.seed.length ? { seed } : {}) }
+  const generationParameters = Object.fromEntries(['negative', 'steps', 'guidance'].filter(key => config.bindings[key]?.length).map(key => [key, config.bindings[key].map(item => ({ ...item, value: prompt[item.node].inputs[item.input] }))]))
+  return { prompt, generationParameters, outputNode: config.outputNode, digest: config.digest, ...(config.bindings.seed.length ? { seed } : {}) }
 }

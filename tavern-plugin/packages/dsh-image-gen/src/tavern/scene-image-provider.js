@@ -164,6 +164,9 @@ async function requestSceneImage(input, deps) {
       if (Object.keys(values).length) metadata = values
     } catch { /* Missing/malformed optional metadata cannot discard a valid image. */ }
   }
+  const controls = Object.fromEntries(['negative_prompt', 'steps', 'cfg_scale'].filter(key => spec.body[key] !== undefined).map(key => [key, spec.body[key]]))
+  if (spec.body.parameters?.negative_prompt !== undefined) controls.negative_prompt = spec.body.parameters.negative_prompt
+  if (Object.keys(controls).length) metadata = { ...metadata, generationParameters: controls }
   const finish = data => ({ ...imageBytes(data, maxBytes), ...(metadata ? { metadata } : {}) })
   const inline = typeof item.b64_json === 'string' ? item.b64_json : /^data:image\/[\w.+-]+;base64,/i.test(item.url || '') ? item.url.split(',')[1] : null
   if (inline !== null) {

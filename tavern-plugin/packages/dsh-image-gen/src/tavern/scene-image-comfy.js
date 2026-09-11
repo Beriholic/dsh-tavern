@@ -32,8 +32,8 @@ export async function generateComfyImage(input, deps) {
   if (task) {
     if (task.provider !== 'comfyui' || !opaqueId(task.promptId) || task.baseURL !== config.baseURL || task.workflowDigest !== config.workflow.digest || task.outputNode !== config.workflow.outputNode) throw new Error('原 ComfyUI 任务与当前配置不匹配，请恢复原配置后查询')
   } else {
-    const compiled = compileComfyWorkflow(config.workflow, input.prompt)
-    task = { provider: 'comfyui', promptId: randomUUID(), clientId: randomUUID(), baseURL: config.baseURL, workflowDigest: compiled.digest, outputNode: compiled.outputNode, state: 'submitting', ...(compiled.seed === undefined ? {} : { seed: compiled.seed }) }
+    const compiled = compileComfyWorkflow(config.workflow, input.prompt, config)
+    task = { provider: 'comfyui', promptId: randomUUID(), clientId: randomUUID(), baseURL: config.baseURL, workflowDigest: compiled.digest, outputNode: compiled.outputNode, state: 'submitting', generationParameters: compiled.generationParameters, ...(compiled.seed === undefined ? {} : { seed: compiled.seed }) }
     await saveTask({})
     let response
     try { response = await json('prompt', { prompt: compiled.prompt, prompt_id: task.promptId, client_id: task.clientId }) }
@@ -73,7 +73,7 @@ export async function generateComfyImage(input, deps) {
         if (!response.ok) { await response.body?.cancel(); throw new Error('ComfyUI 图片读取失败（HTTP ' + response.status + '）') }
         const imageData = deps.decodeImage(await deps.readBytes(response, maxBytes), maxBytes)
         await saveTask({ state: 'succeeded', image: { filename: image.filename, subfolder: image.subfolder, type: image.type } })
-        return { ...imageData, metadata: { promptId: task.promptId, workflowDigest: task.workflowDigest, ...(task.seed === undefined ? {} : { seed: task.seed }) } }
+        return { ...imageData, metadata: { promptId: task.promptId, workflowDigest: task.workflowDigest, ...(task.generationParameters ? { generationParameters: task.generationParameters } : {}), ...(task.seed === undefined ? {} : { seed: task.seed }) } }
       }
     }
     // Query only this task. A missing history row is not proof that it failed.

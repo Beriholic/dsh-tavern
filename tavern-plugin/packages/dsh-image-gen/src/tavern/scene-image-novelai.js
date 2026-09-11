@@ -55,14 +55,14 @@ export function novelaiRequest(input, config) {
     model: config.model,
     action: 'generate',
     parameters: {
-      params_version: 4, width, height, scale: guidance, steps: 23,
+      params_version: 4, width, height, scale: config.guidance ? Number(config.guidance) : guidance, steps: config.steps ? Number(config.steps) : 23,
       sampler: 'k_euler_ancestral', noise_schedule: 'karras', n_samples: 1, seed,
-      negative_prompt: '', cfg_rescale: 0, dynamic_thresholding: false, legacy: false, legacy_v3_extend: false,
+      negative_prompt: config.negativePrompt || '', cfg_rescale: 0, dynamic_thresholding: false, legacy: false, legacy_v3_extend: false,
       deliberate_euler_ancestral_bug: false, prefer_brownian: true,
       ...(limit ? {
         use_coords: false, legacy_uc: false,
         v4_prompt: { caption: { base_caption: prompt.base, char_captions: captions }, use_coords: false, use_order: true },
-        v4_negative_prompt: { caption: { base_caption: '', char_captions: captions.map(() => ({ char_caption: '', centers: [{ x: 0.5, y: 0.5 }] })) }, legacy_uc: false }
+        v4_negative_prompt: { caption: { base_caption: config.negativePrompt || '', char_captions: captions.map(() => ({ char_caption: '', centers: [{ x: 0.5, y: 0.5 }] })) }, legacy_uc: false }
       } : { sm: false, sm_dyn: false })
     }
   }
