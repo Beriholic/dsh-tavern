@@ -230,3 +230,19 @@ test('script context exposes the bound character avatar and follows chat changes
   assert.equal(ctx.characters.length, 0)
   assert.equal(ctx.characterId, undefined)
 })
+
+test('awaited MVU event writes retain the host event identity across asynchronous callbacks', async () => {
+  const h = helperHostHarness({ messages: [{ role: 'assistant', variables: { stat_data: { hp: 10 } } }] })
+  h.window.eventOn('MESSAGE_RECEIVED', async () => {
+    await tick()
+    await h.window.replaceVariables({ stat_data: { hp: 9 } }, { type: 'message', message_id: 0 })
+  })
+  h.receive({ type: 'dsh-tavern-helper-event', name: 'MESSAGE_RECEIVED', eventId: 'settlement-1', args: [0] })
+  await tick(); await tick()
+  const call = h.calls().find(item => item.method === 'updateTavernHelperVariables')
+  assert.equal(call.eventId, 'settlement-1')
+  assert.equal(h.sent.some(item => item.type === 'dsh-tavern-helper-event-complete'), false)
+  h.reply(call, { updated: true })
+  await tick()
+  assert.equal(h.sent.find(item => item.type === 'dsh-tavern-helper-event-complete').eventId, 'settlement-1')
+})

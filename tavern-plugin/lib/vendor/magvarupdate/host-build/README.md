@@ -18,6 +18,9 @@ The deterministic host build applies these adaptations:
 
 - removes the 3-second MESSAGE_RECEIVED throttle: host events are already serialized, and each settlement must await its own handler rather than receive the previous event's Promise.
 
+- uses the complete current-floor snapshot when no earlier floor has valid MVU
+  data, so resumed/imported games can settle without rewriting historical floors.
+
 It does not patch MVU parsing, validation or variable calculation.
 The sandbox-local uniqueness change is valid because the Host enforces exactly
 one official MVU core per chat sandbox; the readiness barrier only restores the

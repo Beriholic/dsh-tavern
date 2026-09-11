@@ -143,3 +143,14 @@ updateSource = replaceExactlyOnce(updateSource,
   'is_jest_environment ? onMessageReceived : _.throttle(onMessageReceived, 3000)',
   'onMessageReceived', 'await each serialized host message event')
 await writeFile(updatePath, updateSource)
+
+// Resumed/imported games may only have a complete snapshot on the current floor.
+// Preserve upstream's prior-floor baseline when available; otherwise use that
+// current snapshot rather than silently skipping a valid host settlement.
+const variablesPath = path.join(root, 'src/function/update_variables.ts')
+let variablesSource = await readFile(variablesPath, 'utf8')
+variablesSource = replaceExactlyOnce(variablesSource,
+  'const variables = getLastValidVariable(request_message_id);',
+  "const variables = getLastValidVariable(request_message_id) ?? (() => { const current = getVariables({ type: 'message', message_id }); return _.has(current, 'stat_data') && _.has(current, 'schema') ? current : undefined; })();",
+  'allow complete current-floor MVU baseline when history has none')
+await writeFile(variablesPath, variablesSource)

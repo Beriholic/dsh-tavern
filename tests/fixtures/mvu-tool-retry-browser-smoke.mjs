@@ -21,6 +21,7 @@ const runtimeAssets = new Map(await Promise.all([
   ['fontawesome/css/all.min.css', 'tavern-plugin/lib/vendor/runtime-assets/fontawesome/css/all.min.css'],
   ['vue/vue.runtime.global.prod.js', 'tavern-plugin/lib/vendor/runtime-assets/vue/vue.runtime.global.prod.js'],
   ['vue-router/vue-router.global.prod.js', 'tavern-plugin/lib/vendor/runtime-assets/vue-router/vue-router.global.prod.js'],
+  ['jquery-ui/jquery-ui.min.js', 'tavern-plugin/lib/vendor/runtime-assets/jquery-ui/jquery-ui.min.js'],
   ['jquery/jquery.min.js', 'tavern-plugin/lib/vendor/runtime-assets/jquery/jquery.min.js'],
   ['lodash/lodash.min.js', 'tavern-plugin/lib/vendor/runtime-assets/lodash/lodash.min.js'],
   ['zod/index.mjs', 'tavern-plugin/lib/vendor/runtime-assets/zod/index.mjs'],
@@ -31,6 +32,8 @@ const variables = { stat_data: { hp: 10, location: 'door', observer: '' }, schem
 } }, display_data: {}, delta_data: {}, initialized_lorebooks: {} }
 const chat = { id: 'fixture', sessionId: 'fixture', mode: 'story', mvu: { enabled: true, owner: 'official' },
   messages: [{ role: 'assistant', text: '测试正文', swipes: ['测试正文'], swipeId: 0, variables: [structuredClone(variables)] }] }
+if (process.env.MVU_LATEST_ONLY) chat.messages.unshift({ role: 'assistant', text: '较早的开场', variables: [{}] }, { role: 'user', text: '继续剧情', variables: [{}] })
+const targetMessageId = chat.messages.length - 1
 let writes = 0, started = false
 const feedback = []
 const gate = createTavernScriptDispatch()
@@ -137,7 +140,7 @@ const server = createServer(async (request, response) => {
         started = true; writes = 0
         gate.touch('fixture', 'browser', true)
         const settled = await module.settleVariables({ operationId: 'fixture', chatId: 'fixture', branchId: 'b', basedOnRevision: 1,
-          sessionId: 'fixture', messageId: 0, swipeId: 0, storyText: '测试正文', currentVariables: variables,
+          sessionId: 'fixture', messageId: targetMessageId, swipeId: 0, storyText: '测试正文', currentVariables: variables,
           charName: '测试卡', macroState: { userName: '测试玩家', local: {}, global: {} } })
         assert.equal(feedback.length, 2)
         assert.equal(feedback[0].ok, false)

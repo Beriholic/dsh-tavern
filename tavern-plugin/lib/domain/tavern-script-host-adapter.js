@@ -447,7 +447,10 @@ export function createTavernScriptHostAdapter(options = {}) {
       if (!Array.isArray(projected.swipes)) projected.swipes = [originalText]
       projected.swipes[swipeId] = internalText
       const availability = options.scriptDispatch.status?.(sessionId)
-      await record('runtime-dispatch', { availability })
+      const hasMvuSnapshot = value => value && value.stat_data !== undefined && value.schema !== undefined
+      const currentSnapshot = hasMvuSnapshot(projected.variables) === true
+      const priorSnapshot = eventContext.messages.slice(0, messageId).some(item => hasMvuSnapshot(item.variables))
+      await record('runtime-dispatch', { availability, baseline: { currentSnapshot, priorSnapshot, usesCurrentFallback: currentSnapshot && !priorSnapshot } })
       async function initializationRejected(error) {
         const validation = { changes: [], sideEffects: [], failures: [{ message: error }] }
         await record('runtime-initialization-failed', { error })
