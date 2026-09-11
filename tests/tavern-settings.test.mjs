@@ -90,8 +90,8 @@ test('实验分支始终公开兼容模式，旧关闭信任值不影响运行',
   }
 })
 
-test('设置界面只提供联网搜索与后台模型选择，不渲染兼容模式和旧样式选项', () => {
-  const context = { ContextCompactionSettings: function ContextCompactionSettings() {}, SceneImageSettings: function SceneImageSettings() {}, React: {
+test('设置界面提供分色与现有设置，不恢复旧兼容样式选项', () => {
+  const context = { TavernTextColorSettings: function TavernTextColorSettings() {}, ContextCompactionSettings: function ContextCompactionSettings() {}, SceneImageSettings: function SceneImageSettings() {}, React: {
     useState: initial => [initial, () => {}],
     useEffect() {},
     createElement: (type, props, ...children) => ({ type, props, children })
@@ -107,6 +107,7 @@ test('设置界面只提供联网搜索与后台模型选择，不渲染兼容�
     for (const child of node.children || []) visit(child)
   }
   visit(root)
+  assert.ok(nodes.some(node => node.type === context.TavernTextColorSettings))
   const inputs = nodes.filter(node => node.type === 'input')
   assert.deepEqual(inputs.map(input => input.props['aria-label']), ['开启联网搜索'])
   const select = nodes.find(node => node.type === 'select' && node.props['aria-label'] === '后台模型')

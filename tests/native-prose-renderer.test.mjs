@@ -28,7 +28,7 @@ test('正式消息 renderer 使用原生 Markdown、完整标签参数，并只�
   const props = { sessionId: 'fixture', node: { data: { status: 'completed', blocks: [{ kind: 'text', text }], finalNode: { seq: 1 } }, location: { kind: 'turn', turn: { turn: 1, status: 'closed' } } }, useTurnData: () => null, fileMentions: () => undefined }
   function leaves(value, result = []) {
     if (Array.isArray(value)) value.forEach(item => leaves(item, result))
-    else if (value && typeof value === 'object') { if (value.tag === 'MarkdownText' || value.tag === client.TavernMessageFrame) result.push(value); else leaves(value.children, result) }
+    else if (value && typeof value === 'object') { if (value.tag === client.TavernColoredMarkdown) return leaves(value.tag(value.props), result); if (value.tag === 'MarkdownText' || value.tag === client.TavernMessageFrame) result.push(value); else leaves(value.children, result) }
     return result
   }
   const seedProps = { ...props, node: { ...props.node, data: { ...props.node.data,

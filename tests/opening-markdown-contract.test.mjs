@@ -29,6 +29,7 @@ test('all pre-game Markdown call sites support links without a Session file reso
       DshUi: { MarkdownText: props => { props.fileMentions?.resolve('https://example.com'); return props.text } },
       React: { createElement: (component, props) => component(props) }
     }
+    sandbox.TavernColoredMarkdown = sandbox.DshUi.MarkdownText
     assert.doesNotThrow(() => vm.runInNewContext(renderer + '\n' + call, sandbox))
   }
 })

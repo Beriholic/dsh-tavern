@@ -1825,6 +1825,138 @@ window.__ModuleLoader__.load({
 		  return function () { disposed = true; stop(); };
 		}
 
+		function findTavernQuoteRanges(text) {
+		    // Match only complete same-line pairs, including the delimiters.
+		    const pattern = /"[^"\r\n]+"|“[^”\r\n]+”|«[^»\r\n]+»|「[^」\r\n]+」|『[^』\r\n]+』|＂[^＂\r\n]+＂/g;
+		    return Array.from(String(text).matchAll(pattern), match => [match.index, match.index + match[0].length]);
+		}
+
+		function installTavernTextColors(root, options, findQuotes) {
+		    const doc = root.ownerDocument, win = doc.defaultView;
+		    if (!win.CSS || !win.CSS.highlights || typeof win.Highlight !== 'function') return { setEnabled() {}, dispose() {} };
+		    const prefix = 'dsh-tavern-text-' + Math.random().toString(36).slice(2);
+		    const colors = { 'quote-light': '#875000', 'quote-dark': '#edb75f', 'em-light': '#75529b', 'em-dark': '#bba4e3' };
+		    const highlights = new Map();
+		    const style = doc.createElement('style');
+		    style.setAttribute('data-dsh-tavern-text-colors', '');
+		    style.textContent = Object.entries(colors).map(([kind, color]) => '::highlight(' + prefix + '-' + kind + '){color:' + color + '}').join('\n');
+		    doc.head.appendChild(style);
+		    for (const kind of Object.keys(colors)) {
+		        const highlight = new win.Highlight();
+		        highlight.priority = kind.startsWith('quote') ? 2 : 1;
+		        highlights.set(kind, highlight);
+		        win.CSS.highlights.set(prefix + '-' + kind, highlight);
+		    }
+		    let enabled = options.enabled !== false, disposed = false, timer = null;
+		    const excluded = 'script,style,textarea,input,select,button,a,code,pre,kbd,samp,svg,math,[hidden],[contenteditable]:not([contenteditable="false"]),[role="button"],[role="textbox"]';
+		    const blocks = 'p,div,li,td,th,blockquote,section,article,h1,h2,h3,h4,h5,h6';
+		    function explicitColor(element) {
+		        for (let current = element; current; current = current.parentElement) {
+		            if (current.hasAttribute('color') || current.style.color || current.style.webkitTextFillColor) return true;
+		            // A block's baseline color is not a specialized dialogue/emphasis color.
+		            if (current.matches('span,font,q,em,i,b,strong,u,mark') && current.parentElement
+		                && win.getComputedStyle(current).color !== win.getComputedStyle(current.parentElement).color) return true;
+		            if (current === root) break;
+		        }
+		        return false;
+		    }
+		    const paletteCache = new Map();
+		    let canvas;
+		    function palette(element) {
+		        const color = win.getComputedStyle(element).color;
+		        if (paletteCache.has(color)) return paletteCache.get(color);
+		        let rgb = color.match(/[\d.]+/g) || [];
+		        if (!/^rgba?\(/.test(color)) {
+		            // Modern themes may use oklch/display-p3; read their sRGB equivalent.
+		            if (!canvas) { canvas = doc.createElement('canvas'); canvas.width = canvas.height = 1; }
+		            const context = canvas.getContext('2d', { willReadFrequently: true });
+		            if (context) { context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1); rgb = context.getImageData(0, 0, 1, 1).data; }
+		        }
+		        const result = Number(rgb[0]) * .2126 + Number(rgb[1]) * .7152 + Number(rgb[2]) * .0722 > 145 ? 'dark' : 'light';
+		        paletteCache.set(color, result);
+		        return result;
+		    }
+		    function add(kind, entry, start, end) {
+		        const range = doc.createRange();
+		        range.setStart(entry.node, start); range.setEnd(entry.node, end);
+		        highlights.get(kind + '-' + entry.palette).add(range);
+		    }
+		    function refresh() {
+		        timer = null;
+		        for (const highlight of highlights.values()) highlight.clear();
+		        if (disposed || !enabled) return;
+		        const walker = doc.createTreeWalker(root, 4); // SHOW_TEXT; never edit React/card-owned DOM.
+		        let group = [], block = null, text = '';
+		        function flush() {
+		            for (const [start, end] of findQuotes(text)) for (const entry of group) {
+		                const from = Math.max(start, entry.offset), to = Math.min(end, entry.offset + entry.node.length);
+		                if (from < to) add('quote', entry, from - entry.offset, to - entry.offset);
+		            }
+		            group = []; text = '';
+		        }
+		        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+		            const element = node.parentElement;
+		            if (!element || element.closest(excluded) || explicitColor(element)) { flush(); block = null; continue; }
+		            const owner = element.closest(blocks) || root;
+		            // <br> is a rendered line break even without a newline text node.
+		            if (owner !== block || (node.previousSibling && node.previousSibling.nodeName === 'BR')) flush();
+		            block = owner;
+		            const entry = { node, offset: text.length, palette: palette(element) };
+		            group.push(entry); text += node.data;
+		            if (element.closest('q')) add('quote', entry, 0, node.length);
+		            else if (element.closest('em,i')) add('em', entry, 0, node.length);
+		        }
+		        flush();
+		    }
+		    function schedule() { if (!disposed && enabled && timer === null) timer = win.setTimeout(refresh, 32); }
+		    const observer = new win.MutationObserver(schedule);
+		    observer.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['style', 'class', 'color', 'hidden'] });
+		    if (doc.documentElement !== root) observer.observe(doc.documentElement, { attributes: true, attributeFilter: ['style', 'class'] });
+		    refresh();
+		    return {
+		        setEnabled(value) { enabled = value !== false; if (timer !== null) win.clearTimeout(timer); refresh(); },
+		        dispose() {
+		            disposed = true; observer.disconnect(); if (timer !== null) win.clearTimeout(timer);
+		            for (const kind of highlights.keys()) win.CSS.highlights.delete(prefix + '-' + kind);
+		            style.remove();
+		        }
+		    };
+		}
+
+		function tavernTextColorsEnabled(host) {
+		    try { return host.localStorage.getItem('dsh-tavern-text-colors') !== 'off'; } catch (_) { return true; }
+		}
+		function setTavernTextColorsEnabled(enabled) {
+		    try { window.localStorage.setItem('dsh-tavern-text-colors', enabled ? 'on' : 'off'); } catch (_) {}
+		    window.dispatchEvent(new CustomEvent('dsh-tavern-text-colors-changed', { detail: enabled }));
+		}
+		function TavernColoredMarkdown(props) {
+		    const root = React.useRef(null);
+		    React.useEffect(function () {
+		        const colors = installTavernTextColors(root.current, { enabled: tavernTextColorsEnabled(window) }, findTavernQuoteRanges);
+		        const changed = event => colors.setEnabled(event.type === 'storage' ? tavernTextColorsEnabled(window) : event.detail);
+		        window.addEventListener('dsh-tavern-text-colors-changed', changed);
+		        window.addEventListener('storage', changed);
+		        return function () { window.removeEventListener('dsh-tavern-text-colors-changed', changed); window.removeEventListener('storage', changed); colors.dispose(); };
+		    }, []);
+		    return React.createElement('div', { ref: root, className: 'dsh-tavern-colored-markdown' }, React.createElement(DshUi.MarkdownText, props));
+		}
+		function TavernTextColorSettings() {
+		    const [enabled, setEnabled] = React.useState(() => tavernTextColorsEnabled(window));
+		    React.useEffect(function () {
+		        const changed = event => setEnabled(event.type === 'storage' ? tavernTextColorsEnabled(window) : event.detail !== false);
+		        window.addEventListener('dsh-tavern-text-colors-changed', changed);
+		        window.addEventListener('storage', changed);
+		        return function () { window.removeEventListener('dsh-tavern-text-colors-changed', changed); window.removeEventListener('storage', changed); };
+		    }, []);
+		    return React.createElement('div', { className: 'dsh-tavern-settings-group' },
+		        React.createElement('label', { className: 'dsh-tavern-settings-row' },
+		            React.createElement('span', { className: 'dsh-tavern-settings-copy' },
+		                React.createElement('span', { className: 'dsh-tavern-settings-title' }, '正文分色'),
+		                React.createElement('span', { className: 'dsh-tavern-settings-desc' }, '引号内文字用金色，斜体用紫色，普通文字保持原色。保留人物卡已有配色；仅影响当前浏览器显示。')),
+		            React.createElement('input', { type: 'checkbox', checked: enabled, onChange: event => { setEnabled(event.target.checked); setTavernTextColorsEnabled(event.target.checked); } })));
+		}
+
 		function buildTavernFrameDocument(input) {
 			const html = rewriteTavernStaticMarkup(String(input && (input.content !== undefined ? input.content : input.html) || ""));
 			const token = JSON.stringify(String(input && input.token || "")).replace(/</g, "\\u003c");
@@ -1842,7 +1974,8 @@ window.__ModuleLoader__.load({
 			const readyReporter = '<script data-dsh-tavern-frame-ready>(function(){var token=' + token + ',armed=false,timer=0,reported=false;function report(){timer=0;if(reported)return;reported=true;var finish=function(){parent.postMessage({type:"dsh-tavern-frame-ready",token:token},"*");};if(typeof requestAnimationFrame==="function")requestAnimationFrame(function(){requestAnimationFrame(finish);});else setTimeout(finish,0);}function schedule(){if(!armed||reported)return;if(timer)clearTimeout(timer);timer=setTimeout(report,240);}new MutationObserver(schedule).observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});addEventListener("load",schedule);Promise.resolve(window.__dshTavernHelperReady).catch(function(){return false;}).then(function(){armed=true;schedule();});})();<\/script>';
 			const layoutNormalizer = '<script data-dsh-tavern-layout>(function(){if(!document.body)return;Array.prototype.slice.call(document.body.childNodes).forEach(function(node){var value=String(node.nodeValue||"");if(node.nodeType===3&&!/\\S/.test(value)&&/[\\r\\n]/.test(value))node.nodeValue="";});})();<\/script>';
 			const fontRuntime = '<script data-dsh-tavern-font-runtime>(' + installTavernFrameFonts.toString() + ')(' + token + ',' + restoreTavernFrameFontStyles.toString() + ');<\/script>';
-			const cleanRuntimeReporter = runtimeReporter.replace('dom=copy.innerHTML;', '(' + restoreTavernFrameFontStyles.toString() + ')(copy);Array.from(copy.querySelectorAll("script[data-dsh-tavern-font-runtime]")).forEach(function(node){node.remove();});dom=copy.innerHTML;');
+            const textColorRuntime = '<script data-dsh-tavern-text-colors>(function(){const colors=(' + installTavernTextColors.toString() + ')(document.body,{enabled:false},' + findTavernQuoteRanges.toString() + ');addEventListener("message",function(event){const data=event.data;if(event.source===parent&&data&&data.token===' + token + '&&(data.type==="dsh-tavern-text-colors"||data.type==="dsh-tavern-font-size"))colors.setEnabled(data.type==="dsh-tavern-font-size"?data.textColorsEnabled:data.enabled);});addEventListener("pagehide",()=>colors.dispose(),{once:true});})();<\/script>';
+			const cleanRuntimeReporter = runtimeReporter.replace('dom=copy.innerHTML;', '(' + restoreTavernFrameFontStyles.toString() + ')(copy);Array.from(copy.querySelectorAll("script[data-dsh-tavern-font-runtime],script[data-dsh-tavern-text-colors]")).forEach(function(node){node.remove();});dom=copy.innerHTML;');
 			return '<!doctype html><html><head><meta charset="utf-8">'
 				+ '<meta name="viewport" content="width=device-width,initial-scale=1">'
 				+ '<meta name="referrer" content="no-referrer">'
@@ -1852,7 +1985,7 @@ window.__ModuleLoader__.load({
 				+ (input && input.helperContext ? '<script data-dsh-tavern-frame-variable-aliases>(' + installTavernFrameVariableAliases.toString() + ')();<\/script>' : '')
 				+ (input && input.helperContext && input.persistent === true && input.preserveInstance !== true ? '<script data-dsh-tavern-status-refresh>(' + installTavernStatusRefresh.toString() + ')(' + token + ');<\/script>' : '')
 				+ (input && input.openingPreview ? '<script data-dsh-tavern-opening-preview>(' + installOpeningPreviewBridge.toString() + ')(' + token + ',' + JSON.stringify(input.openingPreview).replace(/</g, '\\u003c') + ');<\/script>' : '')
-				+ '</head><body class="no-blur">' + (input && input.helperContext ? '<script data-dsh-tavern-legacy-composer>(' + installLegacyTavernComposer.toString() + ')();<\/script>' : '') + (preparationRuntime ? preparationRuntime.body : '') + html + layoutNormalizer + fontRuntime + reporter + readyReporter + '</body></html>';
+				+ '</head><body class="no-blur">' + (input && input.helperContext ? '<script data-dsh-tavern-legacy-composer>(' + installLegacyTavernComposer.toString() + ')();<\/script>' : '') + (preparationRuntime ? preparationRuntime.body : '') + html + layoutNormalizer + fontRuntime + (input && input.persistent ? "" : textColorRuntime) + reporter + readyReporter + '</body></html>';
 		}
 
 		function encodeTavernScriptSource(value) {
@@ -4354,7 +4487,7 @@ window.__ModuleLoader__.load({
 					heightKey: tavernFrameHeightKey(props), content: props.content,
 					trustedCardMode: props.trustedCardMode, refreshRequested: false
 				};
-				document.html = buildTavernFrameDocument({ content: props.content, token: document.token, openingPreview: props.openingPreview, helperContext: helperContext, turn: props.turn, observeMvuView: props.observeMvuView, runtimeReporting: props.runtimeReporting, persistent: props.persistent, preserveInstance: props.preserveInstance });
+				document.html = buildTavernFrameDocument({ content: props.content, token: document.token, openingPreview: props.openingPreview, helperContext: helperContext, turn: props.turn, observeMvuView: props.observeMvuView, runtimeReporting: props.runtimeReporting, persistent: props.persistent, preserveInstance: props.preserveInstance, textColorsEnabled: tavernTextColorsEnabled(hostWindow) });
 				const channel = createTavernFrameContextChannel(document);
 				// Stable callback identity preserves the per-document delta baseline.
 				document.ref = function (node) {
@@ -4375,6 +4508,13 @@ window.__ModuleLoader__.load({
 				const channel = document && channels.get(document.token);
 				if (channel) channel.sync(helperContext, props.turn, mode);
 			}
+			function sendTextColors(document) {
+                channels.forEach(function (channel, token) {
+                    if (document && token !== document.token) return;
+                    const node = channel.element();
+                    if (node && node.contentWindow) node.contentWindow.postMessage({ type: "dsh-tavern-text-colors", token: token, enabled: tavernTextColorsEnabled(hostWindow) }, "*");
+                });
+            }
 			function sendFontSize(document) {
 				const body = hostWindow.document && hostWindow.document.body;
 				if (!body || typeof hostWindow.getComputedStyle !== "function") return;
@@ -4385,7 +4525,7 @@ window.__ModuleLoader__.load({
 				channels.forEach(function (channel, token) {
 					if (document && token !== document.token) return;
 					const node = channel.element();
-					if (node && node.contentWindow) node.contentWindow.postMessage({ type: "dsh-tavern-font-size", token: token, fontSize: fontSize }, "*");
+					if (node && node.contentWindow) node.contentWindow.postMessage({ type: "dsh-tavern-font-size", token: token, fontSize: fontSize, textColorsEnabled: tavernTextColorsEnabled(hostWindow) }, "*");
 				});
 			}
 			function reconcile() {
@@ -4557,6 +4697,9 @@ window.__ModuleLoader__.load({
 				start: function (onChange) {
 					listener = onChange;
 					hostWindow.addEventListener("message", receive);
+                    const colorsChanged = function () { sendTextColors(); };
+                    hostWindow.addEventListener("dsh-tavern-text-colors-changed", colorsChanged);
+                    hostWindow.addEventListener("storage", colorsChanged);
 					let fontObserver = null;
 					if (hostWindow.document && typeof hostWindow.MutationObserver === "function") {
 						fontObserver = new hostWindow.MutationObserver(function () { sendFontSize(); });
@@ -4564,6 +4707,8 @@ window.__ModuleLoader__.load({
 					}
 					return function () {
 						if (fontObserver) fontObserver.disconnect();
+                        hostWindow.removeEventListener("dsh-tavern-text-colors-changed", colorsChanged);
+                        hostWindow.removeEventListener("storage", colorsChanged);
 						listener = null; lifetime++;
 						hostWindow.removeEventListener("message", receive);
 						cancelRuntimeReport();
@@ -4792,7 +4937,7 @@ window.__ModuleLoader__.load({
 		function renderTavernProjection(projection, options) {
 			const h = React.createElement;
 			return projectionPartsOf(projection).map(function (part, index) {
-				if (part.kind === "markdown") return h(DshUi.MarkdownText, { key: index, text: String(part.text || ""), streaming: options.streaming, labels: { code: options.codeLabels, footnotes: "脚注" }, codeLabels: options.codeLabels, fileMentions: options.mentions });
+				if (part.kind === "markdown") return h(TavernColoredMarkdown, { key: index, text: String(part.text || ""), streaming: options.streaming, labels: { code: options.codeLabels, footnotes: "脚注" }, codeLabels: options.codeLabels, fileMentions: options.mentions });
 				const content = String(part.content !== undefined ? part.content : part.html || "");
 				return h(TavernMessageFrame, { key: index, content: content, sessionId: options.sessionId, turn: options.turn, partIndex: index, helperContext: options.helperContext, openingPreview: options.openingPreview, onSelectOpening: options.onSelectOpening, trustedCardMode: options.trustedCardMode, eager: options.eagerFrame, executeSlash: options.executeSlash });
 			});
@@ -4819,7 +4964,7 @@ window.__ModuleLoader__.load({
 					if (input.projection && projected) continue;
 					const projection = input.projection;
 					if (projection) rendered.push(h(React.Fragment, { key: index }, renderTavernProjection(projection, { streaming: input.streaming, codeLabels: codeLabels, mentions: input.mentions, sessionId: input.sessionId, turn: input.turn, helperContext: input.helperContext, trustedCardMode: input.trustedCardMode, eagerFrame: input.eagerFrame, executeSlash: input.executeSlash })));
-					else rendered.push(h(DshUi.MarkdownText, { key: index, text: String(block.text || ""), streaming: input.streaming, labels: { code: codeLabels, footnotes: "脚注" }, codeLabels: codeLabels, fileMentions: input.mentions }));
+					else rendered.push(h(TavernColoredMarkdown, { key: index, text: String(block.text || ""), streaming: input.streaming, labels: { code: codeLabels, footnotes: "脚注" }, codeLabels: codeLabels, fileMentions: input.mentions }));
 					projected = true;
 					continue;
 				}
@@ -6477,6 +6622,7 @@ window.__ModuleLoader__.load({
 			}
 			return React.createElement("div", { className: "dsh-tavern-settings-section" },
 				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "设置开局选项和后台任务。"),
+                React.createElement(TavernTextColorSettings),
                 React.createElement(ContextCompactionSettings),
 				React.createElement("div", { className: "dsh-tavern-settings-group" },
 					React.createElement("label", { className: "dsh-tavern-settings-row" },
@@ -9400,7 +9546,11 @@ window.__ModuleLoader__.load({
 		exports.createTavernScriptSessionOwner = createTavernScriptSessionOwner;
 		exports.createMvuBundleLoader = createMvuBundleLoader;
 		exports.TavernMvuLoadRecovery = TavernMvuLoadRecovery;
-		exports.apply = apply;
+		exports.findTavernQuoteRanges = findTavernQuoteRanges;
+        exports.installTavernTextColors = installTavernTextColors;
+        exports.TavernColoredMarkdown = TavernColoredMarkdown;
+        exports.TavernTextColorSettings = TavernTextColorSettings;
+        exports.apply = apply;
 		exports.createTurnHistoryProjection = createTurnHistoryProjection;
 		exports.createTurnErrorControls = createTurnErrorControls;
 		exports.createSupersededErrorProjection = createSupersededErrorProjection;
